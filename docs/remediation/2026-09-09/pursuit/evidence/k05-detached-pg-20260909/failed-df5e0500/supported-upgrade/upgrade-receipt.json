@@ -1,0 +1,13 @@
+{
+  "scope": "DISPOSABLE_05_TO_HEAD_EXISTING_TEST_ONLY_CAPACITY_LEDGER",
+  "accepted": false,
+  "source_commit": "c385f1a176da9604f12bc2a27a012d70605d719f",
+  "steps": [
+    {
+      "target": "20260909_05",
+      "exit_code": 0
+    }
+  ],
+  "database": "wolf15_ci_test_domain_20c23ea974e1",
+  "failure_class": "ValueError"
+}

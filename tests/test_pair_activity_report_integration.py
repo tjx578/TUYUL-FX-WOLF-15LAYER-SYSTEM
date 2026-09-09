@@ -152,3 +152,53 @@ def test_snapshot_replays_in_new_python_process_without_identity_change(tmp_path
     )
     replayed = json.loads(result.stdout)
     assert replayed == first
+
+
+@pytest.mark.parametrize("coverage_status", ["UNKNOWN", "INCOMPLETE"])
+def test_source_flag_cannot_suppress_required_coverage_replay(coverage_status):
+    raw = events()
+    report = analyze_signal_throttle_events(raw, pair_activity_context=context(raw, status=coverage_status))
+    report["pair_activity_v31"]["replay_required"] = False
+    assert pipeline_fields(report)["pair_activity_v31"]["replay_required"] is True
+
+
+def test_source_flag_cannot_suppress_required_backfill_reconciliation():
+    from dataclasses import replace
+
+    raw = events()
+    previous = PairActivityAuditV31.model_validate(build_pair_activity_report(raw, context=context(raw))["audit"])
+    changed = [*raw, replace(raw[1], symbol="GBPUSD", timestamp=START + timedelta(seconds=75))]
+    bound = context(changed).model_dump(mode="json")
+    bound["previous_evaluations"] = [item.model_dump(mode="json") for item in previous.evaluations]
+    report = {"pair_activity_v31": build_pair_activity_report(changed, context=bound)}
+    report["pair_activity_v31"]["replay_required"] = False
+    fields = pipeline_fields(report)["pair_activity_v31"]
+    assert any(item["decision"] == "RECONCILIATION_REQUIRED" for item in fields["evaluations"])
+    assert fields["replay_required"] is True
+
+
+def test_report_validates_optional_logical_population_and_filters_metadata():
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+
+    raw = events()
+    report = analyze_signal_throttle_events(raw, pair_activity_context=context(raw))
+    source = report["pair_activity_v31"]
+    source["normalization"] = normalize_pair_activity_observations(raw).model_dump(mode="json")
+    source["provenance"] = {"producer_id": "fixture", "execution_authority": True, "attestor_id": {"unvalidated": True}}
+    source["persistence"] = {"status": "COMMITTED", "arbitrary_claim": {"approved": True}}
+    fields = pipeline_fields(report)["pair_activity_v31"]
+    assert fields["normalization"]["raw_population_hash"] == source["audit"]["source_ledger_hash"]
+    assert fields["provenance"] == {"producer_id": "fixture"}
+    assert fields["persistence"] == {"status": "COMMITTED"}
+    source["normalization"] = normalize_pair_activity_observations(raw[:1]).model_dump(mode="json")
+    assert pipeline_fields(report)["pair_activity_v31"]["status"] == "INVALID_RECEIPT"
+
+
+def test_report_rejects_constructed_normalization_model_bypass():
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+
+    raw = events()
+    report = analyze_signal_throttle_events(raw, pair_activity_context=context(raw))
+    forged = normalize_pair_activity_observations(raw).model_copy(update={"logical_observation_count": 99})
+    report["pair_activity_v31"]["normalization"] = forged
+    assert pipeline_fields(report)["pair_activity_v31"]["status"] == "INVALID_RECEIPT"

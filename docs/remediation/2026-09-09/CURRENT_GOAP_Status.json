@@ -1,6 +1,6 @@
 {
-  "observed_at_utc": "2026-09-08T20:27:01.228117+00:00",
-  "base_source": "773150952311db3dbf5188f36536b7837d8ec296",
+  "observed_at_utc": "2026-09-09T04:01:09.495344+00:00",
+  "base_source": "68ad0794e087177571972a7b95f4b7dde70b5286",
   "verdict": "INCOMPLETE_HOLD",
   "engineering_milestones_done": 0,
   "engineering_milestones_total": 6,
@@ -8,7 +8,7 @@
   "natural_demo_done": false,
   "real_ready": false,
   "user_binding_clarification": "No currently valid DEMO binding packet is verified; register lists preparation tasks only.",
-  "billing": "EXCLUDED_BY_USER; required unavailable CI not treated as passed",
+  "billing": "REMEDIATION_EXCLUDED_BY_USER; GitHub job annotations on0f7a98b2 report account billing lock",
   "actions": [
     {
       "ID": "A00",
@@ -58,13 +58,13 @@
       "Owner": "Test maintainer",
       "Hard dependencies": "C01",
       "Historical status": "BLOCKED",
-      "Current status": "PATCHED_TESTED_LOCAL_PARTIAL",
+      "Current status": "LOCAL_PINNED_TESTS_PASS_LINUX_CI_UNEXECUTED",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "Full applicable API requirements installed unchanged with Pydantic 2.9.2 and pip check PASS; 334 selected final cases pass. Baseline raw-ID order test corrected without changing producer ordering. Isolated MCP job remains required. Full remote/Linux/DB/convergence gates remain open.",
+      "Evidence and blocker": "126 current local protocol/regression cases PASS; overlaps earlier241/613. Required hosted Linux CI targets ubuntu-latest but jobs on0f7a98b2 did not start; GitHub annotations report account billing lock. PostgreSQL/Linux execution remains NOT_EXECUTED.",
       "Acceptance": "Integrate reviewed #415 then unique #416 delta; preserve #413 migration behavior/redaction tests; required test failures fail job and skips remain visible; HealthProbeRuntime caller compatibility reviewed",
       "DoD clarification": "Semua required checks benar-benar dijalankan; skipped/missing tidak dihitung PASS. Tidak mengendurkan gate untuk meluluskan kandidat.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json; followup-s03-runtime/README.md; followup-s03-runtime/validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json; followup-delivery-contract/README.md; followup-delivery-contract/validation.json"
     },
     {
       "ID": "C04",
@@ -75,10 +75,10 @@
       "Current status": "BLOCKED",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "GitHub reports zero registered repo runners; dedicated clean Linux runner identity/capacity not established. Hosted jobs show runner_id=0/steps=[]; billing remediation excluded.",
+      "Evidence and blocker": "Correction: repo runner endpoint enumerates SELF-HOSTED runners only; zero does not imply GitHub-hosted unavailability. Exact workflow/job targets ubuntu-latest; push34281716405 and PR34281720281 Python-job annotations explicitly report account locked due to billing issue. Billing remediation excluded; no disposable host or capacity binding added.",
       "Acceptance": "New dedicated Linux runner identity/capacity/billing scope fixed; disposable Redis/PostgreSQL and clean checkout supported; historical Hostinger/Windows workloads untouched",
       "DoD clarification": "Runner bersih mempunyai identitas dan capacity evidence; provisioning atau biaya belum dilakukan oleh DoD.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json; followup-delivery-contract/README.md; followup-delivery-contract/validation.json"
     },
     {
       "ID": "C05",
@@ -114,13 +114,13 @@
       "Owner": "Strategy contract maintainer",
       "Hard dependencies": "A00",
       "Historical status": "BLOCKED",
-      "Current status": "SOURCE_BOUND_MAPPING_COMPLETE_POLICY_SCHEMA_GAPS",
+      "Current status": "VERSIONED_SCHEMA_LOCAL_PARTIAL",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "Exact selected SSOT bytes, old-assessment receipt mismatch, 56 source/test paths, 15 rule groups, 35 clauses, 18 policy registries and 36 section references mapped. Missing historical bytes, enum/schema/decision-table and active policy/mandatory authority closure remain open.",
+      "Evidence and blocker": "Versioned schema/policy contract remains partial; actual consumer remains V1. Fixed exclusive expiry equality in V1 with before/equal/after acceptance. V3.1 consumer binding and approved policy/attestor/route evidence remain open.",
       "Acceptance": "Record already accepted V3.1 design intent with exact document digest, implementation policy IDs and versioned schemas; resolve enum/example consistency; no repeated design approval request; source-bound authority mapping must identify L1-L11 analysis/validation, only L12 strategy verdict and mandatory post-verdict gates; mapping evidence required, current runtime L12 wiring not inferred",
       "DoD clarification": "SSOT v3.1 existing repo tetap acuan; path/full commit/digest harus bound. R1/R2 tidak diadopsi. Daftar interpretasi dan policy gaps diselesaikan eksplisit.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json; followup-s03-runtime/README.md; followup-s03-runtime/validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json"
     },
     {
       "ID": "S02",
@@ -142,13 +142,13 @@
       "Owner": "Admission maintainer",
       "Hard dependencies": "S01",
       "Historical status": "BLOCKED",
-      "Current status": "PATCHED_TESTED_LOCAL_PARTIAL",
+      "Current status": "CONSUMER_SOURCE_IMPLEMENTED_PG_ACCEPTANCE_NOT_EXECUTED",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "Versioned activity evaluator preserves mixed direction and suspends source gaps; analyzer/pipeline reporting is explicit and non-executable. 334 final pinned-environment cases pass, including subprocess snapshot replay. Legacy grants remain unchanged. Logical pulse normalization, attestor/policy, PostgreSQL durability, attachment/SLA/runtime closure remain open.",
+      "Evidence and blocker": "Consumer/owner/API transport source 3d8df68057d6a0c2f9dc1b1969651f8f298aa713; 185 selected local tests PASS. Existing45 + producer7 unchanged; consumer11 authored and skipped, strict gate rejects skips. PostgreSQL migration/runtime, real HTTPS and owner/policy/attestor bindings NOT_EXECUTED/NOT_BOUND. D01-D11 not closed.",
       "Acceptance": "One normalized material observation per logical pulse; live/replay flags and timestamps agree; duplicate delivery no inflation; mixed direction does not split pair activity; gap suspends pending continuity; future evidence rejected",
       "DoD clarification": "Mixed direction mempertahankan pair activity bila continuity sah. BUY0/SELL150/BUY300 membutuhkan coverage/gap-policy yang valid, bukan otomatis GRANTED.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json; followup-s03-runtime/README.md; followup-s03-runtime/validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json; followup-delivery-contract/README.md; followup-delivery-contract/validation.json; followup-producer-relay/README.md; followup-producer-relay/validation.json; followup-producer-relay/acceptance-inventory.json; followup-consumer-owner/README.md; followup-consumer-owner/validation.json; followup-consumer-owner/acceptance-inventory.json"
     },
     {
       "ID": "S04",
@@ -586,5 +586,18 @@
     }
   ],
   "latest_tested_source_commit": "385188d02097d3fd5fb3e48cb9669613b8ff6ea7",
-  "latest_followup": "followup-s01-s03/followup-validation.json"
+  "latest_followup": "followup-s01-s03/followup-validation.json",
+  "runtime_followup": "followup-s03-runtime/validation.json",
+  "latest_runner_binding_followup": "followup-runner-binding/validation.json",
+  "latest_delivery_contract_followup": "followup-delivery-contract/validation.json",
+  "latest_producer_relay_followup": {
+    "source_commit": "5219624a92253b66fe8bc67a1acace99b71e61e7",
+    "path": "followup-producer-relay/validation.json",
+    "milestones_closed": 0
+  },
+  "latest_consumer_owner_followup": {
+    "source_commit": "3d8df68057d6a0c2f9dc1b1969651f8f298aa713",
+    "path": "followup-consumer-owner/validation.json",
+    "milestones_closed": 0
+  }
 }

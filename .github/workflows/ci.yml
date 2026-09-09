@@ -77,7 +77,9 @@ jobs:
       PYTHONPATH: .
       REDIS_URL: redis://localhost:6379/0
       DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
+      WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
       WOLF15_RUN_POSTGRES_INTEGRATION: "1"
+      WOLF15_PAIR_ACTIVITY_EXPECTED_PG_MAJOR: "16"
       WOLF15_POSTGRES_TEST_DATABASE: wolf15_ci_test
       WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS: YES_I_UNDERSTAND
       DASHBOARD_JWT_SECRET: ci-test-secret-do-not-use-in-prod
@@ -97,6 +99,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-timeout pytest-asyncio pytest-cov
+
+      - name: Bind exact disposable PostgreSQL service address
+        env:
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          python - <<'PYEOF'
+          import json
+          import os
+          import subprocess
+          from ipaddress import ip_address
+
+          service_id = os.environ["POSTGRES_SERVICE_ID"]
+          assert service_id, "PostgreSQL service identity is required"
+          inspected = json.loads(subprocess.check_output(["docker", "inspect", service_id], text=True))
+          assert len(inspected) == 1 and inspected[0]["Id"] == service_id
+          assert inspected[0]["State"]["Running"] is True
+          networks = inspected[0]["NetworkSettings"]["Networks"]
+          assert len(networks) == 1, "Ambiguous PostgreSQL service network"
+          address = str(ip_address(next(iter(networks.values()))["IPAddress"]))
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.write(f"WOLF15_POSTGRES_TEST_SERVER_ADDRESS={address}\n")
+          print(json.dumps({"service_id": service_id, "server_address": address}))
+          PYEOF
 
       - name: Apply database migrations
         run: python -m alembic upgrade head
@@ -139,17 +164,80 @@ jobs:
           asyncio.run(main())
           PYEOF
 
+      - name: Qualify disposable Linux PostgreSQL and Redis runner
+        run: python scripts/ci/qualify_disposable_runner.py
+
+      - name: Require supported PostgreSQL upgrade with existing data
+        run: python scripts/ci/run_supported_upgrade_acceptance.py
+
+      - name: Require executed S03 PostgreSQL acceptance
+        run: python scripts/ci/run_pair_activity_runtime_acceptance.py
+
+      - name: Require separate S03 producer and relay PostgreSQL acceptance
+        run: python scripts/ci/run_activity_delivery_producer_acceptance.py
+
+      - name: Require separate S03 consumer and owner PostgreSQL acceptance
+        run: python scripts/ci/run_activity_delivery_consumer_acceptance.py
+
+      - name: Require disposable consumer application-role PostgreSQL acceptance
+        run: python scripts/ci/run_activity_consumer_role_acceptance.py
+
+      - name: Require separate candidate capacity and TEST_ONLY transaction PostgreSQL acceptance
+        run: python scripts/ci/run_strategy_persistence_acceptance.py
+
+      - name: Upload S03 source-bound PostgreSQL receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pair-activity-runtime-acceptance
+          path: artifacts/pair-activity-runtime/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Run pytest with coverage
         run: |
           pytest tests/ \
             --ignore=tests/test_native_mt5_readonly_mcp.py \
-            -v --tb=short \
+            -v --tb=short -m "not benchmark" \
             --timeout=60 \
             --cov=analysis --cov=constitution --cov=execution \
             --cov=dashboard --cov=journal --cov=risk \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
-            -x
+            --junitxml=artifacts/python-suite/tests.xml
+          python scripts/ci/validate_suite_junit.py artifacts/python-suite/tests.xml
+
+      - name: Require uninstrumented latency budgets
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pytest tests/test_ws_connection_stress.py tests/test_load_tick_stress.py -m benchmark \
+            -o addopts= -q --timeout=60 \
+            --junitxml=artifacts/python-suite/benchmark.xml
+          python - <<'PYEOF'
+          from xml.etree import ElementTree as ET
+          root = ET.parse('artifacts/python-suite/benchmark.xml')
+          cases = root.findall('.//testcase')
+          assert {case.get('name') for case in cases} == {
+              'test_broadcast_50_clients_under_100ms',
+              'test_broadcast_1000_messages_to_10_clients',
+              'test_process_10k_ticks_within_time_bound',
+              'test_throughput_meets_minimum',
+              'test_multi_symbol_throughput',
+              'test_processing_latency_per_cycle',
+          }
+          assert len(cases) == 6
+          assert all(not list(case.iter('skipped')) and not list(case.iter('failure'))
+                     and not list(case.iter('error')) for case in cases)
+          PYEOF
+
+      - name: Upload complete Python test outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-suite-junit
+          path: artifacts/python-suite/*.xml
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload coverage report
         if: always()
@@ -179,6 +267,16 @@ jobs:
           cache: "npm"
           cache-dependency-path: dashboard/nextjs/package.json
 
+      - name: Set up disposable owner-login Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install owner-login contract dependencies
+        run: |
+          python -m pip install -r ../../requirements.txt
+          python -c 'import os, sys; print("OWNER_LOGIN_TEST_PYTHON=" + sys.executable)' >> "$GITHUB_ENV"
+
       - name: Install
         run: |
           npm set fetch-retries 5
@@ -191,6 +289,11 @@ jobs:
         run: npm test
 
       - name: Build
+        env:
+          # Build-only fixture origins; no deployed service or credentials.
+          INTERNAL_API_URL: https://core.ci.invalid
+          DASHBOARD_CANONICAL_ORIGIN: https://dashboard.ci.invalid
+          DASHBOARD_MODE: viewer
         run: npm run build
 
   # MCP2 and the API intentionally use separate dependency environments.
@@ -210,7 +313,7 @@ jobs:
       - name: Install isolated MCP test dependencies
         # Never install/import the native MetaTrader5 terminal package in this job.
         # Its tests supply FakeMT5; mcp2 needs newer Pydantic than API requirements.
-        run: pip install mcp==2.0.0 psutil==7.2.2 pytest==8.4.2 pytest-asyncio pytest-timeout
+        run: pip install mcp==2.0.0 psutil==7.2.2 pytest==9.0.3 pytest-asyncio==1.3.0 pytest-timeout
 
       - name: Run native MCP fixture suite
         run: python -m pytest tests/test_native_mt5_readonly_mcp.py -v --tb=short --timeout=60
@@ -256,7 +359,7 @@ jobs:
           )
           VIOLATIONS=""
           for PATTERN in "${DEPRECATED_PATTERNS[@]}"; do
-            HITS=$(grep -rn --include="*.py" \
+            HITS=$(grep -rnF --include="*.py" \
               --exclude-dir=tests \
               --exclude-dir=__pycache__ \
               --exclude-dir=.venv \
@@ -348,10 +451,42 @@ jobs:
   # -------------------------------------------------------------------
   # CI Gate — required status check for branch protection
   # -------------------------------------------------------------------
+  built-api:
+    name: Built API bootstrap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build exact-source API image
+        run: |
+          mkdir -p artifacts/built-api
+          test -z "$(git status --porcelain)"
+          docker build --iidfile artifacts/built-api/image-id.txt .
+
+      - name: Exercise built API bootstrap and served readiness
+        run: |
+          docker run --rm --network none \
+            -e WOLF15_TEST_APP_SHA256="$(sha256sum api/app_factory.py | cut -d ' ' -f 1)" \
+            -e WOLF15_TEST_REGISTRY_SHA256="$(sha256sum api/router_registry.py | cut -d ' ' -f 1)" \
+            -e WOLF15_TEST_ENTRYPOINT_SHA256="$(sha256sum api_server.py | cut -d ' ' -f 1)" \
+            -e WOLF15_TEST_SUPERVISOR_SHA256="$(sha256sum startup/required_tasks.py | cut -d ' ' -f 1)" \
+            "$(cat artifacts/built-api/image-id.txt)" \
+            python scripts/ci/built_api_acceptance.py > artifacts/built-api/receipt.json
+
+      - name: Upload built API evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-api-bootstrap
+          path: artifacts/built-api/
+          if-no-files-found: error
+          retention-days: 14
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard]
+    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, built-api]
     if: always()
     steps:
       - name: Evaluate all upstream jobs
@@ -362,6 +497,7 @@ jobs:
           echo "native-mcp:  ${{ needs.native-mcp-tests.result }}"
           echo "shim-guard:  ${{ needs.shim-guard.result }}"
           echo "drift-guard: ${{ needs.drift-guard.result }}"
+          echo "built-api:   ${{ needs.built-api.result }}"
 
           FAILED=0
           for JOB in \
@@ -370,7 +506,8 @@ jobs:
             "${{ needs.dashboard.result }}" \
             "${{ needs.native-mcp-tests.result }}" \
             "${{ needs.shim-guard.result }}" \
-            "${{ needs.drift-guard.result }}"; do
+            "${{ needs.drift-guard.result }}" \
+            "${{ needs.built-api.result }}"; do
             if [[ "$JOB" != "success" ]]; then
               FAILED=1
             fi

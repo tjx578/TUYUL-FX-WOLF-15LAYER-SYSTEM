@@ -8,6 +8,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
+import asyncpg
 import pytest
 
 from contracts.strategy_5scr_execution_box_v1 import (
@@ -1184,11 +1185,15 @@ async def test_durable_lifecycle_symbol_drift_rejects_box_authority(
     lifecycle_id, thesis, evidence = await _seed(postgres)
     repository = Strategy5SCRExecutionBoxV1Repository(cast(Any, postgres))
     try:
-        await postgres.execute(
-            "UPDATE strategy_5scr_analysis_lifecycles_v2 SET symbol='GBPUSD' WHERE strategy_lifecycle_id=$1",
-            lifecycle_id,
-        )
-        rejected = await repository.process_evidence(evidence)
+        # Migration 20260909_03 rejects persisted symbol drift before a reader
+        # can observe it. Preserve that protection and also exercise the reader's
+        # rejection of evidence claiming a different symbol for this lifecycle.
+        with pytest.raises(asyncpg.RaiseError, match="LIFECYCLE_SYMBOL_IMMUTABLE"):
+            await postgres.execute(
+                "UPDATE strategy_5scr_analysis_lifecycles_v2 SET symbol='GBPUSD' WHERE strategy_lifecycle_id=$1",
+                lifecycle_id,
+            )
+        rejected = await repository.process_evidence(evidence.model_copy(update={"symbol": "GBPUSD"}))
         assert (rejected.status, rejected.reason_code) == (
             "REJECTED",
             "CANONICAL_LIFECYCLE_SCOPE_MISMATCH",
@@ -1200,10 +1205,6 @@ async def test_durable_lifecycle_symbol_drift_rejects_box_authority(
         )
         assert count is not None and int(count["count"]) == 0
     finally:
-        await postgres.execute(
-            "UPDATE strategy_5scr_analysis_lifecycles_v2 SET symbol='EURUSD' WHERE strategy_lifecycle_id=$1",
-            lifecycle_id,
-        )
         await _cleanup(postgres, lifecycle_id)
 
 

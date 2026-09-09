@@ -356,3 +356,105 @@ def test_all_five_reads_emit_the_same_versioned_hmac_and_terminal_identity(tmp_p
     assert {report["account_binding"]["server"] for report in reports} == {"Broker-Demo"}
     assert {report["terminal"]["path_sha256"] for report in reports} == {reports[0]["terminal"]["path_sha256"]}
     assert {tuple(report["terminal"]["version"]) for report in reports} == {tuple(reports[0]["terminal"]["version"])}
+
+
+def _snapshot_harness(monkeypatch, tmp_path, *, configured=None, listed=None):
+    from ops.mt5_mcp import snapshot
+
+    configured = sorted(EXPECTED_TOOLS) if configured is None else configured
+    listed = sorted(EXPECTED_TOOLS) if listed is None else listed
+    config = tmp_path / "fixture.toml"
+    config.write_text(
+        '[mcp_servers.native_mt5_readonly]\ncommand = "fixture-not-executed"\nargs = []\nenabled_tools = '
+        + json.dumps(configured)
+        + '\n[mcp_servers.native_mt5_readonly.env]\nAUDIT_DATABASE_URL = "fixture-dsn-upper"\naudit_database_url = "fixture-dsn-lower"\nWOLF15_ACCOUNT_BINDING_KEY_B64URL = "config-key-not-authoritative"\n',
+        encoding="utf-8",
+    )
+    state = {"launches": 0, "calls": [], "env": None}
+
+    def stdio(parameters):
+        state["launches"] += 1
+        state["env"] = parameters.env
+        return object()
+
+    class FakeClient:
+        def __init__(self, transport):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[SimpleNamespace(name=name) for name in listed])
+
+        async def call_tool(self, name, arguments):
+            state["calls"].append((name, arguments))
+            return SimpleNamespace(structured_content={"measurement_state": "MEASURED_EMPTY"}, content=[])
+
+    monkeypatch.setattr(snapshot, "stdio_client", stdio)
+    monkeypatch.setattr(snapshot, "Client", FakeClient)
+
+    def run():
+        return asyncio.run(snapshot.collect(config, from_utc=NOW.isoformat(), to_utc=NOW.isoformat()))
+
+    return run, state
+
+
+def test_collector_rejects_config_surface_before_launch(monkeypatch, tmp_path):
+    run, state = _snapshot_harness(monkeypatch, tmp_path, configured=["unexpected"])
+    result = run()
+    assert result["error_type"] == "CONFIGURED_TOOL_SURFACE_MISMATCH"
+    assert result["tool_surface_exact"] is False
+    assert result["snapshots"] == {}
+    assert state["launches"] == 0
+
+
+def test_collector_rejects_listed_surface_before_tool_reads(monkeypatch, tmp_path):
+    run, state = _snapshot_harness(monkeypatch, tmp_path, listed=sorted(EXPECTED_TOOLS) + ["order_send"])
+    result = run()
+    assert result["error_type"] == "LISTED_TOOL_SURFACE_MISMATCH"
+    assert result["tool_surface_exact"] is False
+    assert state["calls"] == []
+
+
+def test_collector_strips_audit_dsn_and_records_nonsecret_provenance(monkeypatch, tmp_path):
+    monkeypatch.setenv(account_binding.KEY_ENV, "session-key-fixture")
+    monkeypatch.setenv(account_binding.KEY_ID_ENV, "session-id-fixture")
+    run, state = _snapshot_harness(monkeypatch, tmp_path)
+    result = run()
+    assert result["tool_surface_exact"] is True
+    assert {name for name, _ in state["calls"]} == EXPECTED_TOOLS
+    assert all(name.upper() != "AUDIT_DATABASE_URL" for name in state["env"])
+    assert state["env"][account_binding.KEY_ENV] == "session-key-fixture"
+    provenance = result["collector_provenance"]
+    assert provenance["configured_server_identity"] == "UNVERIFIED"
+    assert provenance["environment_values_bound"] is False
+    assert set(provenance["helper_source_files"]) == {"snapshot.py", "server.py", "account_binding.py"}
+    encoded = json.dumps(result)
+    for secret in ["fixture-dsn-upper", "fixture-dsn-lower", "config-key-not-authoritative", "session-key-fixture"]:
+        assert secret not in encoded
+
+
+def test_collector_rejects_helper_source_change(monkeypatch, tmp_path):
+    import pytest
+
+    from ops.mt5_mcp import snapshot
+
+    run, _ = _snapshot_harness(monkeypatch, tmp_path)
+    original = snapshot._helper_provenance
+    calls = 0
+
+    def changed(entry):
+        nonlocal calls
+        calls += 1
+        value = original(entry)
+        if calls > 1:
+            value["helper_source_files"]["snapshot.py"] = "sha256:" + "0" * 64
+        return value
+
+    monkeypatch.setattr(snapshot, "_helper_provenance", changed)
+    with pytest.raises(ValueError, match="HELPER_SOURCE_CHANGED"):
+        run()

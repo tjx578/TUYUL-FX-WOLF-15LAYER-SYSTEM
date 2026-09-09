@@ -17,8 +17,10 @@ from analysis.strategy_5scr_raw_admission_blocks import (
 )
 from contracts.strategy_5scr_pair_activity import (
     PAIR_ACTIVITY_RULE_VERSION,
+    LogicalRawActivityObservationV1,
     PairActivityAuditV31,
     PairActivityEvaluationV31,
+    PairActivityObservationNormalizationV1,
     PairActivityPolicyV31,
     RawActivityCoverageV31,
     RawActivityObservationV31,
@@ -32,8 +34,34 @@ def _value(event: Any, key: str, default: Any = None) -> Any:
     return event.get(key, default) if isinstance(event, dict) else getattr(event, key, default)
 
 
-def _normalize(raw_events: Iterable[Any]) -> tuple[tuple[RawActivityObservationV31, ...], int, int]:
+def pair_activity_raw_event_id(event: Any) -> str:
+    """Version new source-bound facts; retain exact historical IDs when unbound."""
+    source_id = _value(event, "source_observation_id")
+    schema = _value(event, "source_observation_schema")
+    legacy_id = raw_signal_throttle_event_id(event)
+    if source_id is None and schema is None:
+        return legacy_id
+    if (
+        not isinstance(source_id, str)
+        or not source_id.strip()
+        or len(source_id) > 200
+        or schema != "signal-throttle-observation.v1"
+    ):
+        raise ValueError("source observation identity requires a supported schema and nonempty identifier")
+    return activity_hash(["5scr.raw-observation-fact.v1", legacy_id, schema, source_id])
+
+
+def normalize_pair_activity_observations(raw_events: Iterable[Any]) -> PairActivityObservationNormalizationV1:
+    """Deduplicate delivery and explicit source twins while retaining all raw facts.
+
+    Timestamp and scanner cycle never imply shared observation identity. Source
+    identifiers must survive delivery/restart; this function never fabricates one.
+    Logical observations are not Microboost pulses or execution authority.
+    """
     observations: dict[str, RawActivityObservationV31] = {}
+    bindings: dict[str, tuple[str | None, str | None]] = {}
+    groups: dict[str, list[RawActivityObservationV31]] = {}
+    group_bindings: dict[str, tuple[str | None, str | None]] = {}
     duplicates = skipped = 0
     for event in raw_events:
         if not is_raw_signal_throttle_authority(event):
@@ -45,22 +73,71 @@ def _normalize(raw_events: Iterable[Any]) -> tuple[tuple[RawActivityObservationV
                 raise ValueError("invalid raw-authority event cannot be silently dropped")
             skipped += 1
             continue
-        payload = {
-            "raw_event_id": raw_signal_throttle_event_id(event),
-            "symbol": str(_value(event, "symbol") or "").strip().upper(),
-            "deployment_id": _value(event, "deployment_id"),
-            "scanner_cycle_id": _value(event, "scanner_cycle_id"),
-            "occurred_at_utc": _value(event, "timestamp"),
-            "direction_quality": raw_signal_throttle_direction(event) or "UNKNOWN",
-        }
-        normalized = RawActivityObservationV31.model_validate(payload)
+        source_id = _value(event, "source_observation_id")
+        schema = _value(event, "source_observation_schema")
+        normalized = RawActivityObservationV31.model_validate(
+            {
+                "raw_event_id": pair_activity_raw_event_id(event),
+                "symbol": str(_value(event, "symbol") or "").strip().upper(),
+                "deployment_id": _value(event, "deployment_id"),
+                "scanner_cycle_id": _value(event, "scanner_cycle_id"),
+                "occurred_at_utc": _value(event, "timestamp"),
+                "direction_quality": raw_signal_throttle_direction(event) or "UNKNOWN",
+            }
+        )
+        binding = (source_id, schema)
         if normalized.raw_event_id in observations:
-            if observations[normalized.raw_event_id] != normalized:
-                raise ValueError("conflicting raw-event identity")
+            if observations[normalized.raw_event_id] != normalized or bindings[normalized.raw_event_id] != binding:
+                raise ValueError("conflicting raw-event identity or source observation binding")
             duplicates += 1
+            continue
         observations[normalized.raw_event_id] = normalized
+        bindings[normalized.raw_event_id] = binding
+        observation_id = activity_hash(
+            [schema, normalized.deployment_id, source_id]
+            if source_id is not None
+            else ["raw-event-identity.v1", normalized.raw_event_id]
+        )
+        groups.setdefault(observation_id, []).append(normalized)
+        group_bindings[observation_id] = binding
     ordered = tuple(sorted(observations.values(), key=lambda event: (event.occurred_at_utc, event.raw_event_id)))
-    return ordered, duplicates, skipped
+    logical = []
+    for observation_id, members in groups.items():
+        source_id, schema = group_bindings[observation_id]
+        quality = direction_quality(tuple(members))
+        if quality == "CONFLICT":
+            raise ValueError("source observation identity conflicts with direction quality")
+        logical.append(
+            LogicalRawActivityObservationV1(
+                observation_id=observation_id,
+                identity_basis="SOURCE_OBSERVATION_ID" if source_id is not None else "RAW_EVENT_ID",
+                source_observation_id=source_id,
+                source_observation_schema=schema,
+                symbol=members[0].symbol,
+                deployment_id=members[0].deployment_id,
+                occurred_at_utc=members[0].occurred_at_utc,
+                source_raw_event_ids=tuple(sorted(item.raw_event_id for item in members)),
+                direction_quality=quality,
+            )
+        )
+    return PairActivityObservationNormalizationV1(
+        raw_observations=ordered,
+        logical_observations=tuple(sorted(logical, key=lambda item: (item.occurred_at_utc, item.observation_id))),
+        raw_event_count=len(ordered),
+        logical_observation_count=len(logical),
+        duplicate_delivery_count=duplicates,
+        skipped_non_authority_event_count=skipped,
+        raw_population_hash=observation_hash(ordered),
+    )
+
+
+def _normalize(raw_events: Iterable[Any]) -> tuple[tuple[RawActivityObservationV31, ...], int, int]:
+    normalized = normalize_pair_activity_observations(raw_events)
+    return (
+        normalized.raw_observations,
+        normalized.duplicate_delivery_count,
+        normalized.skipped_non_authority_event_count,
+    )
 
 
 def pair_activity_ledger_hash(raw_events: Iterable[Any]) -> str:
@@ -205,8 +282,9 @@ def build_pair_activity_audit(
 
     Replaying persisted evaluation JSON alongside retained raw ledger preserves
     admission IDs. A changed pre-admission lineage requires reconciliation.
-    Counts are raw facts, not logical pulse counts; twin-fact normalization is
-    intentionally not inferred from scanner IDs or derived telemetry.
+    Receipt counts remain raw facts. The shared normalizer validates explicit
+    logical observation identities without altering legacy receipt hashes;
+    scanner IDs and derived telemetry never imply a shared observation.
     """
     if decision_at_utc.tzinfo is None or decision_at_utc.utcoffset() is None:
         raise ValueError("decision time requires an explicit UTC offset")

@@ -1,0 +1,433 @@
+commit a3c3639146d3deb52ec35187406d51653644a33c
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 16:56:29 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 16:56:29 2026 +0800
+
+    feat(strategy): derive explicit test reference pattern receipts
+
+diff --git a/analysis/strategy_5scr_reference_pattern_v31.py b/analysis/strategy_5scr_reference_pattern_v31.py
+new file mode 100644
+index 00000000..7b5d2ee9
+--- /dev/null
++++ b/analysis/strategy_5scr_reference_pattern_v31.py
+@@ -0,0 +1,143 @@
++"""Explicit TEST_ONLY reference-pattern derivation from the repo V1 predicates.
++
++This evaluates one supplied H1 pair and M15 triple. Selecting the latest witness,
++feed/session completeness, active policy and later invalidation remain external.
++"""
++
++from typing import Literal
++
++from contracts.strategy_5scr_candidate_handoff_v31 import CandidateHandoffV31
++from contracts.strategy_5scr_context_route_v31 import Label, content_hash
++from contracts.strategy_5scr_directional_thesis_v1 import classify_m15_completion
++from contracts.strategy_5scr_net_geometry_v31 import GeometryContract
++from contracts.strategy_5scr_ordered_proof_v31 import OrderedProofEvidenceV31
++
++
++class ReferencePatternPolicyV31(GeometryContract):
++    profile: Literal["TEST_ONLY"]
++    rule_id: Literal["ADJACENT_H1_PAIR_M15_TRIPLE_TEST_V1"]
++    source_rule: Literal["5scr.directional-thesis.v1"]
++    selected_route: Label
++
++
++def reference_pattern_policy_hash(policy):
++    policy = ReferencePatternPolicyV31.model_validate(policy.model_dump())
++    return content_hash(policy.model_dump(mode="json"))
++
++
++def derive_reference_pattern_v31(proof, *, policy):
++    proof = OrderedProofEvidenceV31.model_validate(proof.model_dump())
++    policy = ReferencePatternPolicyV31.model_validate(policy.model_dump())
++    if (
++        proof.pattern_policy_hash != reference_pattern_policy_hash(policy)
++        or proof.selected_route != policy.selected_route
++    ):
++        raise ValueError("REFERENCE_PATTERN_POLICY_MISMATCH")
++    if len(proof.h1_source_candles) != 2 or len(proof.m15_source_candles) != 3:
++        raise ValueError("REFERENCE_PATTERN_WITNESS_COUNT_INVALID")
++    anchor, confirmation = proof.h1_source_candles
++    reference, breaking, completion = proof.m15_source_candles
++    if (
++        anchor.close_time_utc != confirmation.open_time_utc
++        or reference.close_time_utc != breaking.open_time_utc
++        or breaking.close_time_utc != completion.open_time_utc
++    ):
++        raise ValueError("REFERENCE_PATTERN_WITNESS_GAP")
++    if breaking.open_time_utc < proof.h1_closed_at:
++        raise ValueError("REFERENCE_PATTERN_BREAK_PRECEDES_H1")
++    if (proof.m15_break_candle_id, proof.m15_completion_candle_id) != (
++        breaking.candle_evidence_id,
++        completion.candle_evidence_id,
++    ):
++        raise ValueError("REFERENCE_PATTERN_WITNESS_REFERENCE_MISMATCH")
++    h1_level = anchor.high if proof.direction == "BUY" else anchor.low
++    m15_level = reference.high if proof.direction == "BUY" else reference.low
++    if not (confirmation.close > h1_level if proof.direction == "BUY" else confirmation.close < h1_level):
++        raise ValueError("REFERENCE_PATTERN_H1_BREAK_MISSING")
++    if not (breaking.close > m15_level if proof.direction == "BUY" else breaking.close < m15_level):
++        raise ValueError("REFERENCE_PATTERN_M15_BREAK_MISSING")
++    kind = classify_m15_completion(proof.direction, completion, m15_level)
++    if kind is None:
++        raise ValueError("REFERENCE_PATTERN_COMPLETION_MISSING")
++    scope = {
++        key: value
++        for key, value in proof.model_dump(mode="json").items()
++        if key
++        in (
++            "profile",
++            "strategy_thesis_id",
++            "strategy_lifecycle_id",
++            "context_epoch_id",
++            "symbol",
++            "direction",
++            "selected_route",
++            "context_material_hash",
++            "pattern_policy_hash",
++            "level_version",
++            "evaluated_at",
++            "valid_until",
++        )
++    }
++    h1 = {
++        **scope,
++        "proof_id": str(proof.h1_proof_id),
++        "closed_at": proof.h1_closed_at.isoformat(),
++        "source_ids": [c.candle_evidence_id for c in proof.h1_source_candles],
++        "reference_level": h1_level,
++        "confirmation_close": confirmation.close,
++        "resolution": "REFERENCE_CLOSE_BREAK_TEST_ONLY",
++    }
++    m15 = {
++        **scope,
++        "proof_id": str(proof.m15_proof_id),
++        "h1_resolution_hash": content_hash(h1),
++        "closed_at": proof.m15_closed_at.isoformat(),
++        "source_ids": [c.candle_evidence_id for c in proof.m15_source_candles],
++        "reference_level": m15_level,
++        "break_close": breaking.close,
++        "completion_close": completion.close,
++        "completion_kind": kind,
++    }
++    return h1, m15
++
++
++def build_reference_pattern_receipts_v31(proof, *, policy):
++    """Derive resolution claims; do not select a policy or grant authority."""
++    proof = OrderedProofEvidenceV31.model_validate(proof.model_dump())
++    h1, m15 = derive_reference_pattern_v31(proof, policy=policy)
++    return OrderedProofEvidenceV31.model_validate(
++        {
++            **proof.model_dump(),
++            "m15_completion_kind": m15["completion_kind"],
++            "h1_resolution_receipt_hash": content_hash(h1),
++            "m15_resolution_receipt_hash": content_hash(m15),
++        }
++    )
++
++
++class ReferencePatternHandoffVerifierV31:
++    """Compose actual pattern checks with mandatory remaining-domain attestation.
++
++    Inject explicitly into the existing handoff verifier slot. This does not
++    register a runtime policy, source attestor or service endpoint.
++    """
++
++    def __init__(self, *, policy, attest_remaining):
++        self.policy = ReferencePatternPolicyV31.model_validate(policy.model_dump())
++        if not callable(attest_remaining):
++            raise ValueError("REFERENCE_PATTERN_ATTESTOR_REQUIRED")
++        self.attest_remaining = attest_remaining
++
++    def __call__(self, handoff, digest):
++        handoff = CandidateHandoffV31.model_validate(handoff.model_dump())
++        proof = handoff.thesis_structural_proof
++        h1, m15 = derive_reference_pattern_v31(proof, policy=self.policy)
++        if (proof.h1_resolution_receipt_hash, proof.m15_resolution_receipt_hash, proof.m15_completion_kind) != (
++            content_hash(h1),
++            content_hash(m15),
++            m15["completion_kind"],
++        ):
++            return False
++        before = content_hash(handoff.model_dump(mode="json"))
++        accepted = self.attest_remaining(handoff, digest) is True
++        return accepted and content_hash(handoff.model_dump(mode="json")) == before
+diff --git a/tests/test_strategy_5scr_candidate_handoff_v31.py b/tests/test_strategy_5scr_candidate_handoff_v31.py
+index cbba4adb..d0da59d9 100644
+--- a/tests/test_strategy_5scr_candidate_handoff_v31.py
++++ b/tests/test_strategy_5scr_candidate_handoff_v31.py
+@@ -6,6 +6,7 @@ from uuid import UUID
+ import pytest
+ from pydantic import ValidationError
+ 
++from analysis.strategy_5scr_reference_pattern_v31 import ReferencePatternHandoffVerifierV31
+ from analysis.strategy_5scr_target_selection_v31 import solve_target_geometry_v31, target_universe_hash_v31
+ from contracts.strategy_5scr_candidate_handoff_v31 import CandidateHandoffV31, TradePlanCandidateV31
+ from contracts.strategy_5scr_context_route_v31 import (
+@@ -23,6 +24,7 @@ from tests.test_strategy_5scr_capacity_v31 import NOW, H, request_for, seed
+ from tests.test_strategy_5scr_context_route_v31 import receipt as context_fixture
+ from tests.test_strategy_5scr_net_geometry_v31 import request_data
+ from tests.test_strategy_5scr_ordered_proof_v31 import proof as proof_fixture
++from tests.test_strategy_5scr_ordered_proof_v31 import reference_policy
+ from tests.test_strategy_5scr_target_selection_v31 import fixture as target_fixture
+ 
+ 
+@@ -119,7 +121,9 @@ def propose(ledger, handoff, request, **overrides):
+         now=NOW,
+         owner_epoch=ledger.owner_epoch,
+         expected_version=ledger.version,
+-        verify_handoff=lambda _, digest: digest == handoff_hash,
++        verify_handoff=ReferencePatternHandoffVerifierV31(
++            policy=reference_policy(), attest_remaining=lambda _, digest: digest == handoff_hash
++        ),
+         verify_universe=lambda _, digest: digest == universe_hash,
+         verify_risk_inputs=lambda _, digest: digest == risk_hash,
+     )
+diff --git a/tests/test_strategy_5scr_latest_candidate_capacity_v31.py b/tests/test_strategy_5scr_latest_candidate_capacity_v31.py
+index 874f2afd..3ebd47b6 100644
+--- a/tests/test_strategy_5scr_latest_candidate_capacity_v31.py
++++ b/tests/test_strategy_5scr_latest_candidate_capacity_v31.py
+@@ -5,12 +5,14 @@ from uuid import UUID
+ import pytest
+ from pydantic import ValidationError
+ 
++from analysis.strategy_5scr_reference_pattern_v31 import ReferencePatternHandoffVerifierV31
+ from analysis.strategy_5scr_target_selection_v31 import target_universe_hash_v31
+ from contracts.strategy_5scr_candidate_revision_v31 import CandidateCapacityPreparationV31
+ from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31
+ from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31
+ from tests.test_strategy_5scr_candidate_handoff_v31 import bundle
+ from tests.test_strategy_5scr_candidate_revision_v31 import NOW, FakeDB, repository, revision
++from tests.test_strategy_5scr_ordered_proof_v31 import reference_policy
+ 
+ 
+ async def fixture(advisory=False):
+@@ -30,7 +32,9 @@ async def fixture(advisory=False):
+         "now": NOW,
+         "capacity_owner_epoch": ledger.owner_epoch,
+         "expected_capacity_version": ledger.version,
+-        "verify_handoff": lambda _, digest: digest == candidate_handoff_hash_v31(handoff),
++        "verify_handoff": ReferencePatternHandoffVerifierV31(
++            policy=reference_policy(), attest_remaining=lambda _, digest: digest == candidate_handoff_hash_v31(handoff)
++        ),
+         "verify_universe": lambda _, digest: digest == target_universe_hash_v31(handoff.target_universe),
+         "verify_risk_inputs": lambda _, digest: digest == parent_sizing_request_hash_v31(request),
+     }
+diff --git a/tests/test_strategy_5scr_ordered_proof_v31.py b/tests/test_strategy_5scr_ordered_proof_v31.py
+index 59db7b6a..000a1800 100644
+--- a/tests/test_strategy_5scr_ordered_proof_v31.py
++++ b/tests/test_strategy_5scr_ordered_proof_v31.py
+@@ -4,11 +4,25 @@ from uuid import UUID
+ import pytest
+ from pydantic import ValidationError
+ 
++from analysis.strategy_5scr_reference_pattern_v31 import (
++    ReferencePatternPolicyV31,
++    build_reference_pattern_receipts_v31,
++    reference_pattern_policy_hash,
++)
+ from contracts.strategy_5scr_ordered_proof_v31 import OrderedProofEvidenceV31, ordered_proof_hash_v31
+ from tests.test_strategy_5scr_context_route_v31 import NOW, H, receipt
+ from tests.test_strategy_5scr_directional_thesis_v1 import _candles, _rehash_candle
+ 
+ 
++def reference_policy():
++    return ReferencePatternPolicyV31(
++        profile="TEST_ONLY",
++        rule_id="ADJACENT_H1_PAIR_M15_TRIPLE_TEST_V1",
++        source_rule="5scr.directional-thesis.v1",
++        selected_route="FIXTURE_CONTINUATION",
++    )
++
++
+ def proof(context=None, thesis_id=None):
+     context = context or receipt()
+     thesis_id = thesis_id or UUID(int=2)
+@@ -29,7 +43,7 @@ def proof(context=None, thesis_id=None):
+         )
+ 
+     h1, m15 = shifted(h1), shifted(m15)
+-    return OrderedProofEvidenceV31(
++    value = OrderedProofEvidenceV31(
+         profile="TEST_ONLY",
+         strategy_thesis_id=thesis_id,
+         strategy_lifecycle_id=context.strategy_lifecycle_id,
+@@ -38,7 +52,7 @@ def proof(context=None, thesis_id=None):
+         direction=context.direction,
+         selected_route=context.selected_route,
+         context_material_hash=context.material_context_hash,
+-        pattern_policy_hash=H,
++        pattern_policy_hash=reference_pattern_policy_hash(reference_policy()),
+         level_version="fixture-level-v1",
+         h1_proof_id=UUID(int=70),
+         m15_proof_id=UUID(int=71),
+@@ -54,6 +68,7 @@ def proof(context=None, thesis_id=None):
+         evaluated_at=NOW,
+         valid_until=NOW + timedelta(hours=1),
+     )
++    return build_reference_pattern_receipts_v31(value, policy=reference_policy())
+ 
+ 
+ @pytest.mark.parametrize("direction", ["BUY", "SELL"])
+diff --git a/tests/test_strategy_5scr_reference_pattern_v31.py b/tests/test_strategy_5scr_reference_pattern_v31.py
+new file mode 100644
+index 00000000..71a1b91a
+--- /dev/null
++++ b/tests/test_strategy_5scr_reference_pattern_v31.py
+@@ -0,0 +1,140 @@
++from datetime import timedelta
++
++import pytest
++
++from analysis.strategy_5scr_reference_pattern_v31 import (
++    ReferencePatternHandoffVerifierV31,
++    build_reference_pattern_receipts_v31,
++    derive_reference_pattern_v31,
++)
++from contracts.strategy_5scr_context_route_v31 import content_hash
++from contracts.strategy_5scr_ordered_proof_v31 import OrderedProofEvidenceV31, ordered_proof_hash_v31
++from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31
++from tests.test_strategy_5scr_candidate_handoff_v31 import bundle, propose
++from tests.test_strategy_5scr_context_route_v31 import receipt
++from tests.test_strategy_5scr_directional_thesis_v1 import _rehash_candle
++from tests.test_strategy_5scr_ordered_proof_v31 import proof, reference_policy
++
++
++def rebind_candles(body):
++    for field in ("h1_source_candles", "m15_source_candles"):
++        body[field] = tuple(_rehash_candle(c) for c in body[field])
++    body["h1_closed_at"] = body["h1_source_candles"][-1].close_time_utc
++    body["m15_closed_at"] = body["m15_source_candles"][-1].close_time_utc
++    body["m15_break_candle_id"] = body["m15_source_candles"][-2].candle_evidence_id
++    body["m15_completion_candle_id"] = body["m15_source_candles"][-1].candle_evidence_id
++    return OrderedProofEvidenceV31.model_validate(body)
++
++
++@pytest.mark.parametrize("direction", ["BUY", "SELL"])
++@pytest.mark.parametrize("kind", ["ACCEPTANCE", "FAILED_RECLAIM", "RETEST"])
++def test_completion_kind_and_resolutions_derive_from_prices(direction, kind):
++    body = proof(receipt(direction)).model_dump()
++    reference = body["m15_source_candles"][0]
++    c = body["m15_source_candles"][-1]
++    level = reference["high"] if direction == "BUY" else reference["low"]
++    sign = 1 if direction == "BUY" else -1
++    c["close"] = level + sign * 0.0002
++    c["open"] = level + sign * (0.0001 if kind != "FAILED_RECLAIM" else -0.0001)
++    c["high"], c["low"] = max(c["open"], c["close"]) + 0.00005, min(c["open"], c["close"]) - 0.00005
++    if kind == "RETEST":
++        c["low" if direction == "BUY" else "high"] = level
++    built = build_reference_pattern_receipts_v31(rebind_candles(body), policy=reference_policy())
++    h1, m15 = derive_reference_pattern_v31(built, policy=reference_policy())
++    assert built.m15_completion_kind == kind
++    assert built.h1_resolution_receipt_hash == content_hash(h1)
++    assert built.m15_resolution_receipt_hash == content_hash(m15)
++
++
++@pytest.mark.parametrize(
++    "fault,reason",
++    [
++        ("h1", "H1_BREAK_MISSING"),
++        ("m15", "M15_BREAK_MISSING"),
++        ("completion", "COMPLETION_MISSING"),
++        ("gap", "WITNESS_GAP"),
++        ("early_break", "BREAK_PRECEDES_H1"),
++        ("count", "WITNESS_COUNT_INVALID"),
++        ("policy", "POLICY_MISMATCH"),
++    ],
++)
++def test_rehashed_but_invalid_pattern_still_rejected(fault, reason):
++    body = proof().model_dump()
++    if fault == "h1":
++        body["h1_source_candles"][-1]["close"] = body["h1_source_candles"][0]["high"]
++    elif fault == "m15":
++        body["m15_source_candles"][-2]["close"] = body["m15_source_candles"][0]["high"]
++    elif fault == "completion":
++        body["m15_source_candles"][-1]["close"] = body["m15_source_candles"][0]["high"]
++    elif fault == "gap":
++        for key in ("open_time_utc", "close_time_utc"):
++            body["h1_source_candles"][0][key] -= timedelta(minutes=1)
++    elif fault == "early_break":
++        for c in body["h1_source_candles"]:
++            for key in ("open_time_utc", "close_time_utc"):
++                c[key] += timedelta(minutes=15)
++    elif fault == "count":
++        body["h1_source_candles"] = body["h1_source_candles"][-1:]
++    elif fault == "policy":
++        body["pattern_policy_hash"] = "sha256:" + "8" * 64
++    with pytest.raises(ValueError, match=reason):
++        derive_reference_pattern_v31(rebind_candles(body), policy=reference_policy())
++
++
++@pytest.mark.parametrize("field", ["h1_resolution_receipt_hash", "m15_resolution_receipt_hash", "m15_completion_kind"])
++def test_claimed_resolution_tampering_stops_before_remaining_attestor(field):
++    _, handoff, _ = bundle()
++    structural = handoff.thesis_structural_proof.model_copy(
++        update={field: "ACCEPTANCE" if field == "m15_completion_kind" else "sha256:" + "8" * 64}
++    )
++    handoff = handoff.model_copy(
++        update={
++            "thesis_structural_proof": structural,
++            "thesis_structural_proof_hash": ordered_proof_hash_v31(structural),
++        }
++    )
++    calls = []
++    verifier = ReferencePatternHandoffVerifierV31(
++        policy=reference_policy(), attest_remaining=lambda *args: calls.append(args)
++    )
++    assert verifier(handoff, candidate_handoff_hash_v31(handoff)) is False
++    assert calls == []
++
++
++@pytest.mark.parametrize("answer", [False, 1, "yes"])
++def test_valid_reference_pattern_still_requires_literal_remaining_attestation(answer):
++    _, handoff, _ = bundle()
++    verifier = ReferencePatternHandoffVerifierV31(policy=reference_policy(), attest_remaining=lambda *_: answer)
++    assert verifier(handoff, candidate_handoff_hash_v31(handoff)) is False
++
++
++def test_missing_or_mutating_attestor_cannot_pass():
++    with pytest.raises(ValueError, match="ATTESTOR_REQUIRED"):
++        ReferencePatternHandoffVerifierV31(policy=reference_policy(), attest_remaining=None)
++    _, handoff, _ = bundle()
++    before = candidate_handoff_hash_v31(handoff)
++
++    def mutate(value, digest):
++        object.__setattr__(value.candidate, "evidence_hash", "sha256:" + "8" * 64)
++        return True
++
++    verifier = ReferencePatternHandoffVerifierV31(policy=reference_policy(), attest_remaining=mutate)
++    assert verifier(handoff, before) is False
++    assert candidate_handoff_hash_v31(handoff) == before
++
++
++def test_actual_risk_handoff_rejects_false_break_even_when_content_hashes_match():
++    ledger, handoff, request = bundle()
++    body = handoff.thesis_structural_proof.model_dump()
++    body["h1_source_candles"][-1]["close"] = body["h1_source_candles"][0]["high"]
++    structural = rebind_candles(body)
++    handoff = handoff.model_copy(
++        update={
++            "thesis_structural_proof": structural,
++            "thesis_structural_proof_hash": ordered_proof_hash_v31(structural),
++        }
++    )
++    request = request.model_copy(update={"strategy_candidate_receipt_hash": candidate_handoff_hash_v31(handoff)})
++    with pytest.raises(ValueError, match="H1_BREAK_MISSING"):
++        propose(ledger, handoff, request)
++    assert not ledger.reservations
+diff --git a/tests/test_strategy_5scr_transaction_a_v31.py b/tests/test_strategy_5scr_transaction_a_v31.py
+index 1cabae69..40470a79 100644
+--- a/tests/test_strategy_5scr_transaction_a_v31.py
++++ b/tests/test_strategy_5scr_transaction_a_v31.py
+@@ -87,7 +87,7 @@ async def fixture():
+         pg=db,
+         capacity_repository=capacity,
+         candidate_repository=candidates,
+-        verify_handoff=lambda *_: True,
++        verify_handoff=kwargs["verify_handoff"],
+         verify_universe=lambda *_: True,
+         verify_risk_inputs=lambda *_: True,
+     )

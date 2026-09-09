@@ -1,0 +1,54 @@
+{
+  "status": "OFFLINE_ONLY",
+  "database_connections": 0,
+  "source_before": {
+    "tests/integration/test_pair_activity_runtime_postgres.py": "9e37bb549d71520f8490d325d75141da21b6cc7d8ae5f8ea11b2f693436e34f0",
+    "tests/integration/postgres_test_guard.py": "cd047468f45ea06e57bae138831df2a0d63b50e8d98c71cfa1a63a04582b1129",
+    "storage/strategy_5scr_activity_schema.py": "86c2c5a6265ef335038d65f717d406808cb580532642a9cff20b3629cac13268",
+    "storage/migrations/versions/20260909_01_pair_activity_runtime.py": "05d515b9119a61ad9c7b3eb014603e405d7881466b59a7862c7db78a59e54a8a"
+  },
+  "source_after": {
+    "tests/integration/test_pair_activity_runtime_postgres.py": "9e37bb549d71520f8490d325d75141da21b6cc7d8ae5f8ea11b2f693436e34f0",
+    "tests/integration/postgres_test_guard.py": "cd047468f45ea06e57bae138831df2a0d63b50e8d98c71cfa1a63a04582b1129",
+    "storage/strategy_5scr_activity_schema.py": "86c2c5a6265ef335038d65f717d406808cb580532642a9cff20b3629cac13268",
+    "storage/migrations/versions/20260909_01_pair_activity_runtime.py": "05d515b9119a61ad9c7b3eb014603e405d7881466b59a7862c7db78a59e54a8a"
+  },
+  "results": {
+    "migration-heads": {
+      "command": [
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+        "-B",
+        "-m",
+        "alembic",
+        "heads"
+      ],
+      "exit_code": 0
+    },
+    "activity-migration-offline-sql": {
+      "command": [
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+        "-B",
+        "-m",
+        "alembic",
+        "upgrade",
+        "20260822_01:20260909_01",
+        "--sql"
+      ],
+      "exit_code": 0
+    },
+    "activity-postgres-collection": {
+      "command": [
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/integration/test_pair_activity_runtime_postgres.py",
+        "--collect-only",
+        "-q",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "exit_code": 0
+    }
+  }
+}

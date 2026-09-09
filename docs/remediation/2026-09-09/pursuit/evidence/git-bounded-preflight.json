@@ -1,0 +1,18 @@
+{
+  "command": [
+    "git",
+    "-c",
+    "core.packedGitWindowSize=1m",
+    "-c",
+    "core.packedGitLimit=32m",
+    "-c",
+    "core.deltaBaseCacheLimit=8m",
+    "diff",
+    "--binary",
+    "HEAD"
+  ],
+  "exit_code": 0,
+  "diff_bytes": 12843,
+  "diff_sha256": "0392d3d6d9b5e0d4da4d0d91daab8c876a938b02852589f071595a50503dfc3c",
+  "stderr": ""
+}

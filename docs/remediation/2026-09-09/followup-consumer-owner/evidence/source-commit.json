@@ -1,0 +1,34 @@
+{
+  "commit": "3d8df68057d6a0c2f9dc1b1969651f8f298aa713",
+  "files": {
+    ".github/workflows/ci.yml": "cc84cec1bdc8e231b1b9b64905e680171486d23dc745f83e135d146552490efe",
+    "api/app_factory.py": "3ec88c0cf90fde93ac80f86ce29e3bf67571df1b9da5a258c91d3ac4b1f59e96",
+    "scripts/ci/run_activity_delivery_consumer_acceptance.py": "a5e66e75841212ab4dab39fa2880ddc9d32d5fb2e2e2c84897dc65cdb09cf94b",
+    "scripts/ci/run_pair_activity_runtime_acceptance.py": "25795b89b178dc959d2064b23b68c44a7676c0c20cfe49643902160e0e2fed23",
+    "services/pressure_outbox/activity_delivery_transport.py": "c04d36daaee6133faff9d14fa700ac9f313d61f45fc3c90bb068b1dee4535efd",
+    "storage/migrations/versions/20260909_03_activity_consumer.py": "9738eea0e7ed9dd2113d31902fd4cd98aaae9bd2edf724b6745c00197d1cf0c5",
+    "storage/strategy_5scr_activity_consumer.py": "8b2a0fbbd7c91ee9373b76d0d907822139c3c5b6ddff0b940b5c4f4dd30213a0",
+    "storage/strategy_5scr_lifecycle_v2_repository.py": "2982f98c9c62de84a934e35bc4fb509cb76711a7f7c736b1590d123e115cb2b6",
+    "storage/strategy_5scr_shadow_evidence_v2_repository.py": "c880de74f973bd9266fa8daee728aa6d157157e08e8e71284a12ec12742b0e96",
+    "tests/integration/test_activity_delivery_consumer_postgres.py": "86632c3677d80d2a71ac4dfe975939c2379523fd525b008828768d3149ce2140",
+    "tests/test_activity_delivery_consumer.py": "e390e4ce07e70187fac171fc26c3df495c5113102e5a6031e6f86af8dae9ee75",
+    "tests/test_pair_activity_ci_receipt.py": "f1ea3a7b87fa1479013f54e77e02d74af9d009f9e5b0def0dd0a24bdeccd6c39"
+  },
+  "tested_working_bytes_unchanged": true,
+  "git_line_ending_only_differences": [
+    "analysis/signal_throttle_log_analyzer.py",
+    "analysis/strategy_5scr_pair_activity.py",
+    "analysis/strategy_5scr_pair_activity_report.py",
+    "api/owner_dashboard_release.py",
+    "contracts/strategy_5scr_pair_activity.py",
+    "deploy/railway/migration_runner.py",
+    "pipeline/wolf_constitutional_pipeline.py",
+    "requirements.txt",
+    "storage/strategy_5scr_lifecycle_v2_repository.py",
+    "storage/strategy_5scr_shadow_evidence_v2_repository.py",
+    "tests/test_pair_activity_report_integration.py",
+    "tests/test_signal_throttle_log_analyzer.py",
+    "tests/test_strategy_5scr_pair_activity.py"
+  ],
+  "prior_45_and_7_unchanged": true
+}
