@@ -1,0 +1,101 @@
+{
+  "baseline_head": "57f27f236d2a68229a18a8ff45b36841f0d0285f",
+  "count": 19,
+  "broken_links": [
+    {
+      "file": "docs/architecture/contracts/operational-api-event-acceptance-spec.md",
+      "line": 47,
+      "target": "../schemas/take_signal_request_schema.json"
+    },
+    {
+      "file": "docs/architecture/contracts/operational-api-event-acceptance-spec.md",
+      "line": 210,
+      "target": "../schemas/operational_event_schema.json"
+    },
+    {
+      "file": "docs/architecture/guardrails/tick-spike-filter.md",
+      "line": 13,
+      "target": "ingest/dependencies.py"
+    },
+    {
+      "file": "docs/architecture/guardrails/tick-spike-filter.md",
+      "line": 109,
+      "target": "tests/test_tick_spike_filter.py"
+    },
+    {
+      "file": "docs/architecture/guardrails/tick-spike-filter.md",
+      "line": 141,
+      "target": "ingest/dependencies.py"
+    },
+    {
+      "file": "docs/architecture/guardrails/tick-spike-filter.md",
+      "line": 202,
+      "target": "ingest/dependencies.py"
+    },
+    {
+      "file": "docs/architecture/guardrails/tick-spike-filter.md",
+      "line": 203,
+      "target": "tests/test_tick_spike_filter.py"
+    },
+    {
+      "file": "docs/architecture/operations/go-live-checklist.md",
+      "line": 52,
+      "target": "deploy/railway/start_api.sh"
+    },
+    {
+      "file": "docs/architecture/operations/go-live-checklist.md",
+      "line": 92,
+      "target": "storage/postgres_client.py"
+    },
+    {
+      "file": "docs/architecture/operations/go-live-checklist.md",
+      "line": 93,
+      "target": "api_server.py"
+    },
+    {
+      "file": "docs/architecture/operations/go-live-checklist.md",
+      "line": 113,
+      "target": "api/middleware/rate_limit.py"
+    },
+    {
+      "file": "docs/architecture/operations/go-live-checklist.md",
+      "line": 126,
+      "target": "api/ws_routes.py"
+    },
+    {
+      "file": "docs/architecture/operations/go-live-checklist.md",
+      "line": 139,
+      "target": "api_server.py"
+    },
+    {
+      "file": "docs/architecture/operations/go-live-checklist.md",
+      "line": 166,
+      "target": "api_server.py"
+    },
+    {
+      "file": "docs/architecture/operations/observability-async-workers.md",
+      "line": 5,
+      "target": "../docker-compose.yml"
+    },
+    {
+      "file": "docs/architecture/operations/observability-async-workers.md",
+      "line": 6,
+      "target": "../allocation/async_worker.py"
+    },
+    {
+      "file": "docs/architecture/operations/observability-async-workers.md",
+      "line": 7,
+      "target": "../execution/async_worker.py"
+    },
+    {
+      "file": "docs/architecture/operations/observability-async-workers.md",
+      "line": 8,
+      "target": "../monitoring/prometheus.yml"
+    },
+    {
+      "file": "docs/architecture/operations/observability-async-workers.md",
+      "line": 9,
+      "target": "../monitoring/grafana"
+    }
+  ]
+}

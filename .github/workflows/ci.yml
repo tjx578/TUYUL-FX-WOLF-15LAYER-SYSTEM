@@ -18,7 +18,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.11"
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
 
 jobs:
   ruff:
@@ -76,6 +76,11 @@ jobs:
     env:
       PYTHONPATH: .
       REDIS_URL: redis://localhost:6379/0
+      WOLF15_RUN_MODE_OWNER_REDIS: "1"
+      WOLF15_MODE_OWNER_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      WOLF15_C06_TEST_REDIS_URL: redis://127.0.0.1:6379/14
+      WOLF15_C06_DISPOSABLE_REDIS: YES_I_UNDERSTAND
+      WOLF15_C06_OUTPUT: artifacts/c06-effective-api
       DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
       WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
       WOLF15_RUN_POSTGRES_INTEGRATION: "1"
@@ -170,6 +175,32 @@ jobs:
       - name: Require supported PostgreSQL upgrade with existing data
         run: python scripts/ci/run_supported_upgrade_acceptance.py
 
+      - name: Require distributed mode-owner Redis acceptance
+        run: |
+          python -m pytest tests/integration/test_orchestrator_mode_owner_redis.py \
+            -o addopts= -q --timeout=60 \
+            --junitxml=artifacts/python-suite/mode-owner.xml
+          python scripts/ci/validate_suite_junit.py artifacts/python-suite/mode-owner.xml
+
+      - name: Require actual in-flight PostgreSQL shutdown drain
+        run: |
+          python -m pytest tests/integration/test_runtime_drain_postgres.py \
+            --noconftest -o addopts= -q --timeout=60 \
+            --junitxml=artifacts/python-suite/runtime-drain.xml
+          python scripts/ci/validate_suite_junit.py artifacts/python-suite/runtime-drain.xml
+
+      - name: Require effective Railway API role acceptance
+        run: python scripts/ci/effective_api_role_acceptance.py
+
+      - name: Upload effective Railway API role evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c06-effective-api
+          path: artifacts/c06-effective-api/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Require executed S03 PostgreSQL acceptance
         run: python scripts/ci/run_pair_activity_runtime_acceptance.py
 
@@ -244,7 +275,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage.xml
+          path: |
+            coverage.xml
+            artifacts/python-suite/tests.xml
           retention-days: 14
 
   dashboard:
@@ -254,8 +287,10 @@ jobs:
       run:
         working-directory: dashboard/nextjs
     env:
-      INTERNAL_API_URL: http://localhost:8000
-      NEXT_PUBLIC_WS_BASE_URL: ws://localhost:8000
+      # Build fixtures only: no production endpoints or machine credentials.
+      DASHBOARD_MODE: viewer
+      DASHBOARD_CANONICAL_ORIGIN: https://dashboard.example.invalid
+      INTERNAL_API_URL: https://api.example.invalid
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -265,7 +300,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
-          cache-dependency-path: dashboard/nextjs/package.json
+          cache-dependency-path: dashboard/nextjs/package-lock.json
 
       - name: Set up disposable owner-login Python
         uses: actions/setup-python@v5
@@ -280,7 +315,7 @@ jobs:
       - name: Install
         run: |
           npm set fetch-retries 5
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm ci
 
       - name: Lint
         run: npm run lint
@@ -289,12 +324,48 @@ jobs:
         run: npm test
 
       - name: Build
-        env:
-          # Build-only fixture origins; no deployed service or credentials.
-          INTERNAL_API_URL: https://core.ci.invalid
-          DASHBOARD_CANONICAL_ORIGIN: https://dashboard.ci.invalid
-          DASHBOARD_MODE: viewer
-        run: npm run build
+        run: npm run build:strict
+
+  runtime-acceptance:
+    name: P1 built runtime acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Build candidate runtime image
+        id: runtime-image
+        run: docker build --label org.opencontainers.image.revision=$GITHUB_SHA -t wolf15-p1-runtime:$GITHUB_SHA .
+      - name: Require built runtime ownership readiness and shutdown acceptance
+        run: python scripts/ci/p1_runtime_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/p1-runtime.json
+      - name: Require actual orchestrator role process acceptance
+        if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
+        run: python scripts/ci/orchestrator_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/orchestrator-process.json
+      - name: Require actual ingest role process acceptance
+        if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
+        run: python scripts/ci/ingest_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/ingest-process.json
+      - name: Require actual engine and trade role process acceptance
+        if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
+        run: python scripts/ci/engine_trade_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/engine-trade-process.json
+      - name: Require actual pressure outbox role process acceptance
+        if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
+        run: python scripts/ci/pressure_outbox_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/pressure-outbox-process.json
+      - name: Upload built runtime receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-runtime-acceptance
+          path: |
+            artifacts/p1-runtime.json
+            artifacts/orchestrator-process.json
+            artifacts/ingest-process.json
+            artifacts/engine-trade-process.json
+            artifacts/pressure-outbox-process.json
+          if-no-files-found: error
 
   # MCP2 and the API intentionally use separate dependency environments.
   # This file is moved out of the API suite above, not skipped as acceptance.
@@ -349,32 +420,37 @@ jobs:
           echo "No retired shims found."
 
       - name: "Block deprecated imports in production code"
+        shell: python
         run: |
-          echo "Scanning for deprecated dashboard imports..."
-          DEPRECATED_PATTERNS=(
-            "from dashboard.price_feed"
-            "from dashboard.trade_ledger"
-            "import dashboard.price_feed"
-            "import dashboard.trade_ledger"
-          )
-          VIOLATIONS=""
-          for PATTERN in "${DEPRECATED_PATTERNS[@]}"; do
-            HITS=$(grep -rnF --include="*.py" \
-              --exclude-dir=tests \
-              --exclude-dir=__pycache__ \
-              --exclude-dir=.venv \
-              "$PATTERN" . || true)
-            if [ -n "$HITS" ]; then
-              VIOLATIONS="${VIOLATIONS}${HITS}\n"
-            fi
-          done
-          if [ -n "$VIOLATIONS" ]; then
-            echo "::error::Deprecated dashboard imports detected:"
-            echo -e "$VIOLATIONS"
-            echo "Use storage.price_feed / storage.trade_ledger instead."
-            exit 1
-          fi
-          echo "No deprecated imports found."
+          import ast
+          import pathlib
+          import subprocess
+          import sys
+
+          retired = {"dashboard.price_feed", "dashboard.trade_ledger"}
+          failed = False
+          paths = subprocess.check_output(["git", "ls-files", "-z", "*.py"]).decode().split("\0")
+          for name in filter(None, paths):
+              path = pathlib.Path(name)
+              if any(part in {"tests", "__pycache__", ".venv", "node_modules"} for part in path.parts):
+                  continue
+              try:
+                  tree = ast.parse(path.read_bytes(), filename=name)
+              except SyntaxError:
+                  print(f"::error file={name}::Python syntax error prevents import inspection")
+                  failed = True
+                  continue
+              for node in ast.walk(tree):
+                  imports = []
+                  if isinstance(node, ast.Import):
+                      imports = [alias.name for alias in node.names]
+                  elif isinstance(node, ast.ImportFrom):
+                      module = node.module or ""
+                      imports = [module, *(f"{module}.{alias.name}" for alias in node.names)]
+                  if any(module == old or module.startswith(old + ".") for module in imports for old in retired):
+                      print(f"::error file={name},line={node.lineno}::Deprecated dashboard import; use storage instead")
+                      failed = True
+          sys.exit(1 if failed else 0)
 
   # -------------------------------------------------------------------
   # Architecture drift guard — constitutional boundary spot-checks
@@ -486,7 +562,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, built-api]
+    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, runtime-acceptance, built-api]
     if: always()
     steps:
       - name: Evaluate all upstream jobs
@@ -497,6 +573,7 @@ jobs:
           echo "native-mcp:  ${{ needs.native-mcp-tests.result }}"
           echo "shim-guard:  ${{ needs.shim-guard.result }}"
           echo "drift-guard: ${{ needs.drift-guard.result }}"
+          echo "runtime:     ${{ needs.runtime-acceptance.result }}"
           echo "built-api:   ${{ needs.built-api.result }}"
 
           FAILED=0
@@ -507,6 +584,7 @@ jobs:
             "${{ needs.native-mcp-tests.result }}" \
             "${{ needs.shim-guard.result }}" \
             "${{ needs.drift-guard.result }}" \
+            "${{ needs.runtime-acceptance.result }}" \
             "${{ needs.built-api.result }}"; do
             if [[ "$JOB" != "success" ]]; then
               FAILED=1

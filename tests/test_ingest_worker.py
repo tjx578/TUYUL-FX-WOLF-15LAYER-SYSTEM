@@ -8,7 +8,11 @@ async resource creation on the wrong thread.
 from __future__ import annotations
 
 import ast
+import asyncio
+import sys
 import textwrap
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -65,3 +69,51 @@ class TestIngestWorkerImportSafety:
             "Expected `import ingest_service` in _bootstrap_and_run — "
             "direct import keeps it on the main event-loop thread"
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["crash", "early_return", "shutdown", "probe_loss"])
+async def test_bootstrap_required_service_and_probe_are_supervised(monkeypatch, outcome):
+    from services.ingest import ingest_worker
+    from services.shared import health_probe_launcher
+
+    state = {"alive": True}
+    probe = SimpleNamespace(
+        set_detail=lambda *args: None,
+        set_alive=lambda alive: state.update(alive=alive),
+        stop=AsyncMock(),
+    )
+    shutdown = asyncio.Event()
+    drained = asyncio.Event()
+
+    async def start_probe(**kwargs):
+        assert kwargs["readiness_check"]() is False
+
+        async def probe_loop():
+            if outcome != "probe_loss":
+                await asyncio.Event().wait()
+
+        return probe, asyncio.create_task(probe_loop())
+
+    async def run_main(**kwargs):
+        assert kwargs["_bootstrap_probe"] is probe
+        try:
+            if outcome == "crash":
+                raise RuntimeError("test_ingest_crash")
+            if outcome == "probe_loss":
+                await asyncio.Event().wait()
+            if outcome == "shutdown":
+                shutdown.set()
+        finally:
+            drained.set()
+
+    monkeypatch.setattr(health_probe_launcher, "start_probe_as_task", start_probe)
+    monkeypatch.setitem(sys.modules, "ingest_service", SimpleNamespace(main=run_main, _shutdown_event=shutdown))
+    if outcome == "shutdown":
+        await ingest_worker._bootstrap_and_run()
+    else:
+        with pytest.raises(RuntimeError):
+            await ingest_worker._bootstrap_and_run()
+    assert drained.is_set()
+    assert state["alive"] is False
+    probe.stop.assert_awaited_once()
