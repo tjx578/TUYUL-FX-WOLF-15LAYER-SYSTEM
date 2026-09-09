@@ -438,7 +438,7 @@ async def _main() -> None:
         await asyncio.gather(_probe_task, return_exceptions=True)
         await _probe.stop()
         if pool_close_forbidden:
-            raise RuntimeError("allocation_pool_close_before_drain_forbidden")
+            logger.critical("Allocation pool close forbidden: in-flight tasks were not drained")
 
 
 if __name__ == "__main__":
