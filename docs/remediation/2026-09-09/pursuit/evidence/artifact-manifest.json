@@ -1,5 +1,5 @@
 {
-  "source_commit": "5fd0d5330c6226999124e8ab6b9c910fd7348788",
+  "source_commit": "a5eccc98ebb05cd45216af9bc0ed47ea504d6e03",
   "scope": "Evidence files; individual receipts retain historical source bindings",
   "files": [
     {
@@ -78,6 +78,16 @@
       "bytes": 1272
     },
     {
+      "path": "intent-row-confirmation-source.diff",
+      "sha256": "239df6a4dd1728d98dcd65bd410455e5bd2164f7454f02d5b9728bac70de0bd9",
+      "bytes": 6229
+    },
+    {
+      "path": "intent-row-confirmation-validation.json",
+      "sha256": "88fed11ab1a183c41cda10969cf92aaacdbca7c309d3a3b3c2ef78e6108f7ec2",
+      "bytes": 8058
+    },
+    {
       "path": "intent-write-source.diff",
       "sha256": "8c19ac0461bc0162c78d89e093ee880ca9cbd6026019e9b72edaa87993d1223e",
       "bytes": 3358
@@ -106,6 +116,26 @@
       "path": "iw1.xml",
       "sha256": "8e94bd0ebca9582ae1cb73b333d3763598e5e74d2627e9147a4802ba5926759a",
       "bytes": 8384
+    },
+    {
+      "path": "iw4-collection.log",
+      "sha256": "f4b8f1f6a434e7aad350c5207ac9ae8dc891375f0cd7107a5f35570fe8aedcd8",
+      "bytes": 7395
+    },
+    {
+      "path": "iw4-pytest.log",
+      "sha256": "6c2b489769b2021f09839cb96fd65ab2a50af23dd89be910e12fd190ac0b7bf4",
+      "bytes": 974
+    },
+    {
+      "path": "iw4-receipt.json",
+      "sha256": "6b82acd6c3b38bfaec77a4c55602941eed912da2ef16fbd8d4f1e5fed187cc04",
+      "bytes": 12803
+    },
+    {
+      "path": "iw4.xml",
+      "sha256": "a9113baeb798430978732cb503efc3aab8f953aca9f5bbdc8d97727e3883cef7",
+      "bytes": 9353
     },
     {
       "path": "lint-format.json",
