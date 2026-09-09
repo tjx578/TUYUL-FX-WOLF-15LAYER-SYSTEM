@@ -1,7 +1,27 @@
 {
-  "source_commit": "16d4ed00db62f07ae122c67912c486ac967a97e4",
+  "source_commit": "d144d3042f36bfc8887cbbf0795da501975cc500",
   "scope": "Evidence files; individual receipts retain historical source bindings",
   "files": [
+    {
+      "path": "bc1-collection.log",
+      "sha256": "02e4d005fd74c07b4881ac33e98900cc340478956e4a4bccae8328a984c1822e",
+      "bytes": 8524
+    },
+    {
+      "path": "bc1-pytest.log",
+      "sha256": "2e5027fbec1d4f72b6652a8b732127c90eb60184af97c16eea62ac2b0a67219c",
+      "bytes": 1055
+    },
+    {
+      "path": "bc1-receipt.json",
+      "sha256": "d23560b1bbd91bbffc57bdf907a0a283b6c9d4854f9abaa768d74d367ca94953",
+      "bytes": 14085
+    },
+    {
+      "path": "bc1.xml",
+      "sha256": "842b2b00be449722318e5e6a2d7c769877e0145998699339ca897b72200c19cb",
+      "bytes": 10888
+    },
     {
       "path": "bf1-collection.log",
       "sha256": "86f007d6ddc3a2c11378e3453d1654b0ccc12a63dd50bae62045808fe15e77ef",
@@ -166,6 +186,16 @@
       "path": "channel-b-measurement-validation.json",
       "sha256": "c8de230cdfcdf32acded6a9a04d928a251da0b51669016ec6b366973b2bc4810",
       "bytes": 6541
+    },
+    {
+      "path": "channel-b-observation-window-source.diff",
+      "sha256": "67293cda66bea12bc374e535f2d43ad312c951cbc743a789de470069309a7ff6",
+      "bytes": 8820
+    },
+    {
+      "path": "channel-b-observation-window-validation.json",
+      "sha256": "395b84745c28b0629c1bce8a2ba645b77d0053730c2b94844a8e9b802892a0aa",
+      "bytes": 9407
     },
     {
       "path": "ct1-collection.log",

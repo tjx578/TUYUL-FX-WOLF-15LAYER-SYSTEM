@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "16d4ed00db62f07ae122c67912c486ac967a97e4",
-  "source_verified_at": "2026-09-09T05:42:33.005035+00:00",
+  "source_checkpoint": "d144d3042f36bfc8887cbbf0795da501975cc500",
+  "source_verified_at": "2026-09-09T05:46:46.079335+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K11_CHANNEL_B_REPORT_INTEGRITY",
+  "current_slice": "K11_CHANNEL_B_OBSERVATION_WINDOW",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Bind configured collector provenance and trusted receipt retention/consumer acceptance to existing Channel B path; active attestor/account/window remain unbound.",
+  "next_action_on_resume": "Bind configured collector identity/source and trusted consumer age/account/window validation to existing Channel B path; active clock and attestor remain unverified.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -719,7 +719,7 @@
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
   "previous_goal_turn_classification": "PROGRESS_IMPLEMENTATION_AND_LOCAL_ACCEPTANCE",
-  "actual_source_commit": "16d4ed00db62f07ae122c67912c486ac967a97e4",
+  "actual_source_commit": "d144d3042f36bfc8887cbbf0795da501975cc500",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -793,9 +793,9 @@
       "DONE": false
     },
     "K11": {
-      "status": "CHANNEL_B_INTEGRITY_LOCAL_PASS_NOT_ATTESTED",
+      "status": "CHANNEL_B_OBSERVATION_WINDOW_LOCAL_PASS_NOT_ATTESTED",
       "DONE": false,
-      "evidence_ref": "evidence/channel-b-integrity-validation.json",
+      "evidence_ref": "evidence/channel-b-observation-window-validation.json",
       "remaining": [
         "Configured collector source and active identity binding",
         "Trusted evidence retention and consumer acceptance",
@@ -813,7 +813,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "16d4ed00db62f07ae122c67912c486ac967a97e4",
+    "source_commit": "d144d3042f36bfc8887cbbf0795da501975cc500",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,
