@@ -278,6 +278,18 @@ def _classify_entities(
     return broker_to_database, database_to_broker
 
 
+def _evidence_time(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(UTC)
+    except ValueError:
+        return None
+
+
 def _measurement_summary(
     broker: Mapping[str, Any], *, window_from: datetime, window_to: datetime
 ) -> tuple[dict[str, Any], bool]:
@@ -287,6 +299,13 @@ def _measurement_summary(
     summary: dict[str, Any] = {}
     expected_window = {"from_utc": _iso(window_from), "to_utc": _iso(window_to)}
     measured = broker.get("tool_surface_exact") is True and broker.get("window") == expected_window
+    interval = broker.get("collection_interval")
+    interval = interval if isinstance(interval, Mapping) else {}
+    started = _evidence_time(interval.get("started_at_utc"))
+    finished = _evidence_time(interval.get("finished_at_utc"))
+    interval_valid = started is not None and finished is not None and window_to <= started <= finished
+    if not interval_valid:
+        measured = False
     for tool_name in (
         "mt5_account_get",
         "mt5_positions_get",
@@ -301,6 +320,8 @@ def _measurement_summary(
             continue
         state = payload.get("measurement_state", "NOT_MEASURED")
         truncated = payload.get("truncated")
+        observed = _evidence_time(payload.get("observed_at_utc"))
+        observation_in_interval = bool(interval_valid and observed is not None and started <= observed <= finished)
         records = payload.get("records")
         count = payload.get("record_count")
         source_count = payload.get("source_record_count")
@@ -323,8 +344,10 @@ def _measurement_summary(
             "source_record_count": payload.get("source_record_count"),
             "truncated": truncated,
             "payload_consistent": consistent,
+            "observed_at_utc": payload.get("observed_at_utc"),
+            "observation_in_collection_interval": observation_in_interval,
         }
-        if state not in MEASURED_STATES or truncated is not False or not consistent:
+        if state not in MEASURED_STATES or truncated is not False or not consistent or not observation_in_interval:
             measured = False
         if tool_name.startswith("mt5_history_") and payload.get("window") != expected_window:
             measured = False
@@ -691,11 +714,20 @@ async def _broker_snapshot(
         )
 
     try:
+        started_at = datetime.now(UTC)
         completed = await asyncio.to_thread(invoke)
+        finished_at = datetime.now(UTC)
         if completed.returncode != 0:
             return {"tool_surface_exact": False, "snapshots": {}, "error_type": "CollectorExitError"}
         payload = json.loads(completed.stdout)
-        return payload if isinstance(payload, dict) else {"tool_surface_exact": False, "snapshots": {}}
+        if not isinstance(payload, dict):
+            return {"tool_surface_exact": False, "snapshots": {}}
+        # Parent process bounds overwrite any interval asserted by the child.
+        payload["collection_interval"] = {
+            "started_at_utc": _iso(started_at),
+            "finished_at_utc": _iso(finished_at),
+        }
+        return payload
     except Exception as exc:  # noqa: BLE001
         return {"tool_surface_exact": False, "snapshots": {}, "error_type": type(exc).__name__}
 
