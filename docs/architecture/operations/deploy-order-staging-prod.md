@@ -74,6 +74,8 @@ Goal: validate release behavior before production cutover.
 - [ ] Create/deploy wolf15-pressure-outbox from railway-pressure-outbox.toml
 - [ ] Set PRESSURE_OUTBOX_EXPECTED_PHASE=dark on the worker service
 - [ ] Keep engine master/write and all worker feature flags false
+- [ ] Keep `SIGNAL_PRESSURE_RADAR_WRITE_ENABLED=false` on every engine replica
+- [ ] Keep Lifecycle V2, evidence/live-allowed, outcome, risk, command, and MT5 flags false
 - [ ] Confirm pressure-outbox schema/flag preflight passes
 - [ ] Confirm no outbox row is claimed or delivered
 
@@ -134,6 +136,8 @@ Goal: controlled rollout with fail-fast schema readiness and clear rollback.
 - [ ] Deploy wolf15-pressure-outbox from railway-pressure-outbox.toml
 - [ ] Set PRESSURE_OUTBOX_EXPECTED_PHASE=dark on the worker service
 - [ ] Keep engine master/write and all worker feature flags false
+- [ ] Keep `SIGNAL_PRESSURE_RADAR_WRITE_ENABLED=false` on every engine replica
+- [ ] Keep Lifecycle V2, evidence/live-allowed, outcome, risk, command, and MT5 flags false
 - [ ] Confirm pressure-outbox schema/flag preflight passes
 - [ ] Confirm no outbox row is claimed or delivered
 
@@ -198,6 +202,11 @@ Production:
 - Do not reintroduce auto-migration in API or engine
 
 ## F. Quick Command Reference
+
+The staged Strategy 5S-CR pressure activation matrix is maintained in
+`docs/runbooks/strategy-5scr-pressure-safety-rollout.md`. In particular, the
+pressure-worker service always keeps `SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED=false`;
+atomic writer flags belong to one engine replica and require radar authority.
 
 Migrator one-shot:
 

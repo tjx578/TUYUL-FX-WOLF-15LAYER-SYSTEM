@@ -4,6 +4,8 @@ import csv
 import logging
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from analysis.market_context_validator import MarketContext
 from analysis.microboost_core_event import (
     MICROBOOST_CORE_EVENT_FIELDS,
@@ -34,6 +36,11 @@ def _event(
     **overrides,
 ) -> SignalThrottleLogEvent:
     verdict = "EXECUTE_REDUCED_RISK_BUY" if event_type != "THROTTLED" else None
+    source_stream = {
+        "THROTTLED": "RAW_THROTTLED",
+        "ALLOWED": "ALLOWED",
+        "DOWNGRADED_TO_HOLD": "DOWNGRADED",
+    }.get(event_type)
     payload = {
         "timestamp": datetime(2026, 5, 8, 12, 0, tzinfo=UTC) + timedelta(seconds=offset_seconds),
         "severity": "error" if event_type == "THROTTLED" else "info",
@@ -42,6 +49,8 @@ def _event(
         "event_type": event_type,
         "verdict": verdict,
         "direction": "BUY" if verdict else None,
+        "pressure_source": "SignalThrottle",
+        "source_stream": source_stream,
     }
     payload.update(overrides)
     return SignalThrottleLogEvent(**payload)
@@ -129,6 +138,7 @@ def test_parse_signal_throttle_rows_ignores_signal_json_decision_updates():
     assert [event.event_type for event in events] == ["INTEL"]
     assert all("[SignalDecisionUpdateJSON]" not in event.message for event in events)
     assert events[0].symbol == "EURUSD"
+    assert events[0].eligible_for_pressure_block is False
 
 
 def test_parse_signal_throttle_rows_ignores_signal_json_lifecycle_channels():
@@ -190,6 +200,7 @@ def test_parse_signal_throttle_check_as_pressure_canary():
     assert event.direction == "BUY"
     assert event.effective_action == "OBSERVE"
     assert event.is_downgraded is False
+    assert event.eligible_for_pressure_block is False
 
 
 def test_parse_downgraded_hold_preserves_raw_verdict_and_effective_action():
@@ -287,7 +298,10 @@ def test_live_analyzer_assigns_runtime_scanner_cycle_metadata(monkeypatch):
     assert third.observed_cycle_index == 1
 
 
-def test_live_record_throttled_keeps_inferred_direction_for_audit_only():
+@pytest.mark.parametrize("second,expected_first", [(0, "THROTTLED"), (3, "DOWNGRADED_TO_HOLD")])
+def test_live_record_throttled_keeps_inferred_direction_for_audit_only(monkeypatch, second, expected_first):
+    monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "fixture-baseline-order")
+    timestamp = datetime(2026, 9, 8, 20, 20, second, tzinfo=UTC)
     analyzer = SignalThrottleLiveAnalyzer()
     analyzer.record_throttled(
         symbol="USDJPY",
@@ -296,15 +310,22 @@ def test_live_record_throttled_keeps_inferred_direction_for_audit_only():
         remaining=0,
         max_signals=3,
         window_seconds=300,
+        timestamp=timestamp,
     )
 
     events = list(analyzer._events)
-
-    assert events[0].event_type == "THROTTLED"
-    assert events[0].direction is None
-    assert events[0].throttled_inferred_direction == "BUY"
-    assert events[1].event_type == "DOWNGRADED_TO_HOLD"
-    assert events[1].direction == "BUY"
+    # Equal timestamps use the stable raw-ID tiebreak, not physical arrival order.
+    # These two pinned fixtures exercise both orders found on the baseline.
+    assert len(events) == 2
+    assert events[0].event_type == expected_first
+    by_type = {event.event_type: event for event in events}
+    assert set(by_type) == {"THROTTLED", "DOWNGRADED_TO_HOLD"}
+    assert by_type["THROTTLED"].direction is None
+    assert by_type["THROTTLED"].throttled_inferred_direction == "BUY"
+    assert by_type["DOWNGRADED_TO_HOLD"].direction == "BUY"
+    assert by_type["DOWNGRADED_TO_HOLD"].is_downgraded is True
+    assert all(event.timestamp == timestamp for event in events)
+    assert all(event.eligible_for_execution is False for event in events)
 
 
 def test_csv_fixture_reports_data_quality_without_large_raw_export():
@@ -386,16 +407,44 @@ def test_csv_state_warmup_detects_first_intel_continuation(tmp_path):
     }
 
 
-def test_allowed_quorum_without_microboost_exposes_watch_promotion_blockers():
+def test_allowed_quorum_without_five_minute_admission_stays_ineligible():
     events = [_event(index * 10, "AUDUSD", "ALLOWED") for index in range(3)]
 
     report = analyze_signal_throttle_events(events)
 
     assert report["allowed_quorum"]["quorum_reached"] is True
-    assert report["pair_eligible_for_analysis"] is True
+    assert report["pair_eligible_for_analysis"] is False
+    assert report["pair_admission_grants"] == []
+    assert report["pair_admission_summary"]["granted_blocks"] == 0
+    assert report["pair_admission_summary"]["rejection_counts"]["DURATION_BELOW_MINIMUM"] >= 1
     assert report["microboost_summary"]["count_total"] == 0
     assert report["watch_promotion_blockers"]["ALLOWED_QUORUM_PENDING_VALIDATION"] == 3
     assert report["watch_promotion_blockers"]["MICROBOOST_NOT_FORMED"] == 3
+
+
+def test_five_minute_global_raw_ledger_block_grants_pair_admission():
+    events = [
+        _event(
+            offset,
+            "AUDUSD",
+            direction="BUY",
+            deployment_id="deployment-a",
+            scanner_cycle_id=f"scan-{offset // 60}",
+        )
+        for offset in range(0, 301, 60)
+    ]
+
+    report = analyze_signal_throttle_events(events)
+
+    assert report["pair_eligible_for_analysis"] is True
+    assert len(report["pair_admission_grants"]) == 1
+    grant = report["pair_admission_grants"][0]
+    assert grant["status"] == "GRANTED"
+    assert grant["duration_seconds"] == 300
+    assert grant["effective_ticks"] >= 3
+    assert grant["execution_authority"] is False
+    assert report["pair_admission_summary"]["grant_rate"] == 1.0
+    assert report["pair_admission_summary"]["rejection_counts"] == {}
 
 
 def test_pressure_cluster_summary_is_flag_guarded(monkeypatch):
@@ -1752,6 +1801,32 @@ def test_live_analyzer_emits_parseable_raw_signal_throttle_lane(caplog):
     assert parsed[0].symbol == "GBPJPY"
     assert parsed[0].source_stream == "CANARY"
     assert parsed[0].eligible_for_execution is False
+
+
+def test_throttled_raw_log_round_trip_preserves_inferred_direction(monkeypatch, caplog):
+    monkeypatch.setenv("SIGNAL_THROTTLE_RAW_SAMPLE_SECONDS", "0")
+    caplog.set_level(logging.INFO, logger="signal_throttle_raw")
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600)
+
+    analyzer.record_throttled(
+        symbol="XAUUSD",
+        verdict="EXECUTE_REDUCED_RISK_BUY",
+        count=3,
+        remaining=0,
+        max_signals=3,
+        window_seconds=300,
+    )
+
+    messages = [record.getMessage() for record in caplog.records if record.name == "signal_throttle_raw"]
+    throttled_message = next(message for message in messages if "THROTTLED - 3 signals" in message)
+    assert "throttled_inferred_direction=BUY" in throttled_message
+    parsed = parse_signal_throttle_rows(
+        [{"timestamp": "2026-08-10T10:40:23Z", "severity": "warning", "message": throttled_message}]
+    )
+    assert len(parsed) == 1
+    assert parsed[0].event_type == "THROTTLED"
+    assert parsed[0].direction is None
+    assert parsed[0].throttled_inferred_direction == "BUY"
 
 
 def test_recent_clean_block_lineage_attaches_to_later_microboost_same_symbol():

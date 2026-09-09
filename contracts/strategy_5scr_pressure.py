@@ -25,6 +25,7 @@ from contracts.strategy_5scr import (
 
 PressureInputMode = Literal["REPLAY", "LIVE"]
 CampaignAnchorSource = Literal[
+    "PAIR_ADMISSION_ID",
     "SOURCE_CLEAN_BLOCK_ID",
     "SOURCE_WATCH_ID",
     "LEGACY_EPISODE",
@@ -48,7 +49,7 @@ class LegacyEpisodePolicy(FrozenContract):
     """Frozen grouping policy used only for pressure exports lacking lineage.
 
     The M15-sized gap is an explicit replay compatibility rule.  Production
-    LIVE inputs must carry a canonical clean-block or SignalWatch anchor.
+    LIVE inputs must carry a canonical pair-admission anchor.
     """
 
     rule_version: Literal["5scr.legacy-m15-gap.v1"] = "5scr.legacy-m15-gap.v1"
@@ -92,11 +93,11 @@ class PressureEvent(FrozenContract):
     @model_validator(mode="after")
     def _anchor_contract_is_consistent(self) -> PressureEvent:
         has_anchor = bool(self.campaign_anchor)
-        if self.campaign_anchor_source in {"SOURCE_CLEAN_BLOCK_ID", "SOURCE_WATCH_ID"}:
+        if self.campaign_anchor_source == "PAIR_ADMISSION_ID":
             if not has_anchor or not self.campaign_anchor_execution_grade:
-                raise ValueError("canonical campaign anchors must be present and execution-grade")
+                raise ValueError("canonical pair-admission anchor must be present and execution-grade")
         elif has_anchor or self.campaign_anchor_execution_grade:
-            raise ValueError("unresolved/legacy anchors are assigned by the lifecycle accumulator")
+            raise ValueError("lineage-only/unresolved anchors cannot be campaign authority")
         if self.campaign_anchor_at_utc is not None:
             if not self.campaign_anchor_execution_grade:
                 raise ValueError("explicit campaign anchor time requires canonical lineage")

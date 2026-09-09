@@ -31,6 +31,7 @@ from analysis.strategy_5scr_v3.episode_hash import (
 )
 from analysis.strategy_5scr_v3.episode_policy import MarketEpisodePolicyV1
 from contracts.strategy_5scr_lifecycle_v2 import (
+    DirectionState,
     StrategyLifecycleEventLink,
     StrategyLifecycleV2,
 )
@@ -39,13 +40,22 @@ from contracts.strategy_5scr_lifecycle_v2 import (
 class EpisodeReduction:
     """Result of folding a batch of events."""
 
-    __slots__ = ("lifecycles", "links", "split_reasons", "duplicate_event_count")
+    __slots__ = (
+        "lifecycles",
+        "links",
+        "split_reasons",
+        "duplicate_event_count",
+        "material_context_transition_count",
+        "transport_identity_churn_ignored_count",
+    )
 
     def __init__(self) -> None:
         self.lifecycles: dict[str, StrategyLifecycleV2] = {}
         self.links: list[StrategyLifecycleEventLink] = []
         self.split_reasons: dict[str, int] = {}
         self.duplicate_event_count: int = 0
+        self.material_context_transition_count: int = 0
+        self.transport_identity_churn_ignored_count: int = 0
 
     @property
     def compression_ratio(self) -> float | None:
@@ -71,12 +81,20 @@ class MarketEpisodeReducer:
         # Per-episode memory used to tell a material change from a restatement.
         self._context_fingerprint: dict[str, str] = {}
         self._known_lineage: dict[str, set[str]] = {}
+        self._transport_identity: dict[str, str] = {}
 
     @property
     def result(self) -> EpisodeReduction:
         return self._result
 
-    def seed_active(self, lifecycle: StrategyLifecycleV2) -> None:
+    def seed_active(
+        self,
+        lifecycle: StrategyLifecycleV2,
+        *,
+        known_lineage: Iterable[str] = (),
+        context_hash: str | None = None,
+        transport_lifecycle_id: str | None = None,
+    ) -> None:
         """Resume a persisted episode so a restart continues it, not forks it.
 
         Used by the shadow worker after recovering the active episode from the
@@ -86,6 +104,13 @@ class MarketEpisodeReducer:
             return
         self._result.lifecycles[lifecycle.strategy_lifecycle_id] = lifecycle
         self._active_by_symbol[lifecycle.symbol] = lifecycle.strategy_lifecycle_id
+        restored_lineage = {str(value) for value in known_lineage if str(value)}
+        if restored_lineage:
+            self._known_lineage[lifecycle.strategy_lifecycle_id] = restored_lineage
+        if context_hash:
+            self._context_fingerprint[lifecycle.strategy_lifecycle_id] = context_hash
+        if transport_lifecycle_id:
+            self._transport_identity[lifecycle.strategy_lifecycle_id] = transport_lifecycle_id
 
     def ingest_many(self, events: Iterable[EpisodeEvent]) -> EpisodeReduction:
         # Deterministic order regardless of arrival order, so replay of an
@@ -110,13 +135,23 @@ class MarketEpisodeReducer:
 
         active_id = self._active_by_symbol.get(event.symbol)
         active = self._result.lifecycles.get(active_id) if active_id else None
+        context_changed = self._context_changed(active_id, event)
+        transport_changed = (
+            active_id is not None
+            and active_id in self._transport_identity
+            and self._transport_identity[active_id] != event.transport_lifecycle_id
+        )
         decision = decide_grouping(
             event,
             active,
             self.policy,
-            context_changed=self._context_changed(active_id, event),
+            context_changed=context_changed,
             lineage_newly_attached=self._lineage_is_new(active_id, event),
         )
+        if context_changed:
+            self._result.material_context_transition_count += 1
+        if transport_changed and decision.action != OPEN_EPISODE:
+            self._result.transport_identity_churn_ignored_count += 1
 
         if decision.action == OPEN_EPISODE or active is None:
             lifecycle = self._open(event, decision.next_direction_state)
@@ -150,7 +185,7 @@ class MarketEpisodeReducer:
 
     # ------------------------------------------------------------------
 
-    def _open(self, event: EpisodeEvent, direction_state: str) -> StrategyLifecycleV2:
+    def _open(self, event: EpisodeEvent, direction_state: DirectionState) -> StrategyLifecycleV2:
         lifecycle_id = build_strategy_lifecycle_id(
             symbol=event.symbol,
             opened_at_utc=event.event_time_utc,
@@ -249,6 +284,7 @@ class MarketEpisodeReducer:
         lineage = {value for value in (event.source_clean_block_id, event.source_watch_id) if value is not None}
         if lineage:
             self._known_lineage.setdefault(lifecycle_id, set()).update(lineage)
+        self._transport_identity[lifecycle_id] = event.transport_lifecycle_id
 
     def _note_split(self, reason: str) -> None:
         self._result.split_reasons[reason] = self._result.split_reasons.get(reason, 0) + 1
@@ -292,7 +328,7 @@ def episode_event_from_payload(
         allowed_quorum_reached=bool(payload.get("allowed_quorum_reached")),
         microboost_detected=bool(payload.get("microboost_detected")),
         pressure_event_count=_int("pressure_event_count"),
-        context_hash=_text("context_version"),
+        context_hash=_text("material_context_hash") or _text("context_version"),
     )
 
 

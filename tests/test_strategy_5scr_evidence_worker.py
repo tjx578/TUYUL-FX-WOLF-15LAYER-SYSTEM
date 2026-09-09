@@ -20,13 +20,22 @@ from services.pressure_outbox.evidence_worker import (
 from storage.pressure_outbox import prepare_pressure_event
 
 
-def _envelope() -> PressureOutboxEnvelope:
+def _envelope(*, signal_valid_time_utc: str = "2026-07-20T06:00:00+00:00") -> PressureOutboxEnvelope:
     prepared = prepare_pressure_event(
         {
             "symbol": "EURGBP",
             "source_clean_block_id": "clean-eurgbp-1",
+            "pair_admission_id": "5scr-admission:55555555555555555555555555555555",
+            "pair_admission_status": "GRANTED",
+            "pair_admission_rule_version": "5scr.pair-admission.raw-ledger.v2",
+            "pair_admission_granted_at_utc": "2026-07-20T06:00:00+00:00",
+            "pair_admission_expires_at_utc": "2026-07-20T06:15:00+00:00",
+            "pair_admission_source_ledger_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "radar_manifest_id": "5scr-radar:ffffffffffffffffffffffffffffffff",
+            "radar_status": "ANALYSIS_READY",
+            "pressure_selection_confirmed": True,
             "cluster_id": "EURGBP:20260720T060000Z",
-            "signal_valid_time_utc": "2026-07-20T06:00:00+00:00",
+            "signal_valid_time_utc": signal_valid_time_utc,
             "promotion_stage": "PRESSURE_ONLY",
             "final_direction": "WAIT",
             "valid_for_execution": False,
@@ -87,6 +96,7 @@ class _CrashWindowRepository:
         self.outcome_committed = False
         self.outcome_attempts = 0
         self.failure_records = 0
+        self.failure_errors: list[str] = []
 
     async def load_waiting(self, *, limit: int) -> tuple[PressureOutboxEnvelope, ...]:
         assert limit == 1
@@ -99,8 +109,9 @@ class _CrashWindowRepository:
         self.outcome_committed = True
         return True
 
-    async def record_failure(self, *_: Any, **__: Any) -> bool:
+    async def record_failure(self, *_: Any, **kwargs: Any) -> bool:
         self.failure_records += 1
+        self.failure_errors.append(str(kwargs.get("error") or ""))
         return True
 
 
@@ -281,6 +292,7 @@ async def test_crash_before_outcome_commit_replays_deterministically() -> None:
             poll_seconds=0.1,
             batch_size=1,
         ),
+        clock=lambda: datetime(2026, 7, 20, 6, 5, tzinfo=UTC),
     )
 
     assert await worker.process_once() == 1
@@ -310,7 +322,7 @@ class _DeferredProcessor:
 async def test_live_evaluation_time_advances_beyond_anchor_and_defer_retries() -> None:
     envelope = _envelope()
     anchor = envelope.signal_valid_at
-    evaluation_at = datetime(2026, 7, 20, 6, 30, tzinfo=UTC)
+    evaluation_at = datetime(2026, 7, 20, 6, 10, tzinfo=UTC)
     repository = _CrashWindowRepository(envelope)
     provider = _Provider()
     worker = Strategy5SCREvidenceWorker(
@@ -333,4 +345,32 @@ async def test_live_evaluation_time_advances_beyond_anchor_and_defer_retries() -
     assert provider.kwargs["decision_at_utc"] == evaluation_at
     assert provider.kwargs["lifecycle_anchor_utc"] == anchor
     assert repository.failure_records == 1
+    assert repository.outcome_attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_admission_expiry_does_not_kill_an_evaluation_opened_while_fresh() -> None:
+    envelope = _envelope(signal_valid_time_utc="2026-07-20T06:10:00+00:00")
+    repository = _CrashWindowRepository(envelope)
+    provider = _Provider()
+    worker = Strategy5SCREvidenceWorker(
+        repository=cast(Any, repository),
+        provider=provider,
+        processor=cast(Any, _DeferredProcessor()),
+        config=EvidenceRuntimeConfig(
+            enabled=True,
+            live_allowed=True,
+            activation_requested=True,
+            mode="PRODUCTION_OBSERVE",
+            provider="finnhub",
+            poll_seconds=5,
+            batch_size=1,
+        ),
+        clock=lambda: datetime(2026, 7, 20, 6, 16, tzinfo=UTC),
+    )
+
+    assert await worker.process_once() == 1
+    assert envelope.signal_valid_at == datetime(2026, 7, 20, 6, 10, tzinfo=UTC)
+    assert provider.calls == 1
+    assert repository.failure_errors == ["STRATEGY_5SCR_M15_CLOSED_STRUCTURAL_BREAK_REQUIRED"]
     assert repository.outcome_attempts == 0

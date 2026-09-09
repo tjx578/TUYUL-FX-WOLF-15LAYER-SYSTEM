@@ -1,235 +1,69 @@
-# TUYUL FX WOLF 15-LAYER SYSTEM - Next.js Dashboard
+# WOLF15 Railway owner dashboard
 
-Professional trading system dashboard built with Next.js 15, TypeScript, and Tailwind CSS.
+The supported frontend is the existing service WOLF15-DASHBOARD-FRONTEND:
+https://wolf15-dashboard-frontend-production.up.railway.app/login
 
-> **🔒 Security Note**: This dashboard uses Next.js 15.0.8+ which includes critical security patches for HTTP request deserialization DoS vulnerabilities (CVE-2024-XXXXX). Always keep Next.js updated to the latest stable version.
+Its active page renders `src/components/wolf15-v2/RailwayDashboard.js`. The nine
+views share one read-only snapshot; the old prototype page routes, local-storage
+token login and session-refresh design have been removed.
 
-## Features
+## Login and data flow
 
-- 🐺 **L12 Verdict Display** - Real-time trading verdicts with wolf status
-- 🚪 **9-Gate Constitutional Validation** - Visual gate status indicators
-- ⚡ **Execution State Monitor** - Current order status tracking
-- 🌍 **Dual Timezone Display** - Shows both UTC and GMT+8 (Asia/Singapore)
-- 📊 **System Health Monitoring** - Latency and service status
-- 🔄 **Auto-refresh** - SWR-powered data fetching with configurable intervals
-- 🎨 **Dark Theme** - Professional wolf-themed UI
-- 📱 **Responsive Design** - Works on desktop, tablet, and mobile
+The owner submits username and password to the same-origin `/api/auth/owner-login`.
+Only the server contacts the configured core `/api/auth/owner-login`. The browser
+receives `{ok:true}` and a Secure, HttpOnly, SameSite=Lax viewer cookie. The API
+owns the password verifier and JWT signing secret. The frontend never receives
+machine API keys, an owner verifier or a signing secret. Password-issued viewer
+sessions expire after at most 900 seconds and cannot use legacy reissuance.
 
-## Tech Stack
+Browser -> Railway frontend -> core API. There is no separate BFF hop, public API
+environment variable, direct browser API request or browser WebSocket connection.
+The proxy accepts only these exact GET routes, with no query parameters:
 
-- **Framework**: Next.js 15 (App Router) - Upgraded for security patches
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Data Fetching**: SWR
-- **Icons**: Lucide React
-- **Timezone**: date-fns-tz
+| Same-origin projection | Core reads |
+| --- | --- |
+| `/api/proxy/dashboard/overview` | `/api/v1/status` and `/healthz` |
+| `/api/proxy/dashboard/feed-status` | `/api/v1/candles/feed-status` |
+| `/api/proxy/dashboard/aggregated-status` | `/api/v1/status` |
 
-**Note**: Next.js 15 requires React 19. This may affect some third-party libraries. Test thoroughly.
+The server verifies the viewer JWT and `read:dashboard` scope, then returns an
+explicit sanitized schema. Raw error details, credentials, unknown nested data,
+upstream cookies, private-origin headers and hardcoded activity placeholders do
+not reach the browser. Missing data stays unknown. No trading/control route is
+exposed by the frontend.
 
-## Quick Start
+## Existing Railway service configuration
 
-### Prerequisites
+Use `dashboard/nextjs` as the frontend build root, its Dockerfile, and port 8080,
+matching the existing domain target. Server variables are:
 
-- Node.js 18+ and npm 9+
-- FastAPI backend running on `http://localhost:8000`
-
-### Installation
-
-```bash
-# Navigate to dashboard directory
-cd dashboard/nextjs
-
-# Install dependencies
-npm install
-
-# Copy environment file
-cp .env.example .env
-
-# Edit .env with your settings
-nano .env
+```dotenv
+DASHBOARD_MODE=viewer
+DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app
+INTERNAL_API_URL=https://wolf15-api-production.up.railway.app
+PORT=8080
 ```
 
-### Development
+The API URL must be a credential-free HTTPS origin distinct from the frontend.
+The API browser-origin setting is the exact frontend origin; explicit local
+development overrides remain possible. No provider preview origins are inferred.
+The API must use the API-only entrypoint without embedded orchestrator activation.
 
-```bash
-# Start development server
-npm run dev
+## Local verification
 
-# Open browser
-open http://localhost:3000
-```
+Use Node 22 and `npm ci`. `npm run build:strict` validates the server origins and
+builds the standalone frontend with the TypeScript check enabled. `npm run lint`
+runs the retained source checks. Set OWNER_LOGIN_TEST_PYTHON to the isolated test
+interpreter before `npm test`; its disposable fixture never starts the engine.
+For local development, override the browser origin to http://localhost:3000 and
+the API to a separate loopback service; production API transport requires HTTPS.
 
-### Production Build
+## Release state
 
-```bash
-# Build for production
-npm run build
-
-# Start production server
-npm start
-```
-
-## Environment Variables
-
-Create `.env` file from `.env.example`:
-
-```env
-# API Backend URL
-NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# Timezone for display
-NEXT_PUBLIC_TIMEZONE=Asia/Singapore
-
-# Refresh intervals (milliseconds)
-NEXT_PUBLIC_VERDICT_REFRESH_MS=5000
-NEXT_PUBLIC_CONTEXT_REFRESH_MS=10000
-NEXT_PUBLIC_HEALTH_REFRESH_MS=30000
-
-# Dashboard title
-NEXT_PUBLIC_APP_NAME="TUYUL FX WOLF 15-LAYER"
-```
-
-## Project Structure
-
-dashboard/nextjs/
-├── src/
-│   ├── app/              # Next.js App Router
-│   │   ├── layout.tsx    # Root layout
-│   │   ├── page.tsx      # Home page
-│   │   └── globals.css   # Global styles
-│   ├── components/       # React components
-│   │   ├── VerdictCard.tsx       # L12 verdict display
-│   │   ├── GateStatus.tsx        # 9-gate status
-│   │   ├── PairSelector.tsx      # Currency pair selector
-│   │   ├── ExecutionPanel.tsx    # Execution state
-│   │   ├── TimezoneDisplay.tsx   # UTC/GMT+8 clock
-│   │   └── SystemHealth.tsx      # System health monitor
-│   ├── lib/              # Utilities
-│   │   ├── api.ts        # API client with SWR hooks
-│   │   └── timezone.ts   # Timezone utilities
-│   └── types/            # TypeScript types
-│       └── index.ts      # Type definitions
-├── public/               # Static assets
-├── next.config.js        # Next.js configuration
-├── tailwind.config.js    # Tailwind CSS configuration
-├── tsconfig.json         # TypeScript configuration
-├── package.json          # Dependencies
-└── README.md             # This file
-
-## API Endpoints Required
-
-The dashboard expects these FastAPI endpoints:
-
-### Core Endpoints
-
-- `GET /api/v1/l12/{pair}` - Get L12 verdict for a pair
-- `GET /api/v1/verdict/all` - Get all verdicts
-- `GET /api/v1/context` - Get live context snapshot
-- `GET /api/v1/execution` - Get execution state
-- `GET /api/v1/pairs` - Get available currency pairs
-- `GET /health` - System health check
-
-### Response Formats
-
-See `src/types/index.ts` for TypeScript type definitions matching expected API responses.
-
-### Adding New Components
-
-1. Create component in `src/components/`
-2. Use SWR hooks from `src/lib/api.ts` for data fetching
-3. Import and use in `src/app/page.tsx`
-
-### Adding New API Endpoints
-
-1. Add hook in `src/lib/api.ts`
-2. Define types in `src/types/index.ts`
-3. Use hook in components
-
-### Styling
-
-- Uses Tailwind CSS with custom wolf theme colors
-- Theme colors defined in `tailwind.config.js`
-- Global styles in `src/app/globals.css`
-
-## Production Deployment
-
-### Docker
-
-```bash
-# Build Docker image
-docker build -t tuyulfx-dashboard .
-
-# Run container
-docker run -p 3000:3000 \
-  -e NEXT_PUBLIC_API_URL=http://api:8000 \
-  tuyulfx-dashboard
-```
-
-### Deployment
-
-See `docker-compose.yml` or `deploy/railway/` for deployment configuration.
-
-## Troubleshooting
-
-### API Connection Issues
-
-```bash
-# Check API is running
-curl http://localhost:8000/health
-
-# Check environment variables
-cat .env
-
-# Check browser console for errors
-```
-
-### Build Errors
-
-```bash
-# Clear Next.js cache
-rm -rf .next
-
-# Reinstall dependencies
-rm -rf node_modules package-lock.json
-npm install
-
-# Rebuild
-npm run build
-```
-
-### Styling Issues
-
-```bash
-# Rebuild Tailwind CSS
-npm run dev
-```
-
-## Performance
-
-- Uses SWR for efficient data fetching and caching
-- Implements stale-while-revalidate strategy
-- Optimizes with Next.js image optimization
-- Standalone output for minimal Docker images
-
-## Security
-
-- **Next.js 15.0.8+**: Patched against HTTP request deserialization DoS vulnerabilities
-- No write operations (read-only dashboard)
-- CORS configured for API access
-- Security headers in Next.js config
-- No sensitive data in client-side code
-- Regular dependency updates recommended
-
-## Contributing
-
-1. Follow TypeScript best practices
-2. Use Tailwind CSS for styling
-3. Test on multiple screen sizes
-4. Ensure timezone display is accurate
-5. Update types when API changes
-
-## License
-
-Part of TUYUL FX WOLF 15-LAYER SYSTEM
-
----
+These repository changes do not deploy the service. The public login observed
+during this revision still displayed VIEWER JWT. The production service has
+pending provider configuration changes whose origin/values are not established
+by source validation; do not apply unrelated pending changes as part of a release.
+Linux image/source attestation, live username/password acceptance and production
+network/data checks remain separate gates. A local synthetic login proves only
+the tested revision and does not authorize trading or production changes.

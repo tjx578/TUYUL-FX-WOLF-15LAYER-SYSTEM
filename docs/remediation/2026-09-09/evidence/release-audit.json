@@ -1,0 +1,149 @@
+{
+  "schema": "wolf15.master-release-audit/v1",
+  "observed_at_utc": "2026-09-08T19:20:25Z",
+  "repository": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+  "historical_main": "1837f4b7cbded620c35933af980e9abd166de39e",
+  "observed_main": "773150952311db3dbf5188f36536b7837d8ec296",
+  "remote_verified_with": [
+    "GitHub branches/main API",
+    "git ls-remote origin refs/heads/main"
+  ],
+  "branch_protected": false,
+  "rulesets": [
+    {
+      "id": 13682266,
+      "name": "kelanatajox444",
+      "enforcement": "disabled"
+    }
+  ],
+  "registered_repository_runners": 0,
+  "main_ci": {
+    "run_id": 34268107881,
+    "conclusion": "failure",
+    "job_count": 6,
+    "runner_id_zero_count": 6,
+    "empty_steps_count": 6
+  },
+  "railway_deploy_ci": {
+    "run_id": 34268120322,
+    "conclusion": "skipped"
+  },
+  "billing": "EXCLUDED_NO_REMEDIATION_OR_RETRY",
+  "railway": {
+    "project_id": "af4d15d8-d4cb-44b7-80e7-d99a37ca0045",
+    "environment_id": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+    "service_count": 20,
+    "auto_deploy_enabled": "UNKNOWN",
+    "main_linked_service_count": 10,
+    "staged_patch_reported": "68c2214f-679f-4674-842d-fa052617e986",
+    "staged_patch_scope": "All20 service config responses report same patch; variable values not requested; do not accept unreviewed environment-wide changes."
+  },
+  "safe_main_merge": "HOLD",
+  "production_release": "HOLD",
+  "mutations": {
+    "git_commit": false,
+    "git_push": false,
+    "git_merge": false,
+    "railway": false,
+    "ssh": false,
+    "database": false,
+    "broker": false
+  },
+  "local_patch": {
+    "paths": [
+      ".github/workflows/railway-deploy.yml",
+      "scripts/ci/railway_release_source_gate.py",
+      "tests/test_railway_release_source_gate.py"
+    ],
+    "test_result": "42 passed --noconftest; Ruff check+format passed; git diff --check passed",
+    "commit": "NOT_COMMITTED_BY_THIS_AGENT",
+    "remaining": "Parent may extend and rerun. This report is not full mandatory-suite receipt."
+  },
+  "actions": [
+    {
+      "ID": "A00",
+      "status": "ASSESSMENT_DONE_CURRENT_SOURCE_INVENTORY",
+      "reason": "Current main, six PR heads, provider service UUIDs and config/deployment inventory refreshed; historical acquisition is not engineering closure."
+    },
+    {
+      "ID": "C01",
+      "status": "PATCHED_TESTED_LOCAL_PARTIAL",
+      "reason": "Exact-source Railway deploy workflow gate patched and 42 focused tests pass; independent canary arbitrary command path, exact published artifact/migration proof and remote successful CI remain open."
+    },
+    {
+      "ID": "C02",
+      "status": "SOURCE_PARTIAL_RUNTIME_NOT_MEASURED",
+      "reason": "Current main API entrypoint no longer forces embedded orchestrator; dedicated runtime single owner, legacy recording sinks and executor scope proof not established."
+    },
+    {
+      "ID": "C03",
+      "status": "BLOCKED",
+      "reason": "Required CI steps not executed at main; PR415/416 not merged; combined full suite and caller compatibility unproven."
+    },
+    {
+      "ID": "C04",
+      "status": "BLOCKED",
+      "reason": "GitHub reports zero registered repo runners; dedicated clean Linux runner identity/capacity not established. Hosted jobs show runner_id=0/steps=[]; billing remediation excluded."
+    },
+    {
+      "ID": "C05",
+      "status": "BLOCKED",
+      "reason": "Main protection false, ruleset disabled, no required status checks; provider-linked main and alternate canary release controls remain unclosed."
+    },
+    {
+      "ID": "C06",
+      "status": "PARENT_AGENT_IMPLEMENTATION_IN_PROGRESS",
+      "reason": "Delegated to parent; this audit does not attest its changed source or tests. Served production fault and fatal exit remain unmeasured."
+    },
+    {
+      "ID": "E01",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    },
+    {
+      "ID": "E02",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    },
+    {
+      "ID": "E03",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    },
+    {
+      "ID": "E04",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    },
+    {
+      "ID": "E05",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    },
+    {
+      "ID": "E06",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    },
+    {
+      "ID": "D01",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    },
+    {
+      "ID": "E07",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    },
+    {
+      "ID": "E08",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    },
+    {
+      "ID": "E09",
+      "status": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "reason": "No exact combined D0 artifact, mandatory clean integration/compiler gates, applied production schema/account/EA binding, final SHADOW or independently reconciled scoped broker outcome was collected. Provider SUCCESS is insufficient."
+    }
+  ]
+}

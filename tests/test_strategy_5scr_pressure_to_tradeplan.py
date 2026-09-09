@@ -83,10 +83,18 @@ def _railway_record(payload=None, *, timestamp="2026-07-17T13:05:00.100Z"):
     }
 
 
-def _lifecycle(*, mode="REPLAY", source_clean_block_id=None):
+def _lifecycle(*, mode="REPLAY", source_clean_block_id=None, pair_admission_id=None):
     payload = _pressure_payload()
     if source_clean_block_id is not None:
         payload["source_clean_block_id"] = source_clean_block_id
+    if pair_admission_id is not None:
+        payload.update(
+            {
+                "pair_admission_id": pair_admission_id,
+                "pair_admission_status": "GRANTED",
+                "lifecycle_anchor_at_utc": "2026-07-17T13:00:00+00:00",
+            }
+        )
     event = PressureEventNormalizer(input_mode=mode).normalize(_railway_record(payload))
     return PressureLifecycleAccumulator().ingest(event)[0]
 
@@ -200,11 +208,24 @@ def test_replay_deduplicates_identical_exports_and_groups_legacy_episode():
     assert lifecycle.legacy_grouping_rule_version == "5scr.legacy-m15-gap.v1"
 
 
-def test_live_event_uses_canonical_clean_block_anchor():
+def test_live_event_treats_clean_block_as_lineage_only():
     lifecycle = _lifecycle(mode="LIVE", source_clean_block_id="CHFJPY_20260717T130000Z_20260717T130500Z")
 
-    assert lifecycle.campaign_id == "CHFJPY_20260717T130000Z_20260717T130500Z"
-    assert lifecycle.campaign_anchor_source == "SOURCE_CLEAN_BLOCK_ID"
+    assert lifecycle.campaign_id.startswith("unresolved:CHFJPY:")
+    assert lifecycle.campaign_anchor_source == "UNRESOLVED"
+    assert lifecycle.campaign_anchor_execution_grade is False
+
+
+def test_live_event_uses_pair_admission_as_canonical_anchor():
+    pair_admission_id = "5scr-admission:0123456789abcdef0123456789abcdef"
+    lifecycle = _lifecycle(
+        mode="LIVE",
+        source_clean_block_id="CHFJPY_20260717T130000Z_20260717T130500Z",
+        pair_admission_id=pair_admission_id,
+    )
+
+    assert lifecycle.campaign_id == pair_admission_id
+    assert lifecycle.campaign_anchor_source == "PAIR_ADMISSION_ID"
     assert lifecycle.campaign_anchor_execution_grade is True
 
 

@@ -1,16 +1,14 @@
+/* eslint-disable @next/next/no-page-custom-font -- App Router root layout applies these fonts to every route. */
 import type { Metadata, Viewport } from "next";
-import QueryProvider from "@/components/providers/QueryProvider";
-import SessionExpiryModal from "@/components/auth/SessionExpiryModal";
-import ToastViewport from "@/components/feedback/ToastViewport";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "TUYUL FX | WOLF-15 Terminal",
-    template: "%s — TUYUL FX",
+    default: "WOLF15 | Railway Dashboard",
+    template: "%s — WOLF15",
   },
-  description: "Institutional-grade multi-layer prop-firm control surface: Command Center, Signal Board, Risk Command, Trade Desk, and governed compliance.",
-  keywords: ["forex", "trading", "wolf-15", "prop firm", "institutional", "pipeline", "risk", "signal board"],
+  description: "Owner login and read-only WOLF15 observability dashboard.",
+  keywords: ["wolf15", "observability", "dashboard"],
   authors: [{ name: "TUYUL FX" }],
 };
 
@@ -36,11 +34,7 @@ export default function RootLayout({
         />
       </head>
       <body suppressHydrationWarning>
-        <QueryProvider>
-          {children}
-          <SessionExpiryModal />
-          <ToastViewport />
-        </QueryProvider>
+        {children}
       </body>
     </html>
   );

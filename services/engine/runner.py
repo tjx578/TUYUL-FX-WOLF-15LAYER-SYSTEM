@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,25 @@ configure_loguru_logging()
 REQUIRED_TABLES: tuple[str, ...] = ("trade_outbox",)
 
 
+def validate_pressure_writer_flags(environ: Mapping[str, str] | None = None) -> None:
+    """Reject partial pressure-writer activation and the removed direct path."""
+
+    source = os.environ if environ is None else environ
+
+    def enabled(name: str) -> bool:
+        return str(source.get(name) or "false").strip().lower() == "true"
+
+    master = enabled("SIGNAL_PRESSURE_OUTBOX_ENABLED")
+    write = enabled("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED")
+    radar = enabled("SIGNAL_PRESSURE_RADAR_WRITE_ENABLED")
+    if write and not master:
+        raise RuntimeError("SIGNAL_PRESSURE_OUTBOX_WRITE_REQUIRES_MASTER")
+    if radar and not (master and write):
+        raise RuntimeError("SIGNAL_PRESSURE_RADAR_WRITE_REQUIRES_MASTER_AND_WRITE")
+    if master and write and not radar:
+        raise RuntimeError("SIGNAL_PRESSURE_DIRECT_WRITER_FORBIDDEN_RADAR_REQUIRED")
+
+
 def _build_engine_from_env() -> AsyncEngine:
     raw_url = os.getenv("DATABASE_URL")
     if not raw_url:
@@ -46,6 +65,7 @@ def _build_engine_from_env() -> AsyncEngine:
 
 
 async def _preflight_checks() -> None:
+    validate_pressure_writer_flags()
     engine = _build_engine_from_env()
     try:
         await assert_required_tables(engine, REQUIRED_TABLES)

@@ -192,17 +192,29 @@ class _ReadinessGovernance:
         return GovernanceSnapshot(True, "DEFAULT_ENGAGED", 1)
 
 
+class _ReadinessCommands:
+    ready = True
+
+    def __init__(self, *, pg: object) -> None:
+        self.pg = pg
+
+    async def signed_wire_schema_status(self) -> dict[str, bool]:
+        return {"ready": self.ready, "signed_wire_constraint": self.ready}
+
+
 @pytest.mark.asyncio
 async def test_ea_bridge_readiness_exposes_fail_closed_governance(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("EXECUTOR_BRIDGE_AUTH_SECRET", "a" * 32)
     monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_SECRET", "b" * 32)
     monkeypatch.setattr(bridge_main, "pg_client", _HealthyPostgres())
     monkeypatch.setattr(bridge_main, "MT5ExecutorGovernanceRepository", _ReadinessGovernance)
+    monkeypatch.setattr(bridge_main, "MT5CommandRepository", _ReadinessCommands)
 
     result = await bridge_main.health_ready()
 
     assert result["executor_governance"]["ready"] is True
     assert result["executor_governance"]["kill_switch_active"] is True
+    assert result["executor_signed_wire"]["ready"] is True
 
 
 @pytest.mark.asyncio
@@ -214,6 +226,26 @@ async def test_ea_bridge_readiness_rejects_missing_governance_guarantee(monkeypa
     monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_SECRET", "b" * 32)
     monkeypatch.setattr(bridge_main, "pg_client", _HealthyPostgres())
     monkeypatch.setattr(bridge_main, "MT5ExecutorGovernanceRepository", _NotReadyGovernance)
+    monkeypatch.setattr(bridge_main, "MT5CommandRepository", _ReadinessCommands)
+
+    with pytest.raises(FastAPIHTTPException) as raised:
+        await bridge_main.health_ready()
+
+    assert raised.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_ea_bridge_readiness_rejects_missing_signed_wire_guarantee(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _NotReadyCommands(_ReadinessCommands):
+        ready = False
+
+    monkeypatch.setenv("EXECUTOR_BRIDGE_AUTH_SECRET", "a" * 32)
+    monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_SECRET", "b" * 32)
+    monkeypatch.setattr(bridge_main, "pg_client", _HealthyPostgres())
+    monkeypatch.setattr(bridge_main, "MT5ExecutorGovernanceRepository", _ReadinessGovernance)
+    monkeypatch.setattr(bridge_main, "MT5CommandRepository", _NotReadyCommands)
 
     with pytest.raises(FastAPIHTTPException) as raised:
         await bridge_main.health_ready()

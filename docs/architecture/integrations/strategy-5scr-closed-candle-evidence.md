@@ -80,6 +80,7 @@ Keep these defaults after merge:
 
 ```text
 STRATEGY_5SCR_EVIDENCE_ENABLED=false
+STRATEGY_5SCR_EVIDENCE_LIVE_ALLOWED=false
 STRATEGY_5SCR_EVIDENCE_MODE=SHADOW
 STRATEGY_5SCR_EVIDENCE_PROVIDER=finnhub
 STRATEGY_5SCR_EXECUTION_ENABLED=false
@@ -95,7 +96,7 @@ Production observation uses:
 ```text
 PRESSURE_OUTBOX_EXPECTED_PHASE=production-observe
 SIGNAL_PRESSURE_OUTBOX_ENABLED=true
-SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED=true
+SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED=false
 SIGNAL_PRESSURE_OUTBOX_DISPATCH_ENABLED=true
 STRATEGY_5SCR_PRESSURE_CONSUMER_ENABLED=true
 STRATEGY_5SCR_EVIDENCE_ENABLED=true
@@ -110,7 +111,10 @@ MT5_ORDER_SEND_ENABLED=false
 ```
 
 The pressure producer service additionally sets
-`SIGNAL_PRESSURE_RADAR_WRITE_ENABLED=true`. Both services use the same
+`SIGNAL_PRESSURE_OUTBOX_ENABLED=true`,
+`SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED=true`, and
+`SIGNAL_PRESSURE_RADAR_WRITE_ENABLED=true` on exactly one engine replica. The
+pressure worker keeps its write flag false. Both services use the same
 `DATABASE_URL`; `PRESSURE_OUTBOX_DATABASE_URL` is not a runtime variable.
 
 When evidence is enabled, preflight rejects replay mode, an unsupported

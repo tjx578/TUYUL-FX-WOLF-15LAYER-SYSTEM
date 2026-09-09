@@ -1,0 +1,2706 @@
+{
+  "schema_version": "goap-plan/v1",
+  "plan_id": "wolf15-master-remediation-20260908-v1",
+  "goal": "Converge reviewed WOLF15 remediation into automatic natural 5S-CR DEMO including parent-child/compounding and an evidence-based REAL readiness dossier; no REAL activation",
+  "snapshot": {
+    "status": "BOUND",
+    "refs": [
+      "BIND",
+      "EXECBYTES",
+      "STRAT",
+      "CLOUDMETA"
+    ],
+    "notes": "Main 1837f4b7cbded620c35933af980e9abd166de39e and exact selected PR heads are acquired. Combined implementation/build/deployment remains untested and not created by this plan. Railway metadata observed 20 service objects in existing project/environment; effective source/image/config/role parity remains unestablished."
+  },
+  "execution_authority": "PLANNING_ONLY",
+  "current_state": [
+    "repository.subject_bound",
+    "source.scope_acquired",
+    "SOURCE_ACQUISITION_COMPLETE",
+    "owner.v31_design_intent_accepted",
+    "current.assignment_planning_only",
+    "railway.metadata_inventory_observed_20_services",
+    "railway.project_environment_bound",
+    "railway.effective_artifact_parity_not_established"
+  ],
+  "goal_state": [
+    "NATURAL_FAMILY_DEMO_RECONCILED",
+    "OPERATIONAL_RECOVERY_EVIDENCE_COMPLETE",
+    "STRATEGY_EVALUATION_DOSSIER_COMPLETE",
+    "REAL_READINESS_DOSSIER_COMPLETE"
+  ],
+  "evidence": [
+    {
+      "id": "BIND",
+      "source": "/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/pr-integration-revision-set.json",
+      "status": "SOURCE_GROUNDED",
+      "captured_at": "2026-09-08T18:16:06.730186+00:00",
+      "sha256": "212029ac56e6600ed36c32af80ddd4cd384fb2b6a681b402c8bfcee756f984e4"
+    },
+    {
+      "id": "PR",
+      "source": "/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/pr-integration-master.md",
+      "status": "SOURCE_GROUNDED",
+      "captured_at": "2026-09-08T18:16:06.730186+00:00",
+      "sha256": "e0da604d576644a69d5b32e10238126648858e0a123b543f01e03b52fcaef6f7"
+    },
+    {
+      "id": "EXEC",
+      "source": "/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/execution-master.md",
+      "status": "SOURCE_GROUNDED",
+      "captured_at": "2026-09-08T18:16:06.730186+00:00",
+      "sha256": "47cc45967dd7b16b9e0bb0f330e1b91c53448d45b27c5c94509c9172e62e66ed"
+    },
+    {
+      "id": "EXECBYTES",
+      "source": "/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/execution-source-manifest.json",
+      "status": "SOURCE_GROUNDED",
+      "captured_at": "2026-09-08T18:16:06.730186+00:00",
+      "sha256": "e4b16b72e7754b7bec17e8b4b10b80334074651bcad2649b68d5077dd7ce61ce"
+    },
+    {
+      "id": "STRAT",
+      "source": "/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/strategy-master.md",
+      "status": "SOURCE_GROUNDED",
+      "captured_at": "2026-09-08T18:16:06.730186+00:00",
+      "sha256": "6c79665a054dddd741cd88a495af0ffa6cfa1380e25e884adf67473eb7cc9614"
+    },
+    {
+      "id": "CLOUDMETA",
+      "source": "/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/services-railway-observation.json",
+      "status": "SOURCE_GROUNDED",
+      "captured_at": "2026-09-08T18:16:06.730186+00:00",
+      "sha256": "257cb7ab247b293e82061293d7219f4e24509de6447369cc1fd012f27c0f4203"
+    },
+    {
+      "id": "CLOUDREVIEW",
+      "source": "/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/services-railway-supplement.md",
+      "status": "SOURCE_GROUNDED",
+      "captured_at": "2026-09-08T18:16:06.730186+00:00",
+      "sha256": "6c98742371aaf392d7ae6767fe080dcfd3027461b1bbd440c2b9007ee1b8cd79"
+    },
+    {
+      "id": "OWNER",
+      "source": "Current user request canangkan perbaikan; existing owner design intent V3.1 and existing Railway dashboard/orchestrator targets",
+      "status": "USER_SUPPLIED",
+      "captured_at": "NOT_RECORDED"
+    }
+  ],
+  "blockers": [
+    {
+      "predicate": "authority.implementation",
+      "owner": "Owner",
+      "resolution": "A subsequent explicit implementation assignment is needed before C01/source edits; this request is canangkan/planning. No repeated V3.1 design approval required.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.infrastructure",
+      "owner": "Infrastructure owner",
+      "resolution": "Authorize new dedicated Linux runner target/provisioning/billing after concrete specification; existing host workloads preserved.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.github_admin",
+      "owner": "GitHub administrator",
+      "resolution": "Provide repository-administration capability and authorize exact ruleset changes; audit cannot set them.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "policy.account_risk_selected",
+      "owner": "Risk policy owner",
+      "resolution": "Select and bind exact account/mode/profile and RR metric/version; retain distinct equal-risk versus DEMO profile semantics.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "policy.child_release_defined",
+      "owner": "Risk policy owner",
+      "resolution": "Define selected-profile released-parent-risk amount/proof and lifetime child policy without introducing unrequested trailing/BE.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "capability.metaeditor",
+      "owner": "MT5 build owner",
+      "resolution": "Bind available authorized MetaEditor host/build to exact source/include closure.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "capability.account_reader",
+      "owner": "Account operator",
+      "resolution": "Provide trustworthy read-only target account/database evidence and independent collector identity; no credential values in artifacts.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.d0_database",
+      "owner": "Database owner",
+      "resolution": "Authorize exact D0 migration on bound target database after read-only applied-head inventory and disposable upgrade evidence.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.natural_database",
+      "owner": "Database owner",
+      "resolution": "Authorize exact additive natural schema convergence on bound target database with backup/recovery and existing ledger preservation.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.child_database",
+      "owner": "Database owner",
+      "resolution": "Bind existing or future authorization to exact tested child schema transition; compatible no-op is read/verification evidence, not a forced migration. Preserve prior ledger and unresolved exposure.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.child_deployment",
+      "owner": "Deployment owner",
+      "resolution": "Bind existing or future authorization to exact child artifact/config/schema/EA release and final SHADOW scope; parent rollout authorization is not presumed to cover a changed artifact.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.d0_deployment",
+      "owner": "Deployment owner",
+      "resolution": "Authorize exact D0 source/image/schema/config/EA release against preserved existing project/services.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.shadow_runtime",
+      "owner": "Acceptance owner",
+      "resolution": "Authorize bounded terminal/runtime rehearsal and fault scope after artifact binding.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.d0_canary",
+      "owner": "DEMO operator",
+      "resolution": "Authorize exact one-shot account/executor/symbol/time/artifact canary after prior gates; no generic broker permit.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.natural_deployment",
+      "owner": "Deployment owner",
+      "resolution": "Authorize exact natural artifact/schema/policy deployment and updated child artifact release after review.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.parent_demo",
+      "owner": "DEMO operator",
+      "resolution": "Bind parent-only natural DEMO account/instrument/cap/window/artifact authorization; no REAL scope.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.family_demo",
+      "owner": "DEMO operator",
+      "resolution": "Bind child-capable DEMO campaign/account/caps/window/artifact authorization after parent and child gates.",
+      "status": "OPEN"
+    },
+    {
+      "predicate": "authority.operational_drills",
+      "owner": "Operations owner",
+      "resolution": "Authorize bounded DEMO soak/fault actions and stop criteria without additional unbound broker orders.",
+      "status": "OPEN"
+    }
+  ],
+  "actions": [
+    {
+      "id": "A00",
+      "milestone": "P1",
+      "owner": "Audit coordinator",
+      "outcome": "SOURCE_ACQUISITION_COMPLETE",
+      "mutation_scope": "READ_ONLY",
+      "mutation_surfaces": "pr-integration-master.md; execution-source-manifest.json; strategy-master.md",
+      "hard_dependencies": [],
+      "soft_dependencies": [],
+      "preconditions": [
+        "repository.subject_bound"
+      ],
+      "effects": [
+        "SOURCE_ACQUISITION_COMPLETE"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-A00",
+          "criterion": "SOURCE_ACQUISITION_COMPLETE",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Exact main/PR subjects and scoped source/evidence inventories acquired; acquisition is not combined build or deployment proof",
+          "status": "PASS",
+          "evidence_refs": [
+            "BIND",
+            "EXECBYTES",
+            "STRAT"
+          ]
+        }
+      ],
+      "rollback": {
+        "status": "NOT_REQUIRED",
+        "boundary": "Read-only observations and dossier; no repository/runtime mutation",
+        "triggers": [],
+        "recovery": [],
+        "preserves": [
+          "Existing source, credentials, ledger and broker state"
+        ]
+      },
+      "execution_status": "PASS",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "C01",
+      "milestone": "P1",
+      "owner": "Release maintainer",
+      "outcome": "RELEASE_EXACT_SHA_PATCHED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": ".github/workflows/railway-deploy.yml; pressure-outbox deploy workflow; targeted release tests",
+      "hard_dependencies": [
+        "A00"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "authority.implementation"
+      ],
+      "effects": [
+        "RELEASE_EXACT_SHA_PATCHED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-C01",
+          "criterion": "RELEASE_EXACT_SHA_PATCHED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Candidate A tested cannot deploy B; checkout/build/deploy refs bound to same reviewed source; nonzero migration/deploy status propagates; manual dispatch explicit source and gate evidence",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before C01 touches .github/workflows/railway-deploy.yml; pressure-outbox deploy workflow; targeted release tests",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "C02",
+      "milestone": "P1",
+      "owner": "Platform maintainer",
+      "outcome": "SINGLE_OWNER_CONTRACT_PATCHED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "deploy/railway/start_api_consolidated.sh; api/app_factory.py; services/orchestrator; services/trade/preflight.py",
+      "hard_dependencies": [
+        "A00"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "authority.implementation"
+      ],
+      "effects": [
+        "SINGLE_OWNER_CONTRACT_PATCHED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-C02",
+          "criterion": "SINGLE_OWNER_CONTRACT_PATCHED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "API no longer forces embedded orchestrator; existing dedicated orchestrator owns lifecycle; invalid dual-plane configuration fails before consumers; legacy broker paths have recording-sink zero-dispatch proof",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before C02 touches deploy/railway/start_api_consolidated.sh; api/app_factory.py; services/orchestrator; services/trade/preflight.py",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "C03",
+      "milestone": "P1",
+      "owner": "Test maintainer",
+      "outcome": "REQUIRED_GATES_TRUTHFUL",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "CI workflows; startup migration tests; health_probe_launcher; test baseline fixtures",
+      "hard_dependencies": [
+        "C01"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "RELEASE_EXACT_SHA_PATCHED",
+        "authority.implementation"
+      ],
+      "effects": [
+        "REQUIRED_GATES_TRUTHFUL"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-C03",
+          "criterion": "REQUIRED_GATES_TRUTHFUL",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Integrate reviewed #415 then unique #416 delta; preserve #413 migration behavior/redaction tests; required test failures fail job and skips remain visible; HealthProbeRuntime caller compatibility reviewed",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before C03 touches CI workflows; startup migration tests; health_probe_launcher; test baseline fixtures",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "C04",
+      "milestone": "P1",
+      "owner": "Infrastructure owner",
+      "outcome": "DEDICATED_LINUX_RUNNER_AVAILABLE",
+      "mutation_scope": "EXTERNAL",
+      "mutation_surfaces": "New dedicated Linux VPS/VM or equivalent owned clean runner; no reuse of historical hosts",
+      "hard_dependencies": [
+        "A00"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "authority.infrastructure"
+      ],
+      "effects": [
+        "DEDICATED_LINUX_RUNNER_AVAILABLE"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-C04",
+          "criterion": "DEDICATED_LINUX_RUNNER_AVAILABLE",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "New dedicated Linux runner identity/capacity/billing scope fixed; disposable Redis/PostgreSQL and clean checkout supported; historical Hostinger/Windows workloads untouched",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before C04 touches New dedicated Linux VPS/VM or equivalent owned clean runner; no reuse of historical hosts",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "C05",
+      "milestone": "P1",
+      "owner": "GitHub administrator",
+      "outcome": "RELEASE_GOVERNANCE_ENFORCED",
+      "mutation_scope": "EXTERNAL",
+      "mutation_surfaces": "GitHub rulesets/branch release controls; selected repository only",
+      "hard_dependencies": [
+        "C01",
+        "C03"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "RELEASE_EXACT_SHA_PATCHED",
+        "REQUIRED_GATES_TRUTHFUL",
+        "authority.github_admin"
+      ],
+      "effects": [
+        "RELEASE_GOVERNANCE_ENFORCED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-C05",
+          "criterion": "RELEASE_GOVERNANCE_ENFORCED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Required exact-source checks/reviews active for selected release branch; unauthorized or alternate deploy path cannot silently bypass equivalent evidence",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before C05 touches GitHub rulesets/branch release controls; selected repository only",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "C06",
+      "milestone": "P1",
+      "owner": "Runtime service maintainer",
+      "outcome": "REQUIRED_RUNTIME_READINESS_PATCHED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Engine runner and served health probe; shared diagnostics; trade supervisor; API mandatory-router readiness; bounded behavior tests for R-01/R-02/R-20",
+      "hard_dependencies": [
+        "A00"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "authority.implementation"
+      ],
+      "effects": [
+        "REQUIRED_RUNTIME_READINESS_PATCHED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-C06",
+          "criterion": "REQUIRED_RUNTIME_READINESS_PATCHED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Actual served readiness returns HTTP503 when a mandatory router import, required task or bootstrap fails; fatal task/bootstrap failure propagates a nonzero process exit; graceful shutdown and intentionally disabled optional features are not falsely classified fatal; one health listener owns the configured port and reports the same supervisor state",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before C06 touches Engine runner and served health probe; shared diagnostics; trade supervisor; API mandatory-router readiness; bounded behavior tests for R-01/R-02/R-20",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "S01",
+      "milestone": "P2",
+      "owner": "Strategy contract maintainer",
+      "outcome": "V31_IMPLEMENTATION_BINDING_FROZEN",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Canonical SSOT registry; strategy/audit/policy version mapping; generated schema examples",
+      "hard_dependencies": [
+        "A00"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "authority.implementation"
+      ],
+      "effects": [
+        "V31_IMPLEMENTATION_BINDING_FROZEN"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-S01",
+          "criterion": "V31_IMPLEMENTATION_BINDING_FROZEN",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Record already accepted V3.1 design intent with exact document digest, implementation policy IDs and versioned schemas; resolve enum/example consistency; no repeated design approval request; source-bound authority mapping must identify L1-L11 analysis/validation, only L12 strategy verdict and mandatory post-verdict gates; mapping evidence required, current runtime L12 wiring not inferred",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before S01 touches Canonical SSOT registry; strategy/audit/policy version mapping; generated schema examples",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "S02",
+      "milestone": "P2",
+      "owner": "Market data maintainer",
+      "outcome": "MARKET_EVIDENCE_TRUSTWORTHY",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "ingest metrics; finnhub_ws; fallback/hybrid; candle builder; live context; source-specific tests",
+      "hard_dependencies": [
+        "C02"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "SINGLE_OWNER_CONTRACT_PATCHED",
+        "authority.implementation"
+      ],
+      "effects": [
+        "MARKET_EVIDENCE_TRUSTWORTHY"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-S02",
+          "criterion": "MARKET_EVIDENCE_TRUSTWORTHY",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Readiness requires real fresh coverage; lease renew/release owner-atomic; pinned WS exception behavior; closed fallback candle semantics; cache provenance and bounded retention; stale/unknown sources never become fresh by heartbeat",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before S02 touches ingest metrics; finnhub_ws; fallback/hybrid; candle builder; live context; source-specific tests",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "S03",
+      "milestone": "P2",
+      "owner": "Admission maintainer",
+      "outcome": "RAW_ADMISSION_DETERMINISTIC",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "signal_throttle_log_analyzer; raw_admission_blocks; pair_admission contracts/reducers",
+      "hard_dependencies": [
+        "S01"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "V31_IMPLEMENTATION_BINDING_FROZEN",
+        "authority.implementation"
+      ],
+      "effects": [
+        "RAW_ADMISSION_DETERMINISTIC"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-S03",
+          "criterion": "RAW_ADMISSION_DETERMINISTIC",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "One normalized material observation per logical pulse; live/replay flags and timestamps agree; duplicate delivery no inflation; mixed direction does not split pair activity; gap suspends pending continuity; future evidence rejected",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before S03 touches signal_throttle_log_analyzer; raw_admission_blocks; pair_admission contracts/reducers",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "S04",
+      "milestone": "P2",
+      "owner": "Lifecycle maintainer",
+      "outcome": "DUAL_ADMISSION_LIFECYCLE_WIRED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Lifecycle repositories; evidence scheduler; analysis loop; current eligibility versus historical authority",
+      "hard_dependencies": [
+        "S03",
+        "C02"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "RAW_ADMISSION_DETERMINISTIC",
+        "SINGLE_OWNER_CONTRACT_PATCHED",
+        "authority.implementation"
+      ],
+      "effects": [
+        "DUAL_ADMISSION_LIFECYCLE_WIRED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-S04",
+          "criterion": "DUAL_ADMISSION_LIFECYCLE_WIRED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Canonical raw and mature advisory use existing durable lifecycle; advisory full SHADOW analysis emits zero risk/commands; same-episode raw upgrade requires fresh candidate; single-flight late-result fencing and persisted material watermarks",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before S04 touches Lifecycle repositories; evidence scheduler; analysis loop; current eligibility versus historical authority",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "S05",
+      "milestone": "P2",
+      "owner": "Strategy geometry maintainer",
+      "outcome": "V31_GEOMETRY_COSTS_ENFORCED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "P5 candidate solver; execution_policy; broker-cost and instrument contract",
+      "hard_dependencies": [
+        "S01"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "V31_IMPLEMENTATION_BINDING_FROZEN",
+        "authority.implementation"
+      ],
+      "effects": [
+        "V31_GEOMETRY_COSTS_ENFORCED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-S05",
+          "criterion": "V31_GEOMETRY_COSTS_ENFORCED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "H1 before M15 proof; structural stop then nearest fresh H4 target; net RR boundary including costs; correct FX/JPY/metals routing; unsupported spec rejects; no farther target chosen to force RR",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before S05 touches P5 candidate solver; execution_policy; broker-cost and instrument contract",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "S06",
+      "milestone": "P2",
+      "owner": "Replay maintainer",
+      "outcome": "DETERMINISTIC_STRATEGY_REPLAY_PASSED",
+      "mutation_scope": "OTHER",
+      "mutation_surfaces": "Clean runner replay fixtures; strategy and admission integration tests",
+      "hard_dependencies": [
+        "S02",
+        "S04",
+        "S05",
+        "C04"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "MARKET_EVIDENCE_TRUSTWORTHY",
+        "DUAL_ADMISSION_LIFECYCLE_WIRED",
+        "V31_GEOMETRY_COSTS_ENFORCED",
+        "DEDICATED_LINUX_RUNNER_AVAILABLE",
+        "authority.implementation"
+      ],
+      "effects": [
+        "DETERMINISTIC_STRATEGY_REPLAY_PASSED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-S06",
+          "criterion": "DETERMINISTIC_STRATEGY_REPLAY_PASSED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Bound dataset/as-of availability/clock/policy replay reproduces identities and decision reasons; parser diagnostics repeated with actual dependencies; no lookahead or advisory authority leak",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before S06 touches Clean runner replay fixtures; strategy and admission integration tests",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "R01",
+      "milestone": "P3",
+      "owner": "Risk policy owner and maintainer",
+      "outcome": "ACCOUNT_RISK_PROFILE_BOUND",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "RiskPolicyRegistry; account/mode version binding; policy examples",
+      "hard_dependencies": [
+        "S01"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "V31_IMPLEMENTATION_BINDING_FROZEN",
+        "authority.implementation",
+        "policy.account_risk_selected"
+      ],
+      "effects": [
+        "ACCOUNT_RISK_PROFILE_BOUND"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-R01",
+          "criterion": "ACCOUNT_RISK_PROFILE_BOUND",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Bind one explicitly selected account/mode/currency risk profile; equal5+5 and DEMO3.5+1.5 kept distinct; parent-first rollout cap explicit; RR metric/threshold tied to policy; no percentage guessed from memory",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before R01 touches RiskPolicyRegistry; account/mode version binding; policy examples",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "R02",
+      "milestone": "P3",
+      "owner": "Risk ledger maintainer",
+      "outcome": "CAPITAL_RISK_LEDGER_IMPLEMENTED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Durable risk v2 adapter/repository; FinalSignal outbox; account exposure reducer",
+      "hard_dependencies": [
+        "R01",
+        "S05"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "ACCOUNT_RISK_PROFILE_BOUND",
+        "V31_GEOMETRY_COSTS_ENFORCED",
+        "authority.implementation"
+      ],
+      "effects": [
+        "CAPITAL_RISK_LEDGER_IMPLEMENTED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-R02",
+          "criterion": "CAPITAL_RISK_LEDGER_IMPLEMENTED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Current canonical P5 identity enters serialized account admission; reservation+leg+FinalSignal+outbox atomic; floor broker volume and final cash-loss oracle; pending/filled/unsubmitted/unknown exposure counted once; unavailable snapshot fails closed",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before R02 touches Durable risk v2 adapter/repository; FinalSignal outbox; account exposure reducer",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "R03",
+      "milestone": "P3",
+      "owner": "Protocol maintainer",
+      "outcome": "NATURAL_DEMO_CONTRACT_IMPLEMENTED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Versioned natural DEMO contract; signed command protocol; compatibility tests",
+      "hard_dependencies": [
+        "R02"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "CAPITAL_RISK_LEDGER_IMPLEMENTED",
+        "authority.implementation"
+      ],
+      "effects": [
+        "NATURAL_DEMO_CONTRACT_IMPLEMENTED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-R03",
+          "criterion": "NATURAL_DEMO_CONTRACT_IMPLEMENTED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Explicit natural5SCR DEMO source class with current candidate/proof/reservation/account/spec/reconciliation/version/deadline binding; #418 projection and #419 engineering lineage cannot masquerade as capital authority; bind source-backed L12 strategy verdict plus mandatory post-verdict gates before separate account/exposure/final-size risk approval; P5-to-risk regex/ID substitution cannot bypass unknown gate mapping; journal records only and enrichment has no authority",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before R03 touches Versioned natural DEMO contract; signed command protocol; compatibility tests",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "E01",
+      "milestone": "P4",
+      "owner": "EA and bridge maintainer",
+      "outcome": "D0_TIMER_CLAIM_GUARDS_PATCHED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Wolf15_DumbExecutor_Shadow.mq5; Wolf15_DumbExecutor_Demo.mq5; claim repository",
+      "hard_dependencies": [
+        "A00"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "authority.implementation"
+      ],
+      "effects": [
+        "D0_TIMER_CLAIM_GUARDS_PATCHED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-E01",
+          "criterion": "D0_TIMER_CLAIM_GUARDS_PATCHED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "SHADOW and DEMO active timer handlers use monotonic elapsed scheduling; UTC expiry separate; direct claim enforces not-before/expiry atomically; no-quote recovery continues but stale quote submit rejects",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before E01 touches Wolf15_DumbExecutor_Shadow.mq5; Wolf15_DumbExecutor_Demo.mq5; claim repository",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "E02",
+      "milestone": "P4",
+      "owner": "Auth and ledger maintainer",
+      "outcome": "INDEPENDENT_ATTESTATION_IMPLEMENTED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Attestation schema/repository/auth boundary; existing bridge enqueue/arm",
+      "hard_dependencies": [
+        "A00"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "authority.implementation"
+      ],
+      "effects": [
+        "INDEPENDENT_ATTESTATION_IMPLEMENTED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-E02",
+          "criterion": "INDEPENDENT_ATTESTATION_IMPLEMENTED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Separate attestor principal and immutable proof/verifier; heartbeat bool cannot establish reconciliation; account/purpose/challenge/version/expiry/completeness checked; enqueue/arm binds verified proof atomically",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before E02 touches Attestation schema/repository/auth boundary; existing bridge enqueue/arm",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "E03",
+      "milestone": "P4",
+      "owner": "Release integrator",
+      "outcome": "D0_COMBINED_SOURCE_FROZEN",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Isolated D0 integration branch; revision/build/schema/protocol manifest",
+      "hard_dependencies": [
+        "C01",
+        "C02",
+        "C03",
+        "C06",
+        "E01",
+        "E02"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "RELEASE_EXACT_SHA_PATCHED",
+        "SINGLE_OWNER_CONTRACT_PATCHED",
+        "REQUIRED_GATES_TRUTHFUL",
+        "REQUIRED_RUNTIME_READINESS_PATCHED",
+        "D0_TIMER_CLAIM_GUARDS_PATCHED",
+        "INDEPENDENT_ATTESTATION_IMPLEMENTED",
+        "authority.implementation"
+      ],
+      "effects": [
+        "D0_COMBINED_SOURCE_FROZEN"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-E03",
+          "criterion": "D0_COMBINED_SOURCE_FROZEN",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Real combined commit/tree with reviewed #419 and required release fixes, including served runtime readiness/fatal-exit corrections from C06; D0 excludes #418 unless dependency evidence requires it; preserve observer/dashboard; main-to-canary migration chain and exact EA include closure bound",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before E03 touches Isolated D0 integration branch; revision/build/schema/protocol manifest",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "E04",
+      "milestone": "P4",
+      "owner": "Validation owner",
+      "outcome": "D0_CLEAN_RUNNER_GATES_PASSED",
+      "mutation_scope": "OTHER",
+      "mutation_surfaces": "Bound clean runner; disposable DB/Redis; CI receipts and artifact manifest",
+      "hard_dependencies": [
+        "E03",
+        "C04"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "D0_COMBINED_SOURCE_FROZEN",
+        "DEDICATED_LINUX_RUNNER_AVAILABLE",
+        "authority.implementation"
+      ],
+      "effects": [
+        "D0_CLEAN_RUNNER_GATES_PASSED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-E04",
+          "criterion": "D0_CLEAN_RUNNER_GATES_PASSED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Repo-native required checks run on exact combined SHA with true exit codes; disposable PG fresh/supported upgrade and rollback-boundary tests; idempotency/claim/report/attestation/kill/fault tests pass; full required suite remains required",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before E04 touches Bound clean runner; disposable DB/Redis; CI receipts and artifact manifest",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "E05",
+      "milestone": "P4",
+      "owner": "MT5 build owner",
+      "outcome": "D0_EA_ARTIFACTS_COMPILED",
+      "mutation_scope": "OTHER",
+      "mutation_surfaces": "Authorized MetaEditor build host; SHADOW+DEMO EA source closure",
+      "hard_dependencies": [
+        "E03"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "D0_COMBINED_SOURCE_FROZEN",
+        "capability.metaeditor"
+      ],
+      "effects": [
+        "D0_EA_ARTIFACTS_COMPILED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-E05",
+          "criterion": "D0_EA_ARTIFACTS_COMPILED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Compile both exact EA artifacts with full include closure and record MetaEditor build/error/warning output plus executable hashes; compiler success alone is not HTTP/broker acceptance",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before E05 touches Authorized MetaEditor build host; SHADOW+DEMO EA source closure",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "E06",
+      "milestone": "P4",
+      "owner": "MT5/account operator",
+      "outcome": "D0_ACCOUNT_READER_BINDING_VERIFIED",
+      "mutation_scope": "READ_ONLY",
+      "mutation_surfaces": "Read-only MT5/broker ledger and target database audit; account/executor binding receipt",
+      "hard_dependencies": [
+        "E02"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "INDEPENDENT_ATTESTATION_IMPLEMENTED",
+        "capability.account_reader"
+      ],
+      "effects": [
+        "D0_ACCOUNT_READER_BINDING_VERIFIED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-E06",
+          "criterion": "D0_ACCOUNT_READER_BINDING_VERIFIED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Read actual target account/server/DEMO/session/spec/governance plus independent reader identity/coverage; inventory applied DB head with read-only access; no secrets copied into evidence",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "NOT_REQUIRED",
+        "boundary": "Read-only observations and dossier; no repository/runtime mutation",
+        "triggers": [],
+        "recovery": [],
+        "preserves": [
+          "Existing source, credentials, ledger and broker state"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "D01",
+      "milestone": "P4",
+      "owner": "Database release operator",
+      "outcome": "D0_SCHEMA_RELEASE_APPLIED",
+      "mutation_scope": "DATABASE",
+      "mutation_surfaces": "Target PostgreSQL D0 schema release; existing command/audit rows preserved",
+      "hard_dependencies": [
+        "E04",
+        "E05",
+        "E06"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "D0_CLEAN_RUNNER_GATES_PASSED",
+        "D0_EA_ARTIFACTS_COMPILED",
+        "D0_ACCOUNT_READER_BINDING_VERIFIED",
+        "authority.d0_database"
+      ],
+      "effects": [
+        "D0_SCHEMA_RELEASE_APPLIED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-D01",
+          "criterion": "D0_SCHEMA_RELEASE_APPLIED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Observed applied head matches release precondition; compatible tested migration applied by one migration owner with backup/recovery evidence; schema checks satisfy exact D0 binary; unknown ledger prevents destructive downgrade",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before D01 touches Target PostgreSQL D0 schema release; existing command/audit rows preserved",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "E07",
+      "milestone": "P4",
+      "owner": "Deployment operator",
+      "outcome": "D0_DEPLOYMENT_BOUND",
+      "mutation_scope": "DEPLOYMENT",
+      "mutation_surfaces": "Existing Railway project/service targets; bound DEMO EA and migration release",
+      "hard_dependencies": [
+        "E04",
+        "E05",
+        "E06",
+        "D01"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "D0_CLEAN_RUNNER_GATES_PASSED",
+        "D0_EA_ARTIFACTS_COMPILED",
+        "D0_ACCOUNT_READER_BINDING_VERIFIED",
+        "D0_SCHEMA_RELEASE_APPLIED",
+        "authority.d0_deployment"
+      ],
+      "effects": [
+        "D0_DEPLOYMENT_BOUND"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-E07",
+          "criterion": "D0_DEPLOYMENT_BOUND",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Explicit target project/services/config/schema/images/EA bytes match release manifest; exactly one broker-capable executor and intended lifecycle owner; keep new-risk disarmed until rehearsal",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before E07 touches Existing Railway project/service targets; bound DEMO EA and migration release",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "E08",
+      "milestone": "P4",
+      "owner": "Acceptance operator",
+      "outcome": "D0_FINAL_SHADOW_REHEARSAL_PASSED",
+      "mutation_scope": "OTHER",
+      "mutation_surfaces": "Bound live SHADOW terminal/bridge with recording and broker inventory evidence",
+      "hard_dependencies": [
+        "E07"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "D0_DEPLOYMENT_BOUND",
+        "authority.shadow_runtime"
+      ],
+      "effects": [
+        "D0_FINAL_SHADOW_REHEARSAL_PASSED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-E08",
+          "criterion": "D0_FINAL_SHADOW_REHEARSAL_PASSED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Final-artifact HTTPS poll/claim/report and restart/corrupt-state/network failure rehearsal; zero broker submits; fresh independent account proof; no stale source PASS transferred",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before E08 touches Bound live SHADOW terminal/bridge with recording and broker inventory evidence",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "E09",
+      "milestone": "P4",
+      "owner": "DEMO operator",
+      "outcome": "D0_CANARY_RECONCILED",
+      "mutation_scope": "EXTERNAL",
+      "mutation_surfaces": "One bound DEMO account/executor/symbol/window; engineering canary only",
+      "hard_dependencies": [
+        "E08"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "D0_FINAL_SHADOW_REHEARSAL_PASSED",
+        "authority.d0_canary"
+      ],
+      "effects": [
+        "D0_CANARY_RECONCILED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-E09",
+          "criterion": "D0_CANARY_RECONCILED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "One explicitly scoped engineering DEMO request permits maximum one logical submit/effect according to canary contract; independent broker outcome reconciled; ambiguity retains block and never retries blindly",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before E09 touches One bound DEMO account/executor/symbol/window; engineering canary only",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "N01",
+      "milestone": "P3",
+      "owner": "Trade ledger maintainer",
+      "outcome": "NATURAL_SIGNED_PRODUCER_IMPLEMENTED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Natural signed producer; outbox; command ledger/report reducer",
+      "hard_dependencies": [
+        "R03",
+        "E02"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "NATURAL_DEMO_CONTRACT_IMPLEMENTED",
+        "INDEPENDENT_ATTESTATION_IMPLEMENTED",
+        "authority.implementation"
+      ],
+      "effects": [
+        "NATURAL_SIGNED_PRODUCER_IMPLEMENTED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-N01",
+          "criterion": "NATURAL_SIGNED_PRODUCER_IMPLEMENTED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "One immutable FinalSignal/reservation -> one deterministic command; payload conflict rejects; snapshot supersession yields auditable reauthorization; command publication never releases exposure; final builder persists only after both valid L12 strategy verdict with mandatory post-verdict gates and separate account/exposure/final-size risk approval; journal and enrichment cannot override either authority; current runtime L12 wiring remains unverified until traced",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before N01 touches Natural signed producer; outbox; command ledger/report reducer",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "N02",
+      "milestone": "P3",
+      "owner": "EA maintainer",
+      "outcome": "NATURAL_EA_IMPLEMENTED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Natural DEMO EA profile/build plus shared mechanics; Python/MQL5 contract vectors",
+      "hard_dependencies": [
+        "R03",
+        "E01"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "NATURAL_DEMO_CONTRACT_IMPLEMENTED",
+        "D0_TIMER_CLAIM_GUARDS_PATCHED",
+        "authority.implementation"
+      ],
+      "effects": [
+        "NATURAL_EA_IMPLEMENTED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-N02",
+          "criterion": "NATURAL_EA_IMPLEMENTED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Reuse shared wire/journal with explicit natural source/action allowlist; exact lot/protection/expiry; selected market and limit/cancel strategy modes; persistent marker and no residual resubmit; SHADOW cannot trade",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before N02 touches Natural DEMO EA profile/build plus shared mechanics; Python/MQL5 contract vectors",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "N03",
+      "milestone": "P3",
+      "owner": "Integration maintainer",
+      "outcome": "NATURAL_COMBINED_SOURCE_FROZEN",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Natural integration branch; schema union; migrations; contracts; version manifest",
+      "hard_dependencies": [
+        "N01",
+        "N02",
+        "E03",
+        "S04",
+        "S05"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "NATURAL_SIGNED_PRODUCER_IMPLEMENTED",
+        "NATURAL_EA_IMPLEMENTED",
+        "D0_COMBINED_SOURCE_FROZEN",
+        "DUAL_ADMISSION_LIFECYCLE_WIRED",
+        "V31_GEOMETRY_COSTS_ENFORCED",
+        "authority.implementation"
+      ],
+      "effects": [
+        "NATURAL_COMBINED_SOURCE_FROZEN"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-N03",
+          "criterion": "NATURAL_COMBINED_SOURCE_FROZEN",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Converge strategy/risk/EA with reviewed #418 only where selected; preserve observer/projection consumer boundaries; resolve protocol and two-head migration graph additively unless applied history proves alternative safe",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before N03 touches Natural integration branch; schema union; migrations; contracts; version manifest",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "N04",
+      "milestone": "P3",
+      "owner": "Validation owner",
+      "outcome": "NATURAL_COMBINED_GATES_PASSED",
+      "mutation_scope": "OTHER",
+      "mutation_surfaces": "Exact combined runner/MetaEditor/DB fixture acceptance",
+      "hard_dependencies": [
+        "N03",
+        "S06",
+        "C04"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "NATURAL_COMBINED_SOURCE_FROZEN",
+        "DETERMINISTIC_STRATEGY_REPLAY_PASSED",
+        "DEDICATED_LINUX_RUNNER_AVAILABLE",
+        "authority.implementation",
+        "capability.metaeditor"
+      ],
+      "effects": [
+        "NATURAL_COMBINED_GATES_PASSED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-N04",
+          "criterion": "NATURAL_COMBINED_GATES_PASSED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Full required gates, exact EA compile and disposable schema upgrades; race capacity, partial-fill/cancel/out-of-order/unknown/revocation tests; complete natural lineages and negative zero-sink effects",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before N04 touches Exact combined runner/MetaEditor/DB fixture acceptance",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "D02",
+      "milestone": "P5",
+      "owner": "Database release operator",
+      "outcome": "NATURAL_SCHEMA_RELEASE_APPLIED",
+      "mutation_scope": "DATABASE",
+      "mutation_surfaces": "Target PostgreSQL natural schema convergence; no historical revision rewrite",
+      "hard_dependencies": [
+        "N04",
+        "E09"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "NATURAL_COMBINED_GATES_PASSED",
+        "D0_CANARY_RECONCILED",
+        "authority.natural_database"
+      ],
+      "effects": [
+        "NATURAL_SCHEMA_RELEASE_APPLIED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-D02",
+          "criterion": "NATURAL_SCHEMA_RELEASE_APPLIED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Observed heads and data compatible with tested additive convergence migration; projection fields remain nullable for non-projection rows; preserve SHADOW/canary/observer history and bind schema to natural artifact",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before D02 touches Target PostgreSQL natural schema convergence; no historical revision rewrite",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "N05",
+      "milestone": "P5",
+      "owner": "Deployment operator",
+      "outcome": "NATURAL_DEPLOYMENT_REHEARSED",
+      "mutation_scope": "DEPLOYMENT",
+      "mutation_surfaces": "Existing Railway targets and bound DEMO terminal; versioned rollout",
+      "hard_dependencies": [
+        "N04",
+        "E09",
+        "D02"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "NATURAL_COMBINED_GATES_PASSED",
+        "D0_CANARY_RECONCILED",
+        "NATURAL_SCHEMA_RELEASE_APPLIED",
+        "authority.natural_deployment",
+        "authority.shadow_runtime"
+      ],
+      "effects": [
+        "NATURAL_DEPLOYMENT_REHEARSED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-N05",
+          "criterion": "NATURAL_DEPLOYMENT_REHEARSED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Deploy selected natural source/schema/config/EA profile to existing target and repeat final SHADOW; verify one account/executor owner and selected policy; no automatic reuse of old D0 SHA PASS",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before N05 touches Existing Railway targets and bound DEMO terminal; versioned rollout",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "N06",
+      "milestone": "P5",
+      "owner": "DEMO campaign operator",
+      "outcome": "NATURAL_PARENT_DEMO_RECONCILED",
+      "mutation_scope": "EXTERNAL",
+      "mutation_surfaces": "Bound parent-only natural DEMO cohort; independent broker evidence",
+      "hard_dependencies": [
+        "N05"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "NATURAL_DEPLOYMENT_REHEARSED",
+        "authority.parent_demo"
+      ],
+      "effects": [
+        "NATURAL_PARENT_DEMO_RECONCILED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-N06",
+          "criterion": "NATURAL_PARENT_DEMO_RECONCILED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Real canonical natural event -> full structure -> current risk -> FinalSignal -> broker parent outcome; WAIT/advisory/stale zero new-risk command; one-account/instrument/cap/time window explicit; full TP1/SL lifecycle and no-fill counted honestly",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before N06 touches Bound parent-only natural DEMO cohort; independent broker evidence",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "N07",
+      "milestone": "P5",
+      "owner": "Risk/strategy maintainer",
+      "outcome": "CHILD_COMPOUNDING_IMPLEMENTED",
+      "mutation_scope": "WORKTREE",
+      "mutation_surfaces": "Campaign/leg ledger; child admission; compounding policy; lifecycle fixtures",
+      "hard_dependencies": [
+        "R02",
+        "S04"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "CAPITAL_RISK_LEDGER_IMPLEMENTED",
+        "DUAL_ADMISSION_LIFECYCLE_WIRED",
+        "authority.implementation",
+        "policy.child_release_defined"
+      ],
+      "effects": [
+        "CHILD_COMPOUNDING_IMPLEMENTED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-N07",
+          "criterion": "CHILD_COMPOUNDING_IMPLEMENTED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Preserve selected profile; immutable campaign R from realized balance, current account caps; explicit broker-proved release semantics, lifetime one-child slot, parent/child partial-fill and close recovery; no BE/trailing invented",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before N07 touches Campaign/leg ledger; child admission; compounding policy; lifecycle fixtures",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "J01",
+      "milestone": "P5",
+      "owner": "Child integration and validation owner",
+      "outcome": "CHILD_COMBINED_GATES_PASSED",
+      "mutation_scope": "OTHER",
+      "mutation_surfaces": "Isolated child integration worktree and exact child build/test/replay/MetaEditor evidence; preserve parent release",
+      "hard_dependencies": [
+        "N07",
+        "N04",
+        "C04"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "CHILD_COMPOUNDING_IMPLEMENTED",
+        "NATURAL_COMBINED_GATES_PASSED",
+        "DEDICATED_LINUX_RUNNER_AVAILABLE",
+        "authority.implementation",
+        "capability.metaeditor"
+      ],
+      "effects": [
+        "CHILD_COMBINED_GATES_PASSED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-J01",
+          "criterion": "CHILD_COMBINED_GATES_PASSED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Freeze a real child-capable combined commit/tree after N07; bind policy/schema/config and both EA include closures; run required clean-runner, disposable PG migrations, child/parent replay, concurrency/recovery and MetaEditor gates on these exact child bytes; parent N04 PASS is context only and cannot satisfy this acceptance",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before J01 touches Isolated child integration worktree and exact child build/test/replay/MetaEditor evidence; preserve parent release",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "J02",
+      "milestone": "P5",
+      "owner": "Database release operator",
+      "outcome": "CHILD_SCHEMA_RELEASE_BOUND",
+      "mutation_scope": "DATABASE",
+      "mutation_surfaces": "Bound target PostgreSQL child schema transition or audited compatible no-op",
+      "hard_dependencies": [
+        "J01",
+        "N06"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "CHILD_COMBINED_GATES_PASSED",
+        "NATURAL_PARENT_DEMO_RECONCILED",
+        "authority.child_database"
+      ],
+      "effects": [
+        "CHILD_SCHEMA_RELEASE_BOUND"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-J02",
+          "criterion": "CHILD_SCHEMA_RELEASE_BOUND",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Inspect current target schema/ledger and apply only tested child migration under single migration owner; if no migration is needed, record verified compatible no-op against child schema digest; preserve parent/child/canary/observer histories and unresolved exposure",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before J02 touches Bound target PostgreSQL child schema transition or audited compatible no-op",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "J03",
+      "milestone": "P5",
+      "owner": "Deployment operator",
+      "outcome": "CHILD_DEPLOYMENT_REHEARSED",
+      "mutation_scope": "DEPLOYMENT",
+      "mutation_surfaces": "Existing Railway and DEMO terminal child release; exact child artifact and final rehearsal",
+      "hard_dependencies": [
+        "J01",
+        "J02"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "CHILD_COMBINED_GATES_PASSED",
+        "CHILD_SCHEMA_RELEASE_BOUND",
+        "authority.child_deployment",
+        "authority.shadow_runtime"
+      ],
+      "effects": [
+        "CHILD_DEPLOYMENT_REHEARSED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-J03",
+          "criterion": "CHILD_DEPLOYMENT_REHEARSED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Deploy only the exact J01 child source/image/config/policy/EA closure with J02 schema binding; inspect effective existing service UUIDs/ownership and repeat child-capable final SHADOW with zero broker submits; parent deployment/PASS never stands in for changed artifact parity",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before J03 touches Existing Railway and DEMO terminal child release; exact child artifact and final rehearsal",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "N08",
+      "milestone": "P5",
+      "owner": "DEMO campaign operator",
+      "outcome": "NATURAL_FAMILY_DEMO_RECONCILED",
+      "mutation_scope": "EXTERNAL",
+      "mutation_surfaces": "Bound child-capable natural DEMO cohort; exact child artifact/schema/policy and broker evidence",
+      "hard_dependencies": [
+        "N06",
+        "J03"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "NATURAL_PARENT_DEMO_RECONCILED",
+        "CHILD_DEPLOYMENT_REHEARSED",
+        "authority.family_demo"
+      ],
+      "effects": [
+        "NATURAL_FAMILY_DEMO_RECONCILED"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-N08",
+          "criterion": "NATURAL_FAMILY_DEMO_RECONCILED",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Run only scoped child-capable broker campaign on exact J01/J02/J03 release; independently reconcile parent+one child and next-campaign compounding; lifetime slot persists after close; unknown retains exposure; no parent-only PASS reused for child capability",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before N08 touches Bound child-capable natural DEMO cohort; exact child artifact/schema/policy and broker evidence",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "O01",
+      "milestone": "P6",
+      "owner": "Operations owner",
+      "outcome": "OPERATIONAL_RECOVERY_EVIDENCE_COMPLETE",
+      "mutation_scope": "OTHER",
+      "mutation_surfaces": "Operational evidence on exact DEMO artifacts; runbooks; metrics and incident ownership",
+      "hard_dependencies": [
+        "N08"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "NATURAL_FAMILY_DEMO_RECONCILED",
+        "authority.operational_drills"
+      ],
+      "effects": [
+        "OPERATIONAL_RECOVERY_EVIDENCE_COMPLETE"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-O01",
+          "criterion": "OPERATIONAL_RECOVERY_EVIDENCE_COMPLETE",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Bound DEMO soak/fault drills cover disconnect/restart/kill and service loss; no orphan exposure or silent backlog; measure stale ratios, lag, resource bounds and recovery; retain protected positions and reconciliation; no spontaneous close-all",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before O01 touches Operational evidence on exact DEMO artifacts; runbooks; metrics and incident ownership",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Stop new risk within approved scope; preserve immutable command/reservation/broker evidence and existing protections; reconcile unknown outcomes; use reviewed compatible prior artifact or forward repair. Broker effects are not undone by source rollback; no blind resend, close-all or ledger deletion."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "O02",
+      "milestone": "P6",
+      "owner": "Research evaluation owner",
+      "outcome": "STRATEGY_EVALUATION_DOSSIER_COMPLETE",
+      "mutation_scope": "OTHER",
+      "mutation_surfaces": "Offline reproducible research evidence; no runtime promotion authority",
+      "hard_dependencies": [
+        "S06",
+        "C04"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "DETERMINISTIC_STRATEGY_REPLAY_PASSED",
+        "DEDICATED_LINUX_RUNNER_AVAILABLE",
+        "authority.implementation"
+      ],
+      "effects": [
+        "STRATEGY_EVALUATION_DOSSIER_COMPLETE"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-O02",
+          "criterion": "STRATEGY_EVALUATION_DOSSIER_COMPLETE",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Predefined OOS/walk-forward cohorts with availability/cost/strategy/risk digests; campaign-clustered outcomes, drawdown/uncertainty/no-fill/ambiguous counts reported; no invented 94% target and no profitability inferred from D0",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "PLANNED",
+        "boundary": "Before O02 touches Offline reproducible research evidence; no runtime promotion authority",
+        "triggers": [
+          "Scope or identity drift",
+          "Required gate failure or unresolved external outcome"
+        ],
+        "recovery": [
+          "Revert only the owned patch/artifact changes after preserving pre-existing tracked/untracked work and evidence; never blanket reset."
+        ],
+        "preserves": [
+          "Pre-existing user work and historical hosts",
+          "Credentials and audit evidence",
+          "Database and broker history; unresolved exposure"
+        ]
+      },
+      "execution_status": "BLOCKED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    },
+    {
+      "id": "O03",
+      "milestone": "P6",
+      "owner": "Release reviewer",
+      "outcome": "REAL_READINESS_DOSSIER_COMPLETE",
+      "mutation_scope": "READ_ONLY",
+      "mutation_surfaces": "Read-only release dossier and final authority/rollback review",
+      "hard_dependencies": [
+        "O01",
+        "O02",
+        "C05"
+      ],
+      "soft_dependencies": [],
+      "preconditions": [
+        "source.scope_acquired",
+        "OPERATIONAL_RECOVERY_EVIDENCE_COMPLETE",
+        "STRATEGY_EVALUATION_DOSSIER_COMPLETE",
+        "RELEASE_GOVERNANCE_ENFORCED"
+      ],
+      "effects": [
+        "REAL_READINESS_DOSSIER_COMPLETE"
+      ],
+      "cost": {
+        "status": "NOT_MEASURED",
+        "value": null,
+        "unit": null,
+        "evidence_refs": []
+      },
+      "acceptance": [
+        {
+          "id": "AC-O03",
+          "criterion": "REAL_READINESS_DOSSIER_COMPLETE",
+          "verification": "Source/diff review and bound behavioral/runtime receipts appropriate to mutation scope; all declared checks must record actual outcomes",
+          "expected": "Assemble exact artifact/account/policy operational and strategy evidence plus unresolved risks; report READY_FOR_REVIEW or HOLD with objective reasons; dossier itself never enables REAL or sends orders",
+          "status": "NOT_EXECUTED",
+          "evidence_refs": []
+        }
+      ],
+      "rollback": {
+        "status": "NOT_REQUIRED",
+        "boundary": "Read-only observations and dossier; no repository/runtime mutation",
+        "triggers": [],
+        "recovery": [],
+        "preserves": [
+          "Existing source, credentials, ledger and broker state"
+        ]
+      },
+      "execution_status": "NOT_EXECUTED",
+      "requirement_basis": "SOURCE_GROUNDED_AND_PROPOSED_REMEDIATION",
+      "estimated_duration": "NOT_MEASURED"
+    }
+  ],
+  "goal_acceptance": [
+    {
+      "id": "G-P1",
+      "criterion": "Source-bound release/CI/single-owner readiness",
+      "verification": "Review actual PASS receipts on one compatible source/artifact/policy scope for all actions in this milestone",
+      "expected": "All milestone predicates supported; unknowns remain explicit, no promotion by document validation",
+      "status": "NOT_EXECUTED",
+      "evidence_refs": []
+    },
+    {
+      "id": "G-P2",
+      "criterion": "Deterministic evidence/admission and V3.1 geometry",
+      "verification": "Review actual PASS receipts on one compatible source/artifact/policy scope for all actions in this milestone",
+      "expected": "All milestone predicates supported; unknowns remain explicit, no promotion by document validation",
+      "status": "NOT_EXECUTED",
+      "evidence_refs": []
+    },
+    {
+      "id": "G-P3",
+      "criterion": "Capital risk, FinalSignal, signed natural DEMO and account ledger",
+      "verification": "Review actual PASS receipts on one compatible source/artifact/policy scope for all actions in this milestone",
+      "expected": "All milestone predicates supported; unknowns remain explicit, no promotion by document validation",
+      "status": "NOT_EXECUTED",
+      "evidence_refs": []
+    },
+    {
+      "id": "G-P4",
+      "criterion": "Independent account/broker proof and engineering canary",
+      "verification": "Review actual PASS receipts on one compatible source/artifact/policy scope for all actions in this milestone",
+      "expected": "All milestone predicates supported; unknowns remain explicit, no promotion by document validation",
+      "status": "NOT_EXECUTED",
+      "evidence_refs": []
+    },
+    {
+      "id": "G-P5",
+      "criterion": "Natural parent DEMO then child and compounding",
+      "verification": "Review actual PASS receipts on one compatible source/artifact/policy scope for all actions in this milestone",
+      "expected": "All milestone predicates supported; unknowns remain explicit, no promotion by document validation",
+      "status": "NOT_EXECUTED",
+      "evidence_refs": []
+    },
+    {
+      "id": "G-P6",
+      "criterion": "Operational and strategy REAL-readiness dossier; no REAL activation",
+      "verification": "Review actual PASS receipts on one compatible source/artifact/policy scope for all actions in this milestone",
+      "expected": "All milestone predicates supported; unknowns remain explicit, no promotion by document validation",
+      "status": "NOT_EXECUTED",
+      "evidence_refs": []
+    }
+  ],
+  "critical_path": {
+    "status": "NOT_MEASURED",
+    "action_ids": [],
+    "basis": "No comparable measured durations or cost evidence; parallel D0 and natural data/strategy/risk lanes converge before natural execution",
+    "evidence_refs": []
+  },
+  "plan_status": "BLOCKED",
+  "next_action": null,
+  "milestones": [
+    {
+      "id": "P1",
+      "goal": "Source-bound release/CI/single-owner readiness",
+      "actions": [
+        "A00",
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06"
+      ]
+    },
+    {
+      "id": "P2",
+      "goal": "Deterministic evidence/admission and V3.1 geometry",
+      "actions": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06"
+      ]
+    },
+    {
+      "id": "P3",
+      "goal": "Capital risk, FinalSignal, signed natural DEMO and account ledger",
+      "actions": [
+        "R01",
+        "R02",
+        "R03",
+        "N01",
+        "N02",
+        "N03",
+        "N04"
+      ]
+    },
+    {
+      "id": "P4",
+      "goal": "Independent account/broker proof and engineering canary",
+      "actions": [
+        "E01",
+        "E02",
+        "E03",
+        "E04",
+        "E05",
+        "E06",
+        "D01",
+        "E07",
+        "E08",
+        "E09"
+      ]
+    },
+    {
+      "id": "P5",
+      "goal": "Natural parent DEMO then child and compounding",
+      "actions": [
+        "D02",
+        "N05",
+        "N06",
+        "N07",
+        "J01",
+        "J02",
+        "J03",
+        "N08"
+      ]
+    },
+    {
+      "id": "P6",
+      "goal": "Operational and strategy REAL-readiness dossier; no REAL activation",
+      "actions": [
+        "O01",
+        "O02",
+        "O03"
+      ]
+    }
+  ],
+  "proposed_next_engineering_slice": {
+    "action_ids": [
+      "C01"
+    ],
+    "status": "PROPOSED_NOT_EXECUTABLE_UNDER_PLANNING_ONLY",
+    "reason": "Assessment and planning deliverables are complete. The next real slice is source implementation C01; current task requests planning, so no artificial extra read-only action is inserted to claim PARTIAL_PLAN.",
+    "follow_on_parallel": [
+      "C02",
+      "S01",
+      "E01",
+      "E02"
+    ]
+  },
+  "parallel_lanes": [
+    [
+      "C01",
+      "C02",
+      "S01",
+      "E01",
+      "E02"
+    ],
+    [
+      "S02",
+      "S03",
+      "S05",
+      "R01"
+    ],
+    [
+      "E04",
+      "E05",
+      "E06",
+      "R02"
+    ],
+    [
+      "N01",
+      "N02",
+      "N07"
+    ]
+  ],
+  "authority_flags": {
+    "source_mutation": false,
+    "external_mutation": false,
+    "deployment": false,
+    "broker_side_effect_allowed": false,
+    "live_real_money_allowed": false
+  },
+  "implementation": "NOT_EXECUTED",
+  "authorization_semantics": "Predicates represent future action-specific scope bindings, not a request for repeated confirmations. Existing session authorization persists where it already covers the exact action, target and artifact; no new authority is manufactured by this plan.",
+  "cloud_inventory": {
+    "status": "OBSERVED_METADATA_ONLY",
+    "observed_at": "2026-09-08T18:08:48Z",
+    "service_objects": 20,
+    "project_id": "af4d15d8-d4cb-44b7-80e7-d99a37ca0045",
+    "environment_id": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+    "evidence_refs": [
+      "CLOUDMETA",
+      "CLOUDREVIEW"
+    ],
+    "effective_artifact_parity": "NOT_ESTABLISHED",
+    "runtime_usefulness": "NOT_MEASURED"
+  },
+  "validation_scope": "Structural validator checks JSON/dependencies only; cannot certify source correctness, tests, rollback or runtime readiness"
+}

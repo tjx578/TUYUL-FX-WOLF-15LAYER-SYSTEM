@@ -14,11 +14,14 @@ from services.pressure_outbox.outcome_worker import (
     OutcomeRuntimeConfig,
     PostgresOutcomeRepository,
 )
+from services.pressure_outbox.shadow_evidence_v2_worker import ShadowEvidenceV2RuntimeConfig
+from storage.pair_admission_evaluations import PairAdmissionEvaluationRepository
 from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_radar_manifest import PressureRadarManifestRepository
 from storage.strategy_5scr_candle_store import PostgresClosedCandleStore
 from storage.strategy_5scr_lifecycle_v2_repository import StrategyLifecycleV2Repository
+from storage.strategy_5scr_shadow_evidence_v2_repository import StrategyShadowEvidenceV2Repository
 
 
 def _enabled(value: str | None) -> bool:
@@ -37,7 +40,9 @@ _EXPECTED_PHASES = {
     "dark": PressureOutboxRolloutFlags(False, False, False, False),
     "dispatcher": PressureOutboxRolloutFlags(True, False, True, False),
     "consumer": PressureOutboxRolloutFlags(True, False, True, True),
-    "production-observe": PressureOutboxRolloutFlags(True, True, True, True),
+    # Writer authority belongs to the engine.  The worker dispatches and
+    # consumes but must never carry SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED.
+    "production-observe": PressureOutboxRolloutFlags(True, False, True, True),
 }
 
 
@@ -82,17 +87,56 @@ def validate_rollout_phase(flags: PressureOutboxRolloutFlags, expected_phase: st
         )
 
 
+def validate_analysis_worker_phase(
+    *,
+    expected_phase: str,
+    evidence_enabled: bool,
+    outcome_enabled: bool,
+) -> None:
+    """Keep live evidence/outcomes confined to production-observe."""
+
+    if expected_phase == "production-observe" and not evidence_enabled:
+        raise RuntimeError("PRODUCTION_OBSERVE_REQUIRES_EVIDENCE_WORKER")
+    if expected_phase != "production-observe" and evidence_enabled:
+        raise RuntimeError("EVIDENCE_WORKER_REQUIRES_PRODUCTION_OBSERVE_PHASE")
+    if outcome_enabled and not evidence_enabled:
+        raise RuntimeError("STRATEGY_5SCR_OUTCOME_REQUIRES_EVIDENCE_WORKER")
+
+
+def validate_lifecycle_evidence_owner_phase(
+    *,
+    lifecycle_config: LifecycleV2RuntimeConfig,
+    evidence_config: ShadowEvidenceV2RuntimeConfig,
+) -> None:
+    if lifecycle_config.evidence_owner_writer_enabled and not (
+        lifecycle_config.enabled and lifecycle_config.shadow_only and lifecycle_config.dual_write_enabled
+    ):
+        raise RuntimeError("STRATEGY_5SCR_EVIDENCE_OWNER_WRITER_REQUIRES_LIFECYCLE_DUAL_WRITE")
+    if lifecycle_config.evidence_owner_writer_enabled and evidence_config.execution_plane_active:
+        raise RuntimeError("STRATEGY_5SCR_EVIDENCE_OWNER_WRITER_REQUIRES_EXECUTION_OFF")
+    if evidence_config.enabled and not lifecycle_config.evidence_owner_writer_enabled:
+        raise RuntimeError("STRATEGY_5SCR_SHADOW_EVIDENCE_V2_REQUIRES_OWNER_WRITER")
+
+
 async def run_preflight() -> dict[str, object]:
     expected_phase = os.getenv("PRESSURE_OUTBOX_EXPECTED_PHASE", "dark").strip().lower()
     flags = rollout_flags()
     validate_rollout_phase(flags, expected_phase)
     evidence_config = EvidenceRuntimeConfig.from_env()
     outcome_config = OutcomeRuntimeConfig.from_env()
+    validate_analysis_worker_phase(
+        expected_phase=expected_phase,
+        evidence_enabled=evidence_config.enabled,
+        outcome_enabled=outcome_config.enabled,
+    )
     if evidence_config.enabled and not (flags.master and flags.consumer):
         raise RuntimeError("STRATEGY_5SCR_EVIDENCE_REQUIRES_PRESSURE_CONSUMER")
-    if outcome_config.enabled and not evidence_config.enabled:
-        raise RuntimeError("STRATEGY_5SCR_OUTCOME_REQUIRES_EVIDENCE_WORKER")
     lifecycle_v2_config = LifecycleV2RuntimeConfig.from_env()
+    shadow_evidence_v2_config = ShadowEvidenceV2RuntimeConfig.from_env()
+    validate_lifecycle_evidence_owner_phase(
+        lifecycle_config=lifecycle_v2_config,
+        evidence_config=shadow_evidence_v2_config,
+    )
     # Phase one has no non-shadow mode.  Refuse at startup rather than trust
     # every call site to re-check.
     if lifecycle_v2_config.enabled and not lifecycle_v2_config.shadow_only:
@@ -115,6 +159,18 @@ async def run_preflight() -> dict[str, object]:
                 f"tables={','.join(radar_schema.missing_tables) or 'none'}:"
                 f"indexes={','.join(radar_schema.missing_indexes) or 'none'}"
             )
+        admission_schema = await PairAdmissionEvaluationRepository(pg=pg_client).schema_status()
+        if not admission_schema.ready:
+            raise RuntimeError(
+                "PAIR_ADMISSION_EVALUATION_SCHEMA_NOT_READY:"
+                f"tables={','.join(admission_schema.missing_tables) or 'none'}:"
+                f"columns={','.join(admission_schema.missing_columns) or 'none'}:"
+                f"invalid_columns={','.join(admission_schema.invalid_columns) or 'none'}:"
+                f"constraints={','.join(admission_schema.missing_constraints) or 'none'}:"
+                f"invalid_constraints={','.join(admission_schema.invalid_constraints) or 'none'}:"
+                f"indexes={','.join(admission_schema.missing_indexes) or 'none'}:"
+                f"invalid_indexes={','.join(admission_schema.invalid_indexes) or 'none'}"
+            )
         candle_schema = await PostgresClosedCandleStore(pg=pg_client).schema_status()
         if evidence_config.enabled and not candle_schema.ready:
             raise RuntimeError(
@@ -135,6 +191,20 @@ async def run_preflight() -> dict[str, object]:
         # every poll; fail closed at startup instead.
         if lifecycle_v2_config.enabled and not lifecycle_v2_ready:
             raise RuntimeError(lifecycle_v2_schema_error(lifecycle_v2_schema))
+        owner_schema = await StrategyShadowEvidenceV2Repository(pg=pg_client).schema_status()
+        owner_schema_ready = not any(owner_schema.values())
+        if (
+            lifecycle_v2_config.evidence_owner_writer_enabled or shadow_evidence_v2_config.enabled
+        ) and not owner_schema_ready:
+            raise RuntimeError(
+                "STRATEGY_5SCR_SHADOW_EVIDENCE_V2_SCHEMA_NOT_READY:"
+                f"tables={','.join(owner_schema['missing_tables']) or 'none'}:"
+                f"indexes={','.join(owner_schema['missing_indexes']) or 'none'}:"
+                f"columns={','.join(owner_schema['missing_columns']) or 'none'}:"
+                f"constraints={','.join(owner_schema['missing_constraints']) or 'none'}"
+            )
+        if shadow_evidence_v2_config.enabled and not candle_schema.ready:
+            raise RuntimeError("STRATEGY_5SCR_SHADOW_EVIDENCE_V2_CANDLE_SCHEMA_NOT_READY")
         return {
             "event": "pressure_outbox_preflight",
             "ready": True,
@@ -144,6 +214,10 @@ async def run_preflight() -> dict[str, object]:
             "schema_indexes": sorted(schema.present_indexes),
             "radar_schema_tables": sorted(radar_schema.present_tables),
             "radar_schema_indexes": sorted(radar_schema.present_indexes),
+            "pair_admission_schema_tables": sorted(admission_schema.present_tables),
+            "pair_admission_schema_columns": sorted(admission_schema.present_columns),
+            "pair_admission_schema_constraints": sorted(admission_schema.present_constraints),
+            "pair_admission_schema_indexes": sorted(admission_schema.present_indexes),
             "evidence": asdict(evidence_config),
             "outcome": asdict(outcome_config),
             "execution_isolated": not any(
@@ -159,6 +233,8 @@ async def run_preflight() -> dict[str, object]:
             "outcome_schema_ready": outcome_schema.ready,
             "lifecycle_v2": asdict(lifecycle_v2_config),
             "lifecycle_v2_schema_ready": lifecycle_v2_ready,
+            "shadow_evidence_v2": asdict(shadow_evidence_v2_config),
+            "shadow_evidence_v2_schema_ready": owner_schema_ready,
         }
     finally:
         await pg_client.close()
@@ -177,5 +253,7 @@ __all__ = [
     "PressureOutboxRolloutFlags",
     "rollout_flags",
     "run_preflight",
+    "validate_analysis_worker_phase",
+    "validate_lifecycle_evidence_owner_phase",
     "validate_rollout_phase",
 ]

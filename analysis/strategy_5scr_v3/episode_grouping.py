@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from analysis.strategy_5scr_v3.episode_policy import MarketEpisodePolicyV1
-from contracts.strategy_5scr_lifecycle_v2 import StrategyLifecycleV2
+from contracts.strategy_5scr_lifecycle_v2 import DirectionState, StrategyLifecycleV2
 
 GroupingAction = str
 
@@ -87,9 +87,13 @@ class EpisodeEvent:
     hard_context_reset: bool = False
 
     @property
-    def direction(self) -> str | None:
+    def direction(self) -> DirectionState | None:
         resolved = (self.raw_direction or "").upper()
-        return resolved if resolved in {"BUY", "SELL"} else None
+        if resolved == "BUY":
+            return "BUY"
+        if resolved == "SELL":
+            return "SELL"
+        return None
 
     @property
     def is_continuity_evidence(self) -> bool:
@@ -109,7 +113,7 @@ class EpisodeEvent:
 class GroupingDecision:
     action: GroupingAction
     reason: str
-    next_direction_state: str
+    next_direction_state: DirectionState
     #: Advances last_continuity_event_at.
     continuity: bool
     #: Advances last_material_event_at.

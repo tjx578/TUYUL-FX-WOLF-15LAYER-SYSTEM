@@ -9,8 +9,13 @@ from fastapi.testclient import TestClient
 
 from api.executor_bridge_router import router
 from api.middleware.executor_auth import verify_executor_auth
-from contracts.mt5_execution_protocol import ExecutionCommandV1, sha256_tag, sign_execution_command
-from execution.mt5_command_repository import CommandClaim, get_mt5_command_repository
+from contracts.mt5_execution_protocol import (
+    ExecutionCommandV1,
+    build_signed_execution_envelope,
+    sha256_tag,
+    sign_execution_command,
+)
+from execution.mt5_command_repository import CommandClaim, CommandDelivery, get_mt5_command_repository
 from execution.mt5_executor_governance import GovernanceSnapshot
 
 SECRET = "z" * 64
@@ -83,6 +88,17 @@ class FakeRepository:
     def __init__(self, command: ExecutionCommandV1 | None = None) -> None:
         self.command = command
 
+    def _delivery(self) -> CommandDelivery:
+        assert self.command is not None
+        return CommandDelivery(
+            command=self.command,
+            signed_envelope=build_signed_execution_envelope(
+                self.command,
+                root_secret=SECRET,
+                key_id="test.v2",
+            ),
+        )
+
     async def register_executor(self, request: Any) -> dict[str, Any]:
         return {
             "executor_id": request.executor_id,
@@ -91,8 +107,8 @@ class FakeRepository:
             "status": "REGISTERED",
         }
 
-    async def next_command(self, executor_id: UUID) -> ExecutionCommandV1 | None:
-        return self.command
+    async def next_command(self, executor_id: UUID) -> CommandDelivery | None:
+        return self._delivery() if self.command is not None else None
 
     async def governance_snapshot(self, executor_id: UUID) -> GovernanceSnapshot:
         return GovernanceSnapshot(
@@ -105,13 +121,36 @@ class FakeRepository:
         )
 
     async def claim_command(self, *, executor_id: UUID, command_id: UUID, lease_seconds: int) -> CommandClaim:
-        assert self.command is not None
-        assert command_id == self.command.command_id
+        delivery = self._delivery()
+        assert command_id == delivery.command.command_id
         return CommandClaim(
-            command=self.command,
+            command=delivery.command,
             claim_token="claim-token",
             lease_expires_at=datetime.now(UTC) + timedelta(seconds=lease_seconds),
+            signed_envelope=delivery.signed_envelope,
         )
+
+    async def command_status(self, *, executor_id: UUID, command_id: UUID) -> dict[str, Any]:
+        delivery = self._delivery()
+        assert command_id == delivery.command.command_id
+        assert executor_id == delivery.command.executor_binding.executor_id
+        assert delivery.signed_envelope is not None
+        return {
+            "command_id": str(command_id),
+            "command_state": "SHADOW_COMPLETED",
+            "terminal": True,
+            "request_hash": delivery.signed_envelope.payload_sha256,
+            "wire_format": delivery.signed_envelope.wire_version,
+            "last_report_sequence": 1,
+            "terminal_at_utc": datetime.now(UTC).isoformat(),
+            "latest_report": {
+                "report_id": str(uuid4()),
+                "sequence": 1,
+                "state": "WOULD_EXECUTE",
+                "payload_hash": "sha256:" + "f" * 64,
+                "request_hash": delivery.signed_envelope.payload_sha256,
+            },
+        }
 
 
 def _client(executor_id: UUID, repository: FakeRepository) -> TestClient:
@@ -140,9 +179,38 @@ def test_claim_returns_hash_bound_to_signed_command() -> None:
         json={"lease_seconds": 30},
     )
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     data = response.json()["data"]
     assert data["claim_token"] == "claim-token"
     assert data["request_hash"] == sha256_tag(command.model_dump(mode="json"))
+    assert data["signed_envelope"]["payload_sha256"] == data["request_hash"]
+    assert data["signed_envelope"]["wire_version"] == "wolf15.mt5.exec.signed-bytes.v2"
+
+
+def test_poll_adds_frozen_envelope_without_removing_the_v1_command() -> None:
+    executor_id = uuid4()
+    command = _command(executor_id)
+    response = _client(executor_id, FakeRepository(command)).get(f"/api/v1/executors/{executor_id}/commands/next")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    data = response.json()["data"]
+    assert data["command"]["command_id"] == str(command.command_id)
+    assert data["signed_envelope"]["executor_id"] == str(executor_id)
+    assert data["signed_envelope"]["payload_sha256"] == sha256_tag(command.model_dump(mode="json"))
+
+
+def test_authenticated_executor_can_reconcile_a_terminal_command() -> None:
+    executor_id = uuid4()
+    command = _command(executor_id)
+    response = _client(executor_id, FakeRepository(command)).get(
+        f"/api/v1/executors/{executor_id}/commands/{command.command_id}/status"
+    )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    data = response.json()["data"]
+    assert data["terminal"] is True
+    assert data["command_state"] == "SHADOW_COMPLETED"
+    assert data["latest_report"]["request_hash"] == data["request_hash"]
 
 
 def test_registration_path_is_bound_to_authenticated_executor() -> None:

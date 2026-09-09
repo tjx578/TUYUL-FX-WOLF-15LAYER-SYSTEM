@@ -1,0 +1,125 @@
+{
+  "commit": "773150952311db3dbf5188f36536b7837d8ec296",
+  "tests": {
+    "passed": 211,
+    "failed": 0,
+    "skipped": 0
+  },
+  "scenarios": [
+    {
+      "id": "same_direction_gap300",
+      "fixture": {
+        "symbol": "EURUSD",
+        "offsets_seconds": [
+          0,
+          150,
+          300
+        ],
+        "directions": [
+          "BUY",
+          "BUY",
+          "BUY"
+        ],
+        "max_gap_seconds": 300,
+        "coverage": "SYNTHETIC_ORDERED_COMPLETE_INPUT_LEDGER",
+        "policy_scope": "DIAGNOSTIC_ONLY_NOT_SELECTED_PRODUCTION_POLICY"
+      },
+      "block_count": 1,
+      "durations": [
+        300.0
+      ],
+      "finalization_reasons": [
+        null
+      ],
+      "grant_count": 1,
+      "evaluated_blocks": 1,
+      "rejection_counts": {},
+      "scope": "Tests input population semantics only; no real source continuity, persistence, SLA or order permission."
+    },
+    {
+      "id": "mixed_direction_gap300",
+      "fixture": {
+        "symbol": "EURUSD",
+        "offsets_seconds": [
+          0,
+          150,
+          300
+        ],
+        "directions": [
+          "BUY",
+          "SELL",
+          "BUY"
+        ],
+        "max_gap_seconds": 300,
+        "coverage": "SYNTHETIC_ORDERED_COMPLETE_INPUT_LEDGER",
+        "policy_scope": "DIAGNOSTIC_ONLY_NOT_SELECTED_PRODUCTION_POLICY"
+      },
+      "block_count": 3,
+      "durations": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "finalization_reasons": [
+        "DIRECTION_CHANGE_EVENT",
+        "DIRECTION_CHANGE_EVENT",
+        null
+      ],
+      "grant_count": 0,
+      "evaluated_blocks": 3,
+      "rejection_counts": {
+        "BLOCK_EVENT_COUNT_INVALID": 3
+      },
+      "scope": "Tests input population semantics only; no real source continuity, persistence, SLA or order permission."
+    },
+    {
+      "id": "mixed_direction_gap100",
+      "fixture": {
+        "symbol": "EURUSD",
+        "offsets_seconds": [
+          0,
+          150,
+          300
+        ],
+        "directions": [
+          "BUY",
+          "SELL",
+          "BUY"
+        ],
+        "max_gap_seconds": 100,
+        "coverage": "SYNTHETIC_ORDERED_COMPLETE_INPUT_LEDGER",
+        "policy_scope": "DIAGNOSTIC_ONLY_NOT_SELECTED_PRODUCTION_POLICY"
+      },
+      "block_count": 3,
+      "durations": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "finalization_reasons": [
+        "DIRECTION_CHANGE_EVENT",
+        "DIRECTION_CHANGE_EVENT",
+        null
+      ],
+      "grant_count": 0,
+      "evaluated_blocks": 3,
+      "rejection_counts": {
+        "BLOCK_EVENT_COUNT_INVALID": 3
+      },
+      "scope": "Tests input population semantics only; no real source continuity, persistence, SLA or order permission."
+    }
+  ],
+  "risk_identity": [
+    {
+      "prefix": "5scr-plan:",
+      "accepted": true
+    },
+    {
+      "prefix": "5scr-tradeplan-v2:",
+      "accepted": false,
+      "error_types": [
+        "string_pattern_mismatch"
+      ]
+    }
+  ]
+}

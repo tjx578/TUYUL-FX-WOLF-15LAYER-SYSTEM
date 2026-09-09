@@ -75,7 +75,7 @@ def test_pressure_state_emitters_include_runtime_identity(monkeypatch, caplog):
         "generated_at_utc": "2026-07-16T01:02:03+00:00",
     }
 
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     assert emit_signal_pressure_state({"symbol": "USDCAD"}) is True
     assert emit_signal_pressure_state_summary({"attempted": 1, "emitted": 1, "suppressed": 0}) is True
 
@@ -94,3 +94,25 @@ def test_pressure_state_emitters_include_runtime_identity(monkeypatch, caplog):
         assert payload["final_direction"] == "WAIT"
     assert state["schema_version"] == "2.0-pressure-state"
     assert summary["schema_version"] == "1.0-pressure-state-summary"
+    state_record = next(record for record in caplog.records if "[SignalPressureStateJSON]" in record.message)
+    assert state_record.levelno == logging.INFO
+    assert state["event_severity"] == "INFO"
+    assert state["source_stage_role"] == "PRODUCER_METADATA_NON_MONOTONIC"
+    assert state["strategy_stage"] == "PRESSURE_OBSERVED"
+
+
+def test_frozen_quote_pressure_state_is_promoted_to_warning(caplog):
+    caplog.set_level(logging.INFO, logger="signal_json")
+
+    assert emit_signal_pressure_state(
+        {
+            "symbol": "USDCAD",
+            "quote_health_status": "PRICE_FROZEN",
+            "quote_health_execution_blocked": True,
+        }
+    )
+
+    record = next(record for record in caplog.records if "[SignalPressureStateJSON]" in record.message)
+    payload = json.loads(record.message.split("[SignalPressureStateJSON]", 1)[1].strip())
+    assert record.levelno == logging.WARNING
+    assert payload["event_severity"] == "WARNING"

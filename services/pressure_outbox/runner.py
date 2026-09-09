@@ -21,6 +21,10 @@ from services.pressure_outbox.outcome_worker import (
     OutcomeRuntimeConfig,
     build_outcome_worker,
 )
+from services.pressure_outbox.shadow_evidence_v2_worker import (
+    ShadowEvidenceV2RuntimeConfig,
+    build_shadow_evidence_v2_worker,
+)
 from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_outbox_worker import PressureOutboxWorker
@@ -56,6 +60,12 @@ async def _main() -> None:
         if lifecycle_v2_config.enabled
         else None
     )
+    shadow_evidence_v2_config = ShadowEvidenceV2RuntimeConfig.from_env()
+    shadow_evidence_v2_worker = (
+        build_shadow_evidence_v2_worker(pg=pg_client, config=shadow_evidence_v2_config)
+        if shadow_evidence_v2_config.enabled
+        else None
+    )
 
     async def _stop_workers() -> None:
         await worker.stop()
@@ -65,6 +75,8 @@ async def _main() -> None:
             await outcome_worker.stop()
         if lifecycle_v2_worker is not None:
             await lifecycle_v2_worker.stop()
+        if shadow_evidence_v2_worker is not None:
+            await shadow_evidence_v2_worker.stop()
 
     loop = asyncio.get_running_loop()
     for signal_name in (signal.SIGINT, signal.SIGTERM):
@@ -94,6 +106,12 @@ async def _main() -> None:
                 lifecycle_v2_config.max_continuity_gap_seconds,
             )
             tasks.append(lifecycle_v2_worker.run())
+        if shadow_evidence_v2_worker is not None:
+            logger.info(
+                "Starting Strategy 5S-CR Lifecycle V2 evidence owner shadow_only={}",
+                shadow_evidence_v2_config.shadow_only,
+            )
+            tasks.append(shadow_evidence_v2_worker.run())
         await asyncio.gather(*tasks)
     finally:
         await pg_client.close()

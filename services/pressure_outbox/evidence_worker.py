@@ -428,6 +428,36 @@ class Strategy5SCREvidenceWorker:
                 attempt=work_item.evidence_attempt_count,
             )
             try:
+                pair_expiry_raw = envelope.payload.get("pair_admission_expires_at_utc")
+                if not isinstance(pair_expiry_raw, str):
+                    await self._repository.record_failure(
+                        envelope,
+                        error="STRATEGY_5SCR_PAIR_ADMISSION_EXPIRY_MISSING",
+                        retry_delay_seconds=retry_delay,
+                        max_attempts=1,
+                    )
+                    processed += 1
+                    continue
+                pair_expiry = as_utc(
+                    datetime.fromisoformat(pair_expiry_raw.replace("Z", "+00:00")),
+                    "pair_admission_expires_at_utc",
+                )
+                # PairAdmission TTL is an authority-to-open freshness token,
+                # not the lifetime of an evaluation that was opened while the
+                # grant was active.  A delayed/restarted evidence worker may
+                # therefore continue an existing lifecycle after grant expiry.
+                # The immutable envelope time proves when the evaluation was
+                # opened; using the worker clock here would incorrectly kill
+                # WAITING_H1/WAITING_M15 work after a restart or queue delay.
+                if envelope.signal_valid_at >= pair_expiry:
+                    await self._repository.record_failure(
+                        envelope,
+                        error="STRATEGY_5SCR_PAIR_ADMISSION_EXPIRED_BEFORE_LIFECYCLE_OPEN",
+                        retry_delay_seconds=retry_delay,
+                        max_attempts=1,
+                    )
+                    processed += 1
+                    continue
                 expiry_raw = envelope.payload.get("raw_direction_expires_at_utc")
                 if isinstance(expiry_raw, str):
                     expiry = as_utc(

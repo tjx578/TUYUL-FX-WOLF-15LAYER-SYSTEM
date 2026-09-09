@@ -13,6 +13,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -21,6 +22,10 @@ from uuid import UUID, uuid5
 
 from loguru import logger
 
+from contracts.strategy_5scr_pair_admission import (
+    PAIR_ADMISSION_MAX_TTL_SECONDS,
+    PAIR_ADMISSION_RULE_VERSION,
+)
 from contracts.strategy_5scr_pressure_outbox import PressureOutboxEnvelope
 from core.metrics import (
     PRESSURE_OUTBOX_BACKLOG,
@@ -35,6 +40,9 @@ _PRESSURE_EVENT_NAMESPACE = UUID("a267327e-9b80-5be0-a169-5547a412471d")
 _PRESSURE_OUTBOX_NAMESPACE = UUID("4d2f67b2-6d27-5a31-870a-7e17df64d826")
 _RUNTIME_IDENTITY_FIELDS = frozenset({"deployment_id", "commit_sha", "replica_id", "generated_at_utc"})
 _TRANSPORT_FIELDS = frozenset({"event_id", "lifecycle_id", "lifecycle_sequence", "pressure_outbox_id"})
+_PAIR_ADMISSION_ID_RE = re.compile(r"^5scr-admission:[0-9a-f]{32}$")
+_RADAR_MANIFEST_ID_RE = re.compile(r"^5scr-radar:[0-9a-f]{32}$")
+_SHA256_TAG_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _REQUIRED_PRESSURE_TABLES = frozenset({"pressure_lifecycle_sequences", "pressure_outbox", "strategy_5scr_inbox"})
 _REQUIRED_PRESSURE_INDEXES = frozenset(
     {
@@ -200,10 +208,38 @@ def prepare_pressure_event(payload: Mapping[str, Any]) -> _PreparedPressureEvent
     source_watch_id = _text(data.get("source_watch_id"))
     if not (source_clean_block_id or source_watch_id):
         raise PressureOutboxContractError("PRESSURE_CANONICAL_LINEAGE_MISSING")
-
-    lineage_kind = "clean-block" if source_clean_block_id else "watch"
-    lineage_value = cast(str, source_clean_block_id or source_watch_id)
-    lifecycle_id = _text(data.get("lifecycle_id")) or f"pressure:{symbol}:{lineage_kind}:{lineage_value}"
+    pair_admission_id = _text(data.get("pair_admission_id"))
+    pair_admission_status = str(data.get("pair_admission_status") or "").strip().upper()
+    pair_admission_hash = _text(data.get("pair_admission_source_ledger_hash"))
+    pair_admission_rule = _text(data.get("pair_admission_rule_version"))
+    pair_admission_granted_at = _parse_datetime(data.get("pair_admission_granted_at_utc"))
+    pair_admission_expires_at = _parse_datetime(data.get("pair_admission_expires_at_utc"))
+    signal_valid_at = _signal_valid_at(data)
+    if (
+        pair_admission_id is None
+        or _PAIR_ADMISSION_ID_RE.fullmatch(pair_admission_id) is None
+        or pair_admission_status != "GRANTED"
+        or pair_admission_hash is None
+        or _SHA256_TAG_RE.fullmatch(pair_admission_hash) is None
+        or pair_admission_rule != PAIR_ADMISSION_RULE_VERSION
+        or pair_admission_granted_at is None
+        or pair_admission_expires_at is None
+        or not (pair_admission_granted_at <= signal_valid_at < pair_admission_expires_at)
+        or (pair_admission_expires_at - pair_admission_granted_at).total_seconds() > PAIR_ADMISSION_MAX_TTL_SECONDS
+    ):
+        raise PressureOutboxContractError("PRESSURE_PAIR_ADMISSION_REQUIRED")
+    radar_manifest_id = _text(data.get("radar_manifest_id"))
+    if (
+        data.get("pressure_selection_confirmed") is not True
+        or str(data.get("radar_status") or "").strip().upper() != "ANALYSIS_READY"
+        or radar_manifest_id is None
+        or _RADAR_MANIFEST_ID_RE.fullmatch(radar_manifest_id) is None
+    ):
+        raise PressureOutboxContractError("PRESSURE_RADAR_SELECTION_PROOF_REQUIRED")
+    explicit_lifecycle_id = _text(data.get("lifecycle_id"))
+    if explicit_lifecycle_id is not None and explicit_lifecycle_id != pair_admission_id:
+        raise PressureOutboxContractError("PRESSURE_LIFECYCLE_PAIR_ADMISSION_MISMATCH")
+    lifecycle_id = pair_admission_id
     if len(lifecycle_id) > 500:
         raise PressureOutboxContractError("PRESSURE_LIFECYCLE_ID_TOO_LONG")
 
@@ -211,6 +247,8 @@ def prepare_pressure_event(payload: Mapping[str, Any]) -> _PreparedPressureEvent
     data["schema_version"] = str(data.get("schema_version") or "2.0-pressure-state")
     data["symbol"] = symbol
     data["lifecycle_id"] = lifecycle_id
+    data["pair_admission_status"] = "GRANTED"
+    data["source_lineage_role"] = "LINEAGE_ONLY_NOT_ADMISSION_AUTHORITY"
     data["promotion_stage"] = "PRESSURE_ONLY"
     data["final_direction"] = "WAIT"
     data["valid_for_execution"] = False
@@ -231,7 +269,7 @@ def prepare_pressure_event(payload: Mapping[str, Any]) -> _PreparedPressureEvent
         lifecycle_id=lifecycle_id,
         source_clean_block_id=source_clean_block_id,
         source_watch_id=source_watch_id,
-        signal_valid_at=_signal_valid_at(data),
+        signal_valid_at=signal_valid_at,
         payload=data,
         payload_hash=payload_hash,
     )

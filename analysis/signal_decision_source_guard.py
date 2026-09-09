@@ -153,6 +153,7 @@ def _apply_pressure_state_contract_v2(payload: dict[str, Any]) -> dict[str, Any]
         json.dumps(context_basis, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     ).hexdigest()[:16]
     payload["context_version"] = f"pressure-context-v2:{digest}"
+    payload["transport_context_version"] = payload["context_version"]
     lifecycle_identity = "|".join(
         (
             str(payload.get("deployment_id") or "unknown"),
@@ -162,6 +163,28 @@ def _apply_pressure_state_contract_v2(payload: dict[str, Any]) -> dict[str, Any]
         )
     )
     payload["pressure_lifecycle_key"] = lifecycle_identity
+    payload["transport_context_key"] = lifecycle_identity
+
+    # Material strategy identity deliberately excludes producer/transport
+    # churn such as cluster_id, source_stage, status and replica/deployment.
+    # It is the context fingerprint consumed by Lifecycle V2; the legacy
+    # context_version remains available as a transport/dedup diagnostic.
+    material_basis = {
+        "symbol": payload.get("symbol"),
+        "raw_direction": payload.get("raw_direction"),
+        "pressure_direction_resolution": payload.get("pressure_direction_resolution"),
+        "pressure_resolution_direction": payload.get("pressure_resolution_direction"),
+        "liquidity_resolution": payload.get("liquidity_resolution"),
+        "structural_price_location": structural_location,
+        "htf_structure_context": _stable_htf_context(htf_context),
+    }
+    material_digest = hashlib.sha256(
+        json.dumps(material_basis, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    payload["material_context_rule_version"] = "5scr.material-context.v1"
+    payload["material_context_hash"] = f"sha256:{material_digest}"
+    payload["context_epoch_id"] = f"5scr-context:{material_digest[:32]}"
+    payload["context_identity_role"] = "MATERIAL_STRATEGY_CONTEXT_NOT_TRANSPORT"
     required = (
         "observed_price",
         "observed_price_source",
@@ -177,6 +200,8 @@ def _apply_pressure_state_contract_v2(payload: dict[str, Any]) -> dict[str, Any]
         "raw_direction_role",
         "pressure_direction_resolution",
         "context_version",
+        "material_context_hash",
+        "context_epoch_id",
     )
     payload["schema_contract_complete"] = all(key in payload for key in required)
     return payload
@@ -217,6 +242,15 @@ def _apply_price_lineage_contract(payload: dict[str, Any]) -> None:
             # A price with no source, no timestamp, and no age cannot be trusted
             # as anything better than an unverified reference.
             reference_status = "UNVERIFIED"
+    quote_health_status = _text_value(payload.get("quote_health_status"))
+    if quote_health_status in {
+        "PRICE_FROZEN",
+        "PRICE_QUALITY_WARMING_UP",
+        "INSUFFICIENT_HISTORY",
+        "MARKET_CLOSED",
+        "OUT_OF_ORDER",
+    }:
+        reference_status = quote_health_status
 
     payload.update(
         {

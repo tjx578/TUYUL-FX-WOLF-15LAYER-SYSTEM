@@ -44,7 +44,7 @@ def _persisted_result(payload: dict[str, Any]) -> PressurePersistenceResult:
     ("log_enabled", "rate_allowed"),
     [(False, True), (True, False)],
 )
-def test_durable_write_precedes_and_is_independent_from_observability_sampling(
+def test_direct_writer_is_blocked_without_atomic_radar_authority(
     monkeypatch: pytest.MonkeyPatch,
     log_enabled: bool,
     rate_allowed: bool,
@@ -60,16 +60,22 @@ def test_durable_write_precedes_and_is_independent_from_observability_sampling(
     monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", str(log_enabled).lower())
-    persisted: list[dict[str, Any]] = []
-
-    def _persist(payload: dict[str, Any]) -> PressurePersistenceResult:
-        persisted.append(dict(payload))
-        return _persisted_result(payload)
-
-    monkeypatch.setattr("storage.pressure_outbox.persist_pressure_payload_sync", _persist)
+    monkeypatch.setattr(
+        "storage.pressure_outbox.persist_pressure_payload_sync",
+        lambda _payload: pytest.fail("direct pressure writer must never be called"),
+    )
     payload = {
         "symbol": "AUDUSD",
         "source_watch_id": "AUDUSD:watch:canonical",
+        "pair_admission_id": "5scr-admission:33333333333333333333333333333333",
+        "pair_admission_status": "GRANTED",
+        "pair_admission_rule_version": "5scr.pair-admission.raw-ledger.v2",
+        "pair_admission_granted_at_utc": "2026-07-20T04:00:00+00:00",
+        "pair_admission_expires_at_utc": "2026-07-20T04:15:00+00:00",
+        "pair_admission_source_ledger_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "radar_manifest_id": "5scr-radar:dddddddddddddddddddddddddddddddd",
+        "radar_status": "ANALYSIS_READY",
+        "pressure_selection_confirmed": True,
         "cluster_id": "AUDUSD_CLUSTER",
         "signal_valid_time_utc": "2026-07-20T04:00:00+00:00",
         "pressure_seen": True,
@@ -84,9 +90,10 @@ def test_durable_write_precedes_and_is_independent_from_observability_sampling(
     emitted = pipeline._emit_signal_pressure_state_payload(payload)
 
     assert emitted is False
-    assert len(persisted) == 1
-    assert payload["lifecycle_sequence"] == 1
-    assert payload["event_id"]
+    assert payload["pressure_persistence_status"] == "BLOCKED"
+    assert payload["pressure_persistence_block_reason"] == "SIGNAL_PRESSURE_RADAR_WRITE_REQUIRED"
+    assert "lifecycle_sequence" not in payload
+    assert "event_id" not in payload
     assert payload["valid_for_execution"] is False
     assert outcomes[0]["emitted"] is False
 
@@ -194,6 +201,15 @@ async def test_sync_pipeline_bridge_writes_on_asyncpg_owner_loop(
     payload = {
         "symbol": "AUDUSD",
         "source_watch_id": "AUDUSD:watch:runtime",
+        "pair_admission_id": "5scr-admission:44444444444444444444444444444444",
+        "pair_admission_status": "GRANTED",
+        "pair_admission_rule_version": "5scr.pair-admission.raw-ledger.v2",
+        "pair_admission_granted_at_utc": "2026-07-20T04:00:00+00:00",
+        "pair_admission_expires_at_utc": "2026-07-20T04:15:00+00:00",
+        "pair_admission_source_ledger_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "radar_manifest_id": "5scr-radar:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "radar_status": "ANALYSIS_READY",
+        "pressure_selection_confirmed": True,
         "cluster_id": "AUDUSD_RUNTIME_CLUSTER",
         "signal_valid_time_utc": "2026-07-20T04:00:00+00:00",
         "promotion_stage": "PRESSURE_ONLY",

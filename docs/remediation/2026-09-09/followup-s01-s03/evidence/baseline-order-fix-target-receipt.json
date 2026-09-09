@@ -1,0 +1,83 @@
+{
+  "label": "baseline-order-fix-target",
+  "runner": "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+  "platform": "win32",
+  "collection_command": [
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_signal_throttle_log_analyzer.py::test_live_record_throttled_keeps_inferred_direction_for_audit_only",
+    "--collect-only",
+    "-q"
+  ],
+  "test_command": [
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_signal_throttle_log_analyzer.py::test_live_record_throttled_keeps_inferred_direction_for_audit_only",
+    "-q",
+    "--timeout=60",
+    "--basetemp",
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\ci-temp\\baseline-order-fix-target",
+    "--junitxml",
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\ci-evidence\\baseline-order-fix-target.xml"
+  ],
+  "collection_exit": 0,
+  "expected_test_count": 2,
+  "expected_test_ids": [
+    "tests/test_signal_throttle_log_analyzer.py::test_live_record_throttled_keeps_inferred_direction_for_audit_only[0-THROTTLED]",
+    "tests/test_signal_throttle_log_analyzer.py::test_live_record_throttled_keeps_inferred_direction_for_audit_only[3-DOWNGRADED_TO_HOLD]"
+  ],
+  "pytest_exit": 0,
+  "xml_counts": {
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "elapsed_seconds": 13.908,
+  "before": {
+    "head": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+    "diff_sha256": "f84990555fc41b399918cbae6a0dbfb369195adaf88b0ef2baed85ccffee2f12",
+    "files": {
+      "tests/test_signal_throttle_log_analyzer.py::test_live_record_throttled_keeps_inferred_direction_for_audit_only": "43032ee732235989d0fc66158b5f0b22dc44297ae8b6300523072d6f58a256d8"
+    },
+    "integration_source_files": {
+      "analysis/signal_throttle_log_analyzer.py": "43b2ebb6e7505098ce9facb4f3ff4c27637d108f403579b6ffea534461f2be65",
+      "pipeline/wolf_constitutional_pipeline.py": "1b0169ff6b7da6c7e1c7d5bc1d390027d6dd5971766e0730db111a3adfa63587",
+      "analysis/strategy_5scr_pair_activity.py": "eb90e3c54a24297928a1e8008600259ee9880871c1acc5e4f0d02ae748bc4ec0",
+      "analysis/strategy_5scr_pair_activity_report.py": "2a251fb17864d605bb68dc0dfe55dde4cfd9056307b4dc1cbdf84c6680ae61c6",
+      "contracts/strategy_5scr_pair_activity.py": "a1b0e24f8f441a6db99e744b177b532466c601ad0bfe10d37234c7f76e10adb9",
+      "tests/test_pair_activity_report_integration.py": "7fd6a2f1407066b6b4c7770b78c4cd66432204c768c7629880b34605da264073",
+      "tests/test_strategy_5scr_pair_activity.py": "4666566dae472017e78e779ca91eee62f47eabe784ab6b123b1b661dd60fc4ed",
+      "tests/test_signal_throttle_log_analyzer.py": "43032ee732235989d0fc66158b5f0b22dc44297ae8b6300523072d6f58a256d8"
+    }
+  },
+  "after": {
+    "head": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+    "diff_sha256": "f84990555fc41b399918cbae6a0dbfb369195adaf88b0ef2baed85ccffee2f12",
+    "files": {
+      "tests/test_signal_throttle_log_analyzer.py::test_live_record_throttled_keeps_inferred_direction_for_audit_only": "43032ee732235989d0fc66158b5f0b22dc44297ae8b6300523072d6f58a256d8"
+    },
+    "integration_source_files": {
+      "analysis/signal_throttle_log_analyzer.py": "43b2ebb6e7505098ce9facb4f3ff4c27637d108f403579b6ffea534461f2be65",
+      "pipeline/wolf_constitutional_pipeline.py": "1b0169ff6b7da6c7e1c7d5bc1d390027d6dd5971766e0730db111a3adfa63587",
+      "analysis/strategy_5scr_pair_activity.py": "eb90e3c54a24297928a1e8008600259ee9880871c1acc5e4f0d02ae748bc4ec0",
+      "analysis/strategy_5scr_pair_activity_report.py": "2a251fb17864d605bb68dc0dfe55dde4cfd9056307b4dc1cbdf84c6680ae61c6",
+      "contracts/strategy_5scr_pair_activity.py": "a1b0e24f8f441a6db99e744b177b532466c601ad0bfe10d37234c7f76e10adb9",
+      "tests/test_pair_activity_report_integration.py": "7fd6a2f1407066b6b4c7770b78c4cd66432204c768c7629880b34605da264073",
+      "tests/test_strategy_5scr_pair_activity.py": "4666566dae472017e78e779ca91eee62f47eabe784ab6b123b1b661dd60fc4ed",
+      "tests/test_signal_throttle_log_analyzer.py": "43032ee732235989d0fc66158b5f0b22dc44297ae8b6300523072d6f58a256d8"
+    }
+  },
+  "source_unchanged": true,
+  "scope": "LOCAL_SUBSET_ONLY_NO_PRODUCTION_DB_BROKER_OR_PROVIDER"
+}

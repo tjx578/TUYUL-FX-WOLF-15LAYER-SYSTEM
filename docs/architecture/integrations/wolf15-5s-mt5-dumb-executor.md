@@ -126,7 +126,10 @@ X-Request-Id: <unique request UUID>
 
 The token is derived from `EXECUTOR_BRIDGE_AUTH_SECRET` and the executor UUID.
 Commands are independently signed using `EXECUTOR_COMMAND_SIGNING_SECRET`.
-Both secrets support a previous-key slot for controlled rotation.
+For signed wire v2, the backend derives a separate 32-byte verification key per
+executor and signs an immutable base64url payload. The EA verifies those exact
+bytes; it must never reconstruct Python JSON for signature verification. Both
+root secrets support a previous-key slot for controlled rotation.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
@@ -135,6 +138,26 @@ Both secrets support a previous-key slot for controlled rotation.
 | `GET` | `/api/v1/executors/{id}/commands/next` | Fetch one eligible command; `204` when empty |
 | `POST` | `/api/v1/commands/{id}/claim` | Atomic claim and short lease |
 | `POST` | `/api/v1/commands/{id}/reports` | Append idempotent state report; requires claim token |
+| `GET` | `/api/v1/executors/{executor_id}/commands/{command_id}/status` | Reconcile terminal state after an ambiguous client restart; never returns a claim token |
+
+Poll and claim retain the legacy `command` object and additionally return a
+`signed_envelope` for newly enqueued commands:
+
+```text
+wire_version      = wolf15.mt5.exec.signed-bytes.v2
+payload_encoding  = base64url
+payload_b64       = exact frozen canonical command bytes
+payload_sha256    = sha256:<64 lowercase hex>
+algorithm         = HMAC-SHA256
+key_id            = versioned key id
+executor_id       = bound EDUMB UUID
+signature         = base64url:<43 characters>
+```
+
+PostgreSQL stores this envelope at enqueue time. JSONB remains queryable but is
+not the signature authority. Existing pre-migration rows are explicitly marked
+`legacy-json-v1`; new rows default to signed wire v2 and are protected by
+`ck_execution_command_signed_wire_complete`.
 
 ## Exactly-once behavior
 
@@ -194,7 +217,7 @@ fact inferred from pressure logs.
 ## Deployment runbook
 
 1. Merge only after contract, risk, migration, and router tests pass.
-2. Run the migrator deliberately and verify revision `20260719_01`.
+2. Run the migrator deliberately and verify revision `20260803_01` or newer.
 3. Create Railway service `wolf15-ea-bridge` from this repository.
 4. Configure its config-as-code path as `/railway-ea-bridge.toml`.
 5. Attach only `DATABASE_URL`; Redis is not command truth for this service.
@@ -203,11 +226,14 @@ fact inferred from pressure logs.
 8. Pre-provision the EA as `ea_subtype=EDUMB` in Agent Manager.
 9. Derive its scoped token with
    `python -m scripts.derive_executor_token <executor-uuid>` in a secure shell.
-10. Register the executor; verify the returned mode is `SHADOW`.
-11. Run shadow validation until every final signal has exactly one terminal
+10. Derive its independent command-verification key with
+    `python -m scripts.derive_executor_command_key <executor-uuid>` in a secure
+    shell. Never copy the root signing secret to MT5.
+11. Register the executor; verify the returned mode is `SHADOW`.
+12. Run shadow validation until every final signal has exactly one terminal
     `WOULD_EXECUTE` or `WOULD_REJECT` result and zero broker side effects.
-12. Promote to DEMO through a governed database/config change.
-13. Promote to LIVE only after demo acceptance, reconciliation, and kill-switch
+13. Promote to DEMO through a governed database/config change.
+14. Promote to LIVE only after demo acceptance, reconciliation, and kill-switch
     drills pass.
 
 ## GO / NO-GO
@@ -251,8 +277,8 @@ next_required_stage=RISK_RESERVATION
 ```
 
 Only a later transaction may reserve risk and write the final `signal_json`
-outbox row atomically. A LIVE pressure event without `source_clean_block_id` or
-a stable `source_watch_id` defers with
+outbox row atomically. A LIVE pressure event without canonical Pair Admission
+and an `ANALYSIS_READY` radar-selection proof defers with
 `STRATEGY_5SCR_CANONICAL_LIFECYCLE_REQUIRED`. Legacy synthetic anchors are
 limited to deterministic replay and cannot become production lineage.
 
@@ -283,7 +309,8 @@ then associates a later clean-block interval without allowing the latest
 one-tick row to erase the latched qualification. Exact `context_version` is not
 a join key because it changes across otherwise stable structural snapshots.
 See [Pressure Radar Gate v1 validation](pressure-radar-gate-v1-validation.md)
-for the frozen predicate and the 10-pair replay evidence.
+for the frozen provisional predicate and legacy 10-pair baseline. That archive
+does not contain the newer Pair Admission authority and cannot approve rollout.
 
 Migration `20260720_02` makes that deferred association durable:
 
@@ -302,10 +329,10 @@ Migration `20260720_02` makes that deferred association durable:
   `valid_for_execution=false`, and `is_final_signal=false`.
 
 The engine uses this path only when `SIGNAL_PRESSURE_RADAR_WRITE_ENABLED=true`
-in addition to both existing outbox master/write flags. The new flag defaults
-to `false`; without it, the previously deployed canonical direct-writer path is
-unchanged. This permits schema deployment and shadow validation before routing
-live pressure through the durable radar.
+in addition to both existing outbox master/write flags. All three flags default
+to `false`. The legacy direct-writer fallback is forbidden: engine preflight
+rejects master+write without radar, and the pipeline will not invoke the direct
+writer when radar authority is absent.
 
 Apply the migration, create the dedicated Railway service from
 `railway-pressure-outbox.toml`, and set its service variables before enabling
@@ -317,7 +344,7 @@ The fail-closed rollout order is:
 
 1. dark: engine master/write are `false`; worker
    `PRESSURE_OUTBOX_EXPECTED_PHASE=dark` and all four feature flags are `false`;
-2. radar capture: after migration and replay parity checks, engine
+2. radar capture: after migration plus fresh Pair Admission shadow checks, engine
    master/write/radar-write become `true`; worker remains in the dark phase so
    no row can be claimed;
 3. dispatch: worker phase becomes `dispatcher`, with master/dispatch `true` and
@@ -334,7 +361,9 @@ provider is supplied, and pressure is never routed to the EA.
 The next increments are:
 
 1. apply migration `20260720_02`, validate radar schema preflight, and shadow
-   compare the atomic durable path against the frozen 10-pair replay before
+   compare the atomic durable path against fresh global-raw-ledger Pair
+   Admission capture (using the frozen 10-pair set only as a provisional
+   selection regression baseline) before
    enabling `SIGNAL_PRESSURE_RADAR_WRITE_ENABLED`;
 2. connect the implemented pressure-to-tradeplan assembler to the live closed-
    candle evidence provider and lifecycle repository, then replay-validate its
@@ -342,6 +371,9 @@ The next increments are:
 3. persist the resulting non-executable tradeplan candidate;
 4. persist campaign risk locks and reservations atomically with final-signal
    outbox rows;
-5. add local cryptographic verification and durable restart/retry storage to
-   the MQL5 scaffold, then compile it in MetaEditor;
-6. run SHADOW, DEMO, then a symbol-limited LIVE canary.
+5. run the signed-wire golden-vector and durable report restart drills in the
+   actual MT5 terminal; the MQL5 scaffold now implements both gates and
+   compiles without broker mutation calls;
+6. persist campaign risk locks and reservations and implement the separately
+   governed DEMO executor path;
+7. run SHADOW, DEMO, then a symbol-limited LIVE canary.

@@ -1,0 +1,1273 @@
+{
+  "schema_version": "wolf15.commit-admissibility.v1",
+  "observed_at": "2026-09-08T19:24:33.224391+00:00",
+  "scope": "Eight user inputs plus selected SSOT; ZIP expanded in memory and each of 48 members decoded/scanned; no supplied script executed.",
+  "verdict": "ADMISSIBLE_AS_DOCUMENTARY_EVIDENCE_ON_BRANCH",
+  "public_or_private_branch": "No credential finding requiring different branch visibility was identified by these bounded checks.",
+  "original_input_count": 8,
+  "selected_ssot_count": 1,
+  "top_level_artifact_count": 9,
+  "decoded_text_subject_count": 56,
+  "secret_rules": [
+    "private_key",
+    "github_token",
+    "openai_key",
+    "aws_access_key",
+    "slack_token",
+    "jwt",
+    "credential_url",
+    "credential_assignment",
+    "bearer_literal",
+    "signed_url",
+    "possible_telegram_token"
+  ],
+  "credential_findings": [],
+  "actual_credential_count": 0,
+  "example_credential_match_count": 0,
+  "example_classification_note": "No concrete credential-like value matched the rules. References to authentication, key variables, hashes, service UUIDs and source URLs are documentary metadata, not evidence of usable credentials.",
+  "files": [
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Backlog_2026-09-08.csv",
+      "bytes": 33209,
+      "sha256": "628b48a3d5565619028ce59d980af6d2e8a409460443d211612c2445f01973ab",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/README.md",
+      "bytes": 2604,
+      "sha256": "adba2d763764cce684647037a3b80503727ffda51a41ae7fd68704ab158bac96",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/WOLF15_Master_Remediation_2026-09-08.md",
+      "bytes": 35973,
+      "sha256": "787f2ca210dd9099f6495919c61a7481fa3f327973df2c9d90a8e9c2f144adfe",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/WOLF15_Master_Backlog_2026-09-08.csv",
+      "bytes": 32683,
+      "sha256": "9672d5bf6e07b3d6db5f6d6cd92f903ce53fec12369df744c88aaab7ce1c8490",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/WOLF15_Master_GOAP_2026-09-08.json",
+      "bytes": 107198,
+      "sha256": "afd801996dce92c8d5abdd6a8a245bb80c3ac20495aa6693b74503d0f3bd25e4",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/WOLF15_Tech_Debt_Disposition_2026-09-08.csv",
+      "bytes": 25128,
+      "sha256": "cdf16866220f4de0a117e05a5b7a6e92cb234e30d91c781f94292070ba401372",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/parallel-debt-work.md",
+      "bytes": 3667,
+      "sha256": "4e1c17153b6ff0a1653fbdb34e567f99bfe2db2e6f58a68d8fc0a27d7d59e7be",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/debt-disposition-receipt.json",
+      "bytes": 282,
+      "sha256": "057459537f3e2852c59749fceb442b35172c573f5af40ba9433efd42b14edd3d",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-master.md",
+      "bytes": 22033,
+      "sha256": "6c79665a054dddd741cd88a495af0ffa6cfa1380e25e884adf67473eb7cc9614",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-findings.json",
+      "bytes": 20804,
+      "sha256": "ad2f3a80027637c3be526cff4b1226636e5ab2316297e42cfe6cab03569556b5",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-source-receipt.json",
+      "bytes": 5800,
+      "sha256": "99df6f1819f0a66fec7382665e3cae52c6779238a1d157906928d5c7f52e2dc4",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-upload-binding.json",
+      "bytes": 540,
+      "sha256": "4e405dc6c1b6765eeb847067673a4facf5d3ce4a54740a872995ea67c9e79365",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-current-diagnostics-receipt.json",
+      "bytes": 1119,
+      "sha256": "16ecb7d768373c42f6a61fd3a13a1b6b8524397d5163652899c677cff5831a92",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-current-diagnostics.json",
+      "bytes": 4962,
+      "sha256": "7c44fc71f92f266c5531114b4e3d8877ff4bc9a553c35da1e257bd74a119eb82",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-raw-probe-receipt.json",
+      "bytes": 674,
+      "sha256": "5bf4c1717e30bb396720343e53485c4b7627a66c6175f494c8d3d9ab7cb0617f",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-raw-probe.json",
+      "bytes": 11990,
+      "sha256": "6d605bac222ece586dc09b4eb21e21d423b04b34dcb9abc0d86fb349a949a9f0",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-raw-probe.py",
+      "bytes": 2253,
+      "sha256": "8c96067a88d103fe49f74c17e6dab5b4952f9c6e66d6f4b20e332f8c6c2de96a",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-boundary-envelope.json",
+      "bytes": 2907,
+      "sha256": "d8e1b318829b9024d85e95322ea732806731dcfa0d1813749fbf64684c84fffa",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/strategy-boundary-validation.json",
+      "bytes": 382,
+      "sha256": "63eb7a9e4eea80ecf508a91d960db3199959bc1ae49534ffd45cd6619b49a218",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/execution-master.md",
+      "bytes": 26888,
+      "sha256": "47cc45967dd7b16b9e0bb0f330e1b91c53448d45b27c5c94509c9172e62e66ed",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/execution-findings.json",
+      "bytes": 11216,
+      "sha256": "952fb3b1a6677a0baa2d7732d2e39b320ec3093f84cde33ddfedcdcdd26d92a3",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/execution-source-manifest.json",
+      "bytes": 7855,
+      "sha256": "e4b16b72e7754b7bec17e8b4b10b80334074651bcad2649b68d5077dd7ce61ce",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/services-master.md",
+      "bytes": 32755,
+      "sha256": "651c646df52eed86828fa65855d256c47e2736ff7757e7bc76eb12acd4a700c9",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/services-findings.json",
+      "bytes": 17861,
+      "sha256": "0f7a935cdecbd155100f375a0fff505b57e4aa6696d809822d672186c122d56a",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/services-source-receipt.json",
+      "bytes": 32876,
+      "sha256": "049773dcf295289b9012430897536abef701b58b5c09490cbeb9b8ffa0463134",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/services-config-inventory.json",
+      "bytes": 5031,
+      "sha256": "5fb210ff89364d1ed75c6846a2cdf7881ebda92be8a7227ed026ab46ef0086bc",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/services-railway-supplement.md",
+      "bytes": 7662,
+      "sha256": "6c98742371aaf392d7ae6767fe080dcfd3027461b1bbd440c2b9007ee1b8cd79",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/services-railway-observation.json",
+      "bytes": 47290,
+      "sha256": "257cb7ab247b293e82061293d7219f4e24509de6447369cc1fd012f27c0f4203",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/pr-integration-master.md",
+      "bytes": 18182,
+      "sha256": "e0da604d576644a69d5b32e10238126648858e0a123b543f01e03b52fcaef6f7",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/pr-integration-revision-set.json",
+      "bytes": 7371,
+      "sha256": "212029ac56e6600ed36c32af80ddd4cd384fb2b6a681b402c8bfcee756f984e4",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/pr-path-coverage.json",
+      "bytes": 41148,
+      "sha256": "3f24c32ac4e39c379ea713544d479d93ba838a0764e8b7f475268ff49152c5c1",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/pr-migration-dag.json",
+      "bytes": 22704,
+      "sha256": "38eeda3ba0ed0a642e4afc48e8f46af7193277eba9e3ac0332d1bf7b9242f322",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/pr-integration-receipt.json",
+      "bytes": 2144,
+      "sha256": "3c047f4e23cddca181c17d56a7a3361bfe560bec97d9bcbe89aa55330e541497",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/pr-governance-envelope.json",
+      "bytes": 4385,
+      "sha256": "452f3d729723b6ba58adf452f952c48b3c9b42fe1499901ecf01819aefbd5d63",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/pr-governance-validator-receipt.json",
+      "bytes": 435,
+      "sha256": "130a01478322a28cbc518b163e97a4b140f4a158b33bb52d234c4e9d5b187b63",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/pr-diffs/three-way-text-analysis.json",
+      "bytes": 3961,
+      "sha256": "fae8ed069ad2e5688ccf628ee935a846adc34ff7aa2d03afc0acc12438128b47",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/pr-source/source-manifest.json",
+      "bytes": 22948,
+      "sha256": "35362de135981a2c75af99ef352b5b78f0601671956d92cc392393c505a274eb",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/current-github-receipt.json",
+      "bytes": 329857,
+      "sha256": "c149ba8c3fe0e3807b6429a57c18a0ad8e6072fd50393d215cbe334d491fc40f",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/corpus-integrity.json",
+      "bytes": 991,
+      "sha256": "d40d05a19c806a2ee542b4eac70c7c0134b5f3660d91ca2a9efd13e571353897",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/deduplicated-corpus.json",
+      "bytes": 62352,
+      "sha256": "c5267df82a9c207e8663aaf4ba551bb901fa9de9b12fb21f44b569c650d18bdd",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/master-goap-validation.json",
+      "bytes": 659,
+      "sha256": "4c361a753381b077b1e134ddedb9e062e6621ccb0de975f5740bf1e6463b0dfe",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/master-goap-validation-receipt.json",
+      "bytes": 1061,
+      "sha256": "8ae79da071029feb92381510bfab8690f18f8b1787038aaa6884823ece862a53",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/master-boundary-review.md",
+      "bytes": 4241,
+      "sha256": "5cc424375b4cf1a0420b24c5deb829cbd7b6cf439a5c6a86eb5aced68fd17902",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/master-boundary-review-receipt.json",
+      "bytes": 1613,
+      "sha256": "70360b7e8396302877959bad26c67c5235fc6c5df59c2ea627874fe14972cd1a",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/master-boundary-envelope.json",
+      "bytes": 2277,
+      "sha256": "410155f1fe50e401c363d795eea666ac43944b0622e5296ecaa59fccad7cc2a6",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/master-boundary-envelope-validation.json",
+      "bytes": 404,
+      "sha256": "48640c3db3036944f56f82b58cf32c63cbbb2bedfa53b9277c0efba49d0207b7",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/reproduce_signal_throttle_findings.py",
+      "bytes": 15629,
+      "sha256": "50a1c9aeb39f6856ef7029ac16dd984ac8281c19f4005941bc06c503124336be",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/final-artifact-validation.json",
+      "bytes": 476,
+      "sha256": "9a99900a2075d7154610229c7fa6b95a6ffd493370474fb0736253c6230b826d",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Evidence_2026-09-08.zip!/artifact-manifest.json",
+      "bytes": 7877,
+      "sha256": "92545d130c9e71180b08edd78fcf1a070df37cf5723a34269a4d66e0a62179bf",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_GOAP_2026-09-08.json",
+      "bytes": 107198,
+      "sha256": "afd801996dce92c8d5abdd6a8a245bb80c3ac20495aa6693b74503d0f3bd25e4",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Master_Remediation_2026-09-08.md",
+      "bytes": 35973,
+      "sha256": "787f2ca210dd9099f6495919c61a7481fa3f327973df2c9d90a8e9c2f144adfe",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_DONE_Register_41_Actions_2026-09-09.csv",
+      "bytes": 23210,
+      "sha256": "a2a858a4eacaea0dc07bdd13df946446b86e21701fec63b53950cddaeea7d113",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\Downloads\\WOLF15_Definition_of_Done_2026-09-09.md",
+      "bytes": 19433,
+      "sha256": "0b2ed9e0bf3758509ad065babbaf59b3f1e24a1d0e469b96a6adb7e37276a705",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\.codex\\attachments\\bb4ba39c-c124-4306-9c52-0866931ce5a1\\pasted-text.txt",
+      "bytes": 5866,
+      "sha256": "40cbe747c2aac98033089ffa6a761bbf5edbd4fbac24b46c75caae66cdbb304c",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "C:\\Users\\INTEL\\.codex\\attachments\\3b5259fd-0fba-401d-ad20-f68506a977b8\\pasted-text.txt",
+      "bytes": 7145,
+      "sha256": "f7e566dc7093ce7a3dfdefb2243373395bfc5d31d6776ffc33b94934bc3ddb1f",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    },
+    {
+      "path": "D:\\WOLF15-work\\master-remediation-20260909\\evidence\\selected-ssot-v3.1.md",
+      "bytes": 86002,
+      "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+      "utf8_read": "PASS",
+      "secret_rule_counts": {
+        "private_key": 0,
+        "github_token": 0,
+        "openai_key": 0,
+        "aws_access_key": 0,
+        "slack_token": 0,
+        "jwt": 0,
+        "credential_url": 0,
+        "credential_assignment": 0,
+        "bearer_literal": 0,
+        "signed_url": 0,
+        "possible_telegram_token": 0
+      },
+      "classification": "DOCUMENTARY_SOURCE_EVIDENCE",
+      "credential_finding_count": 0
+    }
+  ],
+  "archive_safety": {
+    "member_count": 48,
+    "crc_status": "PASS",
+    "unsafe_paths": [],
+    "symlinks": [],
+    "encrypted_members": [],
+    "nested_archives": [],
+    "native_binaries": [],
+    "extension_counts": {
+      ".md": 9,
+      ".csv": 2,
+      ".json": 35,
+      ".py": 2
+    },
+    "total_uncompressed_bytes": 1021148,
+    "largest_expansion_ratio": 28.13999317522607
+  },
+  "script_review": [
+    {
+      "file": "strategy-raw-probe.py",
+      "rule_counts": {
+        "module_loading_in_historical_diagnostic_source": 1
+      },
+      "classification": "HISTORICAL_DIAGNOSTIC_PYTHON_SOURCE",
+      "executed": false,
+      "admissibility": "COMMIT_AS_INERT_ARCHIVED_EVIDENCE"
+    },
+    {
+      "file": "reproduce_signal_throttle_findings.py",
+      "rule_counts": {
+        "dynamic_exec_in_historical_diagnostic_source": 1,
+        "local_output_write_in_historical_diagnostic_source": 1
+      },
+      "classification": "HISTORICAL_DIAGNOSTIC_PYTHON_SOURCE",
+      "executed": false,
+      "admissibility": "COMMIT_AS_INERT_ARCHIVED_EVIDENCE"
+    }
+  ],
+  "dispositions": [
+    {
+      "artifact": "All six Downloads originals",
+      "decision": "COMMIT_AS_HISTORICAL_INPUT_EVIDENCE",
+      "note": "Preserve bytes and hash manifest; source scripts remain inside evidence ZIP."
+    },
+    {
+      "artifact": "Two pasted-text.txt attachments",
+      "decision": "COMMIT_AS_HISTORICAL_INPUT_EVIDENCE",
+      "note": "Use distinct descriptive filenames to prevent basename collision; text remains historical narrative, not executable instructions."
+    },
+    {
+      "artifact": "WOLF15_Master_Backlog_2026-09-08.csv",
+      "decision": "KEEP_CORRUPTED_ORIGINAL_UNCHANGED_WITH_CANONICAL_COUNTERPART",
+      "note": "Do not treat malformed original as executable task register. Link canonical manifest-verified ZIP copy and discrepancy receipt."
+    },
+    {
+      "artifact": "selected-ssot-v3.1.md",
+      "decision": "COMMIT_AS_SELECTED_SOURCE_EVIDENCE",
+      "note": "Retain Git full-ref/path/blob/SHA256 binding. Candidate design does not itself grant runtime authority."
+    }
+  ],
+  "limits": [
+    "Custom bounded pattern scan and archive/AST inspection; gitleaks and trufflehog were not installed.",
+    "No assertion of zero possible risk; unrecognized credentials or sensitive semantic content can evade pattern matching.",
+    "Commit admissibility is not approval to execute bundled diagnostics, deploy, migrate schema, enable trading, or mark milestones DONE."
+  ],
+  "source_or_provider_mutation": false,
+  "memory_modified": false
+}

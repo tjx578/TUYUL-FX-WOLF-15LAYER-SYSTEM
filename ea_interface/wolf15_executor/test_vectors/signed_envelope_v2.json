@@ -1,0 +1,12 @@
+{
+  "purpose": "Public deterministic test vector; never use this secret outside tests.",
+  "root_secret_utf8": "wolf15-test-root-secret-not-for-production-0123456789abcdef",
+  "executor_id": "12345678-1234-5678-9234-567812345678",
+  "key_id": "exec-test-2026-08.v2",
+  "payload_ascii": "{\"array\":[1.0,1e-07,0.30000000000000004],\"unicode\":\"\\u20ac\"}",
+  "payload_b64": "eyJhcnJheSI6WzEuMCwxZS0wNywwLjMwMDAwMDAwMDAwMDAwMDA0XSwidW5pY29kZSI6Ilx1MjBhYyJ9",
+  "payload_sha256": "sha256:18ed07b452adbec6fc29ec9fd6d347dc342216de60a24d009828a4fa69aaca7a",
+  "verification_key_hex": "c6f28f7e3e483b947780d0f1d9a3e50ab10976facb989c582d353457cae282d7",
+  "preimage_ascii": "WOLF15-MT5-COMMAND-V2\nkey_id=exec-test-2026-08.v2\nexecutor_id=12345678-1234-5678-9234-567812345678\npayload_sha256=sha256:18ed07b452adbec6fc29ec9fd6d347dc342216de60a24d009828a4fa69aaca7a\npayload_b64=eyJhcnJheSI6WzEuMCwxZS0wNywwLjMwMDAwMDAwMDAwMDAwMDA0XSwidW5pY29kZSI6Ilx1MjBhYyJ9",
+  "signature": "base64url:TYmshMY5I9eQhq7Qyi-UlIl7Q0j4e3ZfkribNBwxKIg"
+}

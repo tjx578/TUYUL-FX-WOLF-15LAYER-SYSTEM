@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -76,6 +77,36 @@ def _lineage_payload(qualifying: dict[str, Any]) -> dict[str, Any]:
             "context_version": "pressure-context-v2:lineage",
         }
     )
+    clean_id = str(payload["source_clean_block_id"])
+    admission_digest = hashlib.sha256(clean_id.encode("utf-8")).hexdigest()
+    payload["pair_admission_grant"] = {
+        "event": "pair_admission_granted",
+        "schema_version": "1.0",
+        "rule_version": "5scr.pair-admission.raw-ledger.v2",
+        "pair_admission_id": f"5scr-admission:{admission_digest[:32]}",
+        "status": "GRANTED",
+        "ledger_scope": "GLOBAL_SIGNAL_THROTTLE_RAW_LEDGER",
+        "deployment_id": qualifying["deployment_id"],
+        "symbol": "AUDUSD",
+        "direction": "BUY",
+        "episode_started_at_utc": start.isoformat(),
+        "episode_observed_through_utc": end.isoformat(),
+        "granted_at_utc": end.isoformat(),
+        "expires_at_utc": (end + timedelta(minutes=15)).isoformat(),
+        "duration_seconds": 300.0,
+        "effective_ticks": 3,
+        "source_event_count": 3,
+        "max_observed_gap_seconds": 150.0,
+        "maximum_allowed_gap_seconds": 300.0,
+        "source_ledger_event_ids": ["raw:AUDUSD:1", "raw:AUDUSD:2", "raw:AUDUSD:3"],
+        "source_scanner_cycle_ids": ["SCAN_20260803T090000Z_300S"],
+        "source_ledger_hash": f"sha256:{admission_digest}",
+        "source_ledger_ordering": "EVENT_TIME_ASC_RAW_ID_TIEBREAK",
+        "lineage_complete": True,
+        "source_clean_block_ids": [clean_id],
+        "pair_eligible_for_analysis": True,
+        "execution_authority": False,
+    }
     return payload
 
 
@@ -114,6 +145,7 @@ class _FakeConnection:
         if "INSERT INTO pressure_radar_events" in normalized:
             self.state["radar_events"][(args[0], args[1])] = {
                 "payload_hash": args[4],
+                "payload": json.loads(args[5]),
                 "transition": args[6],
                 "manifest_id": args[7],
                 "outbox_event_id": args[8],
@@ -244,7 +276,7 @@ async def test_waiting_manifest_then_lineage_atomically_enqueues_non_executable_
     assert ready.envelope.payload["radar_manifest_id"] == ready.manifest.manifest_id
     assert ready.envelope.payload["pressure_selection_confirmed"] is True
     assert ready.envelope.payload["lifecycle_anchor_at_utc"] == START.isoformat()
-    assert ready.envelope.signal_valid_at == START + timedelta(minutes=6, seconds=1)
+    assert ready.envelope.signal_valid_at == START + timedelta(minutes=5)
     assert ready.envelope.payload["final_direction"] == "WAIT"
     assert ready.envelope.payload["valid_for_execution"] is False
     assert ready.envelope.payload["is_final_signal"] is False
@@ -319,6 +351,40 @@ async def test_two_workers_ingesting_same_event_produce_one_manifest() -> None:
         "pressure-radar|deployment-target|AUDUSD",
         "pressure-radar|deployment-target|AUDUSD",
     ]
+
+
+@pytest.mark.asyncio
+async def test_rejected_admission_audit_is_durable_in_existing_radar_event_payload() -> None:
+    pg = _FakePostgres()
+    repository = _repository(pg)
+    evaluation = {
+        "event": "pair_admission_evaluated",
+        "evaluation_id": "5scr-admission-evaluation:" + "a" * 32,
+        "rule_version": "5scr.pair-admission.raw-ledger.v2",
+        "candidate_block_id": "5scr-admission-candidate:" + "b" * 32,
+        "decision": "REJECTED",
+        "reason_codes": ["RAW_LEDGER_GAP_EXCEEDED"],
+        "rejection_reason": "RAW_LEDGER_GAP_EXCEEDED",
+        "calculated_duration_seconds": 601.0,
+        "calculated_max_gap_seconds": 301.0,
+        "execution_authority": False,
+    }
+    payload = _qualifying_payload(
+        pair_admission_decision="REJECTED",
+        pair_admission_rejection_reason="RAW_LEDGER_GAP_EXCEEDED",
+        pair_admission_evaluation=evaluation,
+        pair_admission_evaluation_hash="sha256:" + "c" * 64,
+        pair_admission_audit_persistence_target="pressure_radar_events.payload",
+    )
+
+    result = await repository.ingest(payload)
+
+    assert result.envelope is None
+    stored = next(iter(pg.state["radar_events"].values()))["payload"]
+    assert stored["pair_admission_evaluation"] == evaluation
+    assert stored["pair_admission_evaluation_hash"] == "sha256:" + "c" * 64
+    assert stored["pair_admission_audit_persistence_target"] == "pressure_radar_events.payload"
+    assert pg.state["outbox_events"] == {}
 
 
 @pytest.mark.asyncio
