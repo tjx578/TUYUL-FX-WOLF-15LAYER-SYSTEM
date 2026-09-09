@@ -65,7 +65,27 @@ def run(image, output):
                 "postgres:16",
             )
             resources.append(db)
-            until(lambda db=db: "accepting connections" in docker("exec", db, "pg_isready", "-U", "fixture"))
+            # Require the final TCP server and the intended initialized database.
+            until(
+                lambda db=db, password=password: (
+                    docker(
+                        "exec",
+                        "-e",
+                        "PGPASSWORD=" + password,
+                        db,
+                        "psql",
+                        "-h",
+                        "127.0.0.1",
+                        "-U",
+                        "fixture",
+                        "-d",
+                        "pressure_disposable_test",
+                        "-Atc",
+                        "SELECT current_database()",
+                    )
+                    == "pressure_disposable_test"
+                )
+            )
 
             def sql(query, db=db):
                 return docker("exec", db, "psql", "-U", "fixture", "-d", "pressure_disposable_test", "-Atc", query)

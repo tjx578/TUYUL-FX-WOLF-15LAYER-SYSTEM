@@ -154,7 +154,27 @@ def run(image, output):
             "postgres:16-alpine",
         )
         resources.append(database)
-        until(lambda: "accepting connections" in docker("exec", database, "pg_isready", "-U", "fixture"))
+        # Require the final TCP server and the intended initialized database.
+        until(
+            lambda: (
+                docker(
+                    "exec",
+                    "-e",
+                    "PGPASSWORD=" + password,
+                    database,
+                    "psql",
+                    "-h",
+                    "127.0.0.1",
+                    "-U",
+                    "fixture",
+                    "-d",
+                    "roles_disposable_test",
+                    "-Atc",
+                    "SELECT current_database()",
+                )
+                == "roles_disposable_test"
+            )
+        )
         docker(
             "exec",
             database,

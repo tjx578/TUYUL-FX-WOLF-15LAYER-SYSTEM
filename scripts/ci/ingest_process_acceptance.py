@@ -268,7 +268,28 @@ def run_case(image, output, case):
             "postgres:16-alpine",
         )
         resources.append(database)
-        until(lambda: "accepting connections" in docker("exec", database, "pg_isready", "-U", "fixture"))
+        # The initdb bootstrap server accepts Unix sockets before database
+        # creation completes. Require the final TCP server and the actual DB.
+        until(
+            lambda: (
+                docker(
+                    "exec",
+                    "-e",
+                    "PGPASSWORD=" + password,
+                    database,
+                    "psql",
+                    "-h",
+                    "127.0.0.1",
+                    "-U",
+                    "fixture",
+                    "-d",
+                    "ingest_disposable_test",
+                    "-Atc",
+                    "SELECT current_database()",
+                )
+                == "ingest_disposable_test"
+            )
+        )
         docker(
             "exec",
             database,
