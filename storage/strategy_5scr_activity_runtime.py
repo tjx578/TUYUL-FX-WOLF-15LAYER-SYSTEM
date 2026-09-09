@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import psycopg
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 from psycopg.types.json import Jsonb
 
 from analysis.strategy_5scr_pair_activity import (
@@ -44,7 +44,12 @@ def unavailable_activity(reason: str, *, status: str = "UNBOUND") -> dict[str, A
 
 
 def _event_payload(event: Any) -> dict[str, Any]:
-    payload = asdict(event) if is_dataclass(event) else dict(event)
+    if is_dataclass(event):
+        if isinstance(event, type):
+            raise TypeError("activity event must be a dataclass instance, not a class")
+        payload = asdict(event)
+    else:
+        payload = dict(event)
     # A raw ALLOWED fact may describe the source's permission, but persistence
     # never transfers it to the derived activity contract.
     return json.loads(json.dumps(payload, default=lambda value: value.isoformat()))
@@ -76,15 +81,15 @@ class PostgresActivityRuntime:
             raise ActivityRuntimeIntegrityError("DELIVERY_PRODUCER_BINDING_MISMATCH")
         self._record_failure: str | None = None
 
-    def _connect(self) -> psycopg.Connection:
-        return psycopg.connect(
+    def _connect(self) -> psycopg.Connection[DictRow]:
+        return psycopg.Connection[DictRow].connect(
             self._dsn,
             connect_timeout=2,
             options="-c statement_timeout=5000 -c lock_timeout=3000",
             row_factory=dict_row,
         )
 
-    def _lock(self, connection: psycopg.Connection) -> Mapping[str, Any]:
+    def _lock(self, connection: psycopg.Connection[DictRow]) -> Mapping[str, Any]:
         connection.execute(
             "INSERT INTO public.pair_activity_ledgers_v31(ledger_id,binding_hash,binding) "
             "VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
@@ -102,7 +107,7 @@ class PostgresActivityRuntime:
             raise ActivityRuntimeIntegrityError("ACTIVITY_LEDGER_BINDING_CONFLICT")
         return row
 
-    def _read_events(self, connection: psycopg.Connection) -> list[dict[str, Any]]:
+    def _read_events(self, connection: psycopg.Connection[DictRow]) -> list[dict[str, Any]]:
         rows = connection.execute(
             "SELECT payload FROM public.pair_activity_raw_v31 WHERE ledger_id=%s "
             "ORDER BY occurred_at,raw_event_id LIMIT %s",
