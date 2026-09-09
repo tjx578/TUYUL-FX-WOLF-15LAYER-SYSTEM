@@ -282,7 +282,7 @@ def record_runtime_fixture(binding, checkpoint) -> None:
         output.write(json.dumps(entry, sort_keys=True) + "\n")
 
 
-def validate_fixture_receipts(
+def validate_postgres_phases(
     folder: Path, run_id: str, expected_database: str, expected_head: str, expected_major: int
 ) -> dict:
     phases = [
@@ -300,7 +300,14 @@ def validate_fixture_receipts(
             raise ValueError("FIXTURE_RECEIPT_BINDING_MISMATCH")
     if phases[0]["postgres"] != phases[1]["postgres"]:
         raise ValueError("POSTGRES_IDENTITY_OR_CONFIGURATION_CHANGED")
+    return {"before": phases[0], "after": phases[1]}
+
+
+def validate_fixture_receipts(
+    folder: Path, run_id: str, expected_database: str, expected_head: str, expected_major: int
+) -> dict:
+    phases = validate_postgres_phases(folder, run_id, expected_database, expected_head, expected_major)
     lines = (folder / "runtime-fixtures.jsonl").read_text(encoding="utf-8").splitlines()
     if not lines or any(json.loads(line)["run_id"] != run_id for line in lines):
         raise ValueError("RUNTIME_FIXTURE_BINDING_MISSING")
-    return {"before": phases[0], "after": phases[1], "runtime_fixture_count": len(lines)}
+    return {**phases, "runtime_fixture_count": len(lines)}

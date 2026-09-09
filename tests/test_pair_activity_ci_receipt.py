@@ -98,12 +98,15 @@ def test_evidence_redacts_dsn_and_password_components():
 @pytest.mark.parametrize(
     "failure", [None, "collection", "timeout", "missing_fixture", "dirty", "capacity", "source_change"]
 )
-def test_runner_requires_one_complete_bound_run_and_persists_failures(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize("family", ["runtime", "domain"])
+def test_runner_requires_one_complete_bound_run_and_persists_failures(tmp_path, monkeypatch, failure, family):
     import json
     import subprocess
     from types import SimpleNamespace
 
     from scripts.ci import run_pair_activity_runtime_acceptance as runner
+
+    module = runner.TEST if family == "runtime" else runner.DOMAIN_TESTS[0]
 
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(runner, "source_hashes", lambda: {"fixture": "before"})
@@ -132,25 +135,26 @@ def test_runner_requires_one_complete_bound_run_and_persists_failures(tmp_path, 
             raise subprocess.TimeoutExpired(command, 1, output="must-not-leak-secret")
         if "--collect-only" in command:
             return SimpleNamespace(
-                returncode=1 if failure == "collection" else 0, stdout=runner.TEST + "::test_bound\n", stderr=""
+                returncode=1 if failure == "collection" else 0, stdout=module + "::test_bound\n", stderr=""
             )
         env = kwargs["env"]
         folder = Path(env["WOLF15_PAIR_ACTIVITY_EVIDENCE_DIR"])
         (folder / "tests.xml").write_text(
-            '<testsuites><testsuite><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_bound"/></testsuite></testsuites>'
+            f'<testsuites><testsuite><testcase classname="{module[:-3].replace("/", ".")}" name="test_bound"/></testsuite></testsuites>'
         )
         if failure != "missing_fixture":
             for phase in ("before", "after"):
                 _phase(folder, env["WOLF15_PAIR_ACTIVITY_RUN_ID"], phase)
-            (folder / "runtime-fixtures.jsonl").write_text(
-                json.dumps({"run_id": env["WOLF15_PAIR_ACTIVITY_RUN_ID"]}) + "\n"
-            )
+            if family == "runtime":
+                (folder / "runtime-fixtures.jsonl").write_text(
+                    json.dumps({"run_id": env["WOLF15_PAIR_ACTIVITY_RUN_ID"]}) + "\n"
+                )
         if failure == "source_change":
             monkeypatch.setattr(runner, "source_hashes", lambda: {"fixture": "after"})
         return SimpleNamespace(returncode=0, stdout="passed", stderr="")
 
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
-    assert runner.main() == (0 if failure is None else 1)
+    assert runner.main(test_module=module) == (0 if failure is None else 1)
     folder = next((tmp_path / "artifacts/pair-activity-runtime").iterdir())
     receipt = json.loads((folder / "receipt.json").read_text())
     assert receipt["accepted"] is (failure is None)
@@ -159,7 +163,7 @@ def test_runner_requires_one_complete_bound_run_and_persists_failures(tmp_path, 
     assert receipt["linux_acceptance"] == ("EXECUTED_POSTGRES_SUBSET_ONLY" if failure is None else "NOT_EXECUTED")
     # A second invocation keeps the previous receipt and cannot overwrite/reuse it.
     previous = (folder / "receipt.json").read_bytes()
-    runner.main()
+    runner.main(test_module=module)
     assert (folder / "receipt.json").read_bytes() == previous
     assert len(list((tmp_path / "artifacts/pair-activity-runtime").iterdir())) == 2
 

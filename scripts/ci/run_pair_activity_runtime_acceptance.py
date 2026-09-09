@@ -20,10 +20,16 @@ from scripts.ci.pair_activity_run_evidence import (  # noqa: E402 - direct scrip
     now,
     redact,
     validate_fixture_receipts,
+    validate_postgres_phases,
     write_json,
 )
 
 TEST = "tests/integration/test_pair_activity_runtime_postgres.py"
+DOMAIN_TESTS = (
+    "tests/integration/test_candidate_revision_v31_postgres.py",
+    "tests/integration/test_capacity_persistence_v31_postgres.py",
+    "tests/integration/test_transaction_a_v31_postgres.py",
+)
 SOURCES = (
     TEST,
     "scripts/ci/pair_activity_run_evidence.py",
@@ -63,6 +69,8 @@ SOURCES = (
     "storage/migrations/versions/20260909_01_pair_activity_runtime.py",
     "pipeline/wolf_constitutional_pipeline.py",
     "tests/integration/postgres_test_guard.py",
+    "scripts/ci/run_strategy_persistence_acceptance.py",
+    *DOMAIN_TESTS,
 )
 
 
@@ -99,6 +107,16 @@ def validate_junit(path: Path, expected_ids: list[str]) -> dict[str, int]:
 
 def source_hashes() -> dict[str, str]:
     names = set(SOURCES) | {p.relative_to(ROOT).as_posix() for p in (ROOT / "storage/migrations/versions").glob("*.py")}
+    # Domain gates import the corresponding strategy modules and fixture builders.
+    # Retain their bytes alongside the clean Git tree identity in each receipt.
+    for folder, pattern in (
+        ("contracts", "strategy_5scr*.py"),
+        ("analysis", "strategy_5scr*.py"),
+        ("risk", "strategy_5scr*.py"),
+        ("storage", "strategy_5scr*.py"),
+        ("tests", "test_strategy_5scr*.py"),
+    ):
+        names.update(p.relative_to(ROOT).as_posix() for p in (ROOT / folder).glob(pattern))
     return {name: digest(ROOT / name) for name in sorted(names)}
 
 
@@ -201,7 +219,8 @@ def main(*, test_module: str = TEST) -> int:
                 )
             }
         receipt["counts"] = validate_junit(out / "tests.xml", expected)
-        receipt["postgres"] = validate_fixture_receipts(
+        validator = validate_postgres_phases if test_module in DOMAIN_TESTS else validate_fixture_receipts
+        receipt["postgres"] = validator(
             out,
             run_id,
             env["WOLF15_POSTGRES_TEST_DATABASE"],
