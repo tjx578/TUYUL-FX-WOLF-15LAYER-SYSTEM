@@ -1091,3 +1091,148 @@ def test_consistent_replay_of_blocked_gate_is_not_accepted():
     result = verify_reconciliation_replay(**bundle)
     assert result["reason"] == "RECONCILIATION_GATE_NOT_PASS"
     assert result["input_replay_consistent"] is False
+
+
+def test_replay_bundle_preserves_types_without_dictionary_tag_collision():
+    from decimal import Decimal
+    from uuid import UUID
+
+    from ops.mt5_mcp.replay_bundle import decode_replay_bundle, encode_replay_bundle
+    from ops.mt5_mcp.report_integrity import evidence_digest
+
+    database = {
+        "timestamp": WINDOW_TO,
+        "amount": Decimal("0.00100"),
+        "id": UUID(int=7),
+        "lookalikes": [{"datetime": WINDOW_TO.isoformat()}, ["uuid", str(UUID(int=7))]],
+    }
+    original = {"report": {}, "database": database, "broker": {}}
+    restored = decode_replay_bundle(encode_replay_bundle(**original))
+    assert restored == original
+    assert type(restored["database"]["timestamp"]) is datetime
+    assert type(restored["database"]["amount"]) is Decimal
+    assert type(restored["database"]["id"]) is UUID
+    assert evidence_digest(restored) == evidence_digest(original)
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), datetime(2026, 1, 1), {1: "key"}, object()])
+def test_replay_bundle_rejects_unsupported_evidence(invalid):
+    from ops.mt5_mcp.replay_bundle import encode_replay_bundle
+
+    with pytest.raises(ValueError):
+        encode_replay_bundle(report={}, database={"bad": invalid}, broker={})
+
+
+@pytest.mark.parametrize("change", ["truncated", "schema", "duplicate", "type", "size", "noncanonical", "depth"])
+def test_replay_bundle_rejects_malformed_storage(change):
+    from ops.mt5_mcp.replay_bundle import MAX_BYTES, SCHEMA, decode_replay_bundle, encode_replay_bundle
+
+    encoded = encode_replay_bundle(report={}, database={}, broker={})
+    if change == "truncated":
+        encoded = encoded[:-1]
+    elif change == "schema":
+        encoded = encoded.replace(SCHEMA.encode(), b"unknown")
+    elif change == "duplicate":
+        payload = json.loads(encoded)
+        payload[1][1].append(payload[1][1][0])
+        encoded = json.dumps(payload).encode()
+    elif change == "type":
+        encoded = encoded.decode()
+    elif change == "size":
+        encoded = b" " * (MAX_BYTES + 1)
+    elif change == "noncanonical":
+        encoded += b" "
+    elif change == "depth":
+        node = ["value", 1]
+        for _ in range(70):
+            node = ["list", [node]]
+        encoded = json.dumps([SCHEMA, node]).encode()
+    with pytest.raises(ValueError):
+        decode_replay_bundle(encoded)
+
+
+def _retention_caller(monkeypatch, tmp_path, **kwargs):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return WINDOW_TO
+
+    async def broker(*args, **kwargs):
+        return _broker()
+
+    async def database(*args, **kwargs):
+        return _database(
+            account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
+        )
+
+    monkeypatch.setattr(reconcile, "datetime", Clock)
+    monkeypatch.setattr(reconcile, "_broker_snapshot", broker)
+    monkeypatch.setattr(reconcile, "_database_snapshot", database)
+    return asyncio.run(
+        reconcile.run_reconciliation(dsn="fixture-only", repo_root=tmp_path, config_path=tmp_path / "unused", **kwargs)
+    )
+
+
+def test_caller_retains_fixture_inputs_and_replays_after_reload(monkeypatch, tmp_path):
+    from ops.mt5_mcp.replay_bundle import decode_replay_bundle
+    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
+    from ops.mt5_mcp.report_integrity import orchestrator_sources
+
+    path = tmp_path / "fixture-evidence.json"
+    trusted_receipts = []
+
+    def sink(encoded, digest):
+        path.write_bytes(encoded)
+        trusted_receipts.append(digest)
+        return True
+
+    report = _retention_caller(monkeypatch, tmp_path, retention_sink=sink)
+    restored = decode_replay_bundle(path.read_bytes())
+    assert restored["report"] == report
+    assert len(trusted_receipts) == 1
+    # Real datetime type is required by verifier scope; restore module clock.
+    monkeypatch.setattr(reconcile, "datetime", datetime)
+    scope = {
+        "expected_receipt_digest": trusted_receipts[0],
+        "expected_sources": orchestrator_sources(),
+        "expected_account_identifier": DIRECT_IDENTIFIER,
+        "window_from": WINDOW_FROM,
+        "window_to": WINDOW_TO,
+        "as_of": WINDOW_TO + timedelta(seconds=10),
+        "maximum_age": timedelta(seconds=10),
+    }
+    result = verify_reconciliation_replay(**restored, **scope)
+    assert result["reason"] == "CONSISTENT_REPLAY"
+    assert result["execution_authority"] is False
+    assert result["independent_reader_attestation"] == "NOT_VERIFIED"
+    restored["database"]["mutation_evidence"]["changed_tuples"] = 1
+    assert verify_reconciliation_replay(**restored, **scope)["reason"] == "INPUT_DIGEST_MISMATCH"
+    assert "fixture-only" not in path.read_text()
+
+
+def test_caller_default_does_not_write_replay_data(monkeypatch, tmp_path):
+    report = _retention_caller(monkeypatch, tmp_path)
+    assert "integrity" in report
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("ack", [None, False, 1, "true"])
+def test_caller_does_not_return_report_without_explicit_retention_ack(monkeypatch, tmp_path, ack):
+    with pytest.raises(ValueError, match="REPLAY_RETENTION_NOT_ACKNOWLEDGED"):
+        _retention_caller(monkeypatch, tmp_path, retention_sink=lambda *_: ack)
+
+
+def test_caller_storage_failure_propagates(monkeypatch, tmp_path):
+    def sink(*args):
+        raise OSError("fixture-storage-failure")
+
+    with pytest.raises(OSError, match="fixture-storage-failure"):
+        _retention_caller(monkeypatch, tmp_path, retention_sink=sink)
+
+
+def test_caller_rejects_unawaited_retention_sink(monkeypatch, tmp_path):
+    async def sink(*args):
+        return True
+
+    with pytest.raises(ValueError, match="REPLAY_RETENTION_NOT_ACKNOWLEDGED"):
+        _retention_caller(monkeypatch, tmp_path, retention_sink=sink)

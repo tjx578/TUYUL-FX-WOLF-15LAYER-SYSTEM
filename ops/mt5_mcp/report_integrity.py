@@ -40,7 +40,7 @@ def orchestrator_sources() -> dict[str, str]:
     directory = Path(__file__).resolve().parent
     return {
         name: "sha256:" + hashlib.sha256((directory / name).read_bytes()).hexdigest()
-        for name in ("reconcile.py", "report_integrity.py", "account_binding.py")
+        for name in ("reconcile.py", "report_integrity.py", "account_binding.py", "replay_bundle.py")
     }
 
 

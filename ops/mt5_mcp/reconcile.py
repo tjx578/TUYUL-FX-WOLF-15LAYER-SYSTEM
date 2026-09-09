@@ -732,7 +732,15 @@ async def _broker_snapshot(
         return {"tool_surface_exact": False, "snapshots": {}, "error_type": type(exc).__name__}
 
 
-async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path) -> dict[str, Any]:
+async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, retention_sink=None) -> dict[str, Any]:
+    """Collect and seal; an optional synchronous sink returns True after durability.
+
+    Sink receives confidential replay bytes and a separately retainable receipt
+    digest. No default sink is configured. Storage protection and trusted digest
+    custody remain caller responsibilities; a sink failure aborts report return.
+    """
+    if retention_sink is not None and not callable(retention_sink):
+        raise ValueError("INVALID_REPLAY_RETENTION_SINK")
     sources_before = orchestrator_sources()
     window_to = datetime.now(UTC)
     window_from = window_to - timedelta(days=HISTORY_DAYS)
@@ -749,13 +757,27 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path) ->
         window_from=window_from,
         window_to=window_to,
     )
-    return seal_report(
+    sealed = seal_report(
         report,
         database=database,
         broker=broker,
         sources_before=sources_before,
         sources_after=orchestrator_sources(),
     )
+    if retention_sink is not None:
+        from ops.mt5_mcp.replay_bundle import encode_replay_bundle
+
+        accepted = retention_sink(
+            encode_replay_bundle(report=sealed, database=database, broker=broker),
+            sealed["integrity"]["receipt_digest"],
+        )
+        if accepted is not True:
+            import inspect
+
+            if inspect.iscoroutine(accepted):
+                accepted.close()
+            raise ValueError("REPLAY_RETENTION_NOT_ACKNOWLEDGED")
+    return sealed
 
 
 def exit_code_for_gate(gate: object) -> int:
