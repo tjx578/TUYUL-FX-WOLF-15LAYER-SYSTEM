@@ -1,6 +1,6 @@
 {
-  "source_commit": "52a9cb9460e6c66392f85032f22993d14eb7e7a1",
-  "scope": "Evidence files; individual receipts retain historical source bindings",
+  "source_commit": "12836a04df9f3fbb9e8706aae4264f3c40269d1a",
+  "scope": "Evidence files; individual historical receipts retain their own source/status",
   "files": [
     {
       "path": "bc1-collection.log",
@@ -81,6 +81,11 @@
       "path": "bi1.xml",
       "sha256": "2351fd76e809bebbc0a8641fe6911388a7de1ea1114c65dc75dda00ee9c40ecb",
       "bytes": 8940
+    },
+    {
+      "path": "bounded-git-validation-harness.txt",
+      "sha256": "7e937661c9d2366f9c8bab81f3fb770c8eb367c904385024fa397dc0d74aa471",
+      "bytes": 5090
     },
     {
       "path": "br1-collection.log",
@@ -208,6 +213,66 @@
       "bytes": 11602
     },
     {
+      "path": "collector-capacity-revalidation.json",
+      "sha256": "e25804ad44a93ec17e6ace7432500732000ae17ae71f9a7d8e2110ed616cad94",
+      "bytes": 939
+    },
+    {
+      "path": "collector-final-validation.json",
+      "sha256": "89e1b60cf18f754be0c6484ccc550c88224d08eecc6ab0b2f7a306b97750830f",
+      "bytes": 2489
+    },
+    {
+      "path": "collector-provenance-validation.json",
+      "sha256": "6b578c255fa48392d89b1c8665b2ae0bb19a8d15f12361cede5c7da1747cfa44",
+      "bytes": 1240
+    },
+    {
+      "path": "collector-source.diff",
+      "sha256": "932a632dc1e39a1ce3b5eefdf2ba9f12b6d62d04c07dd4e0e43db13f5933fb7b",
+      "bytes": 9051
+    },
+    {
+      "path": "cp1-collection.log",
+      "sha256": "9d34b166946b8ed8ab93dfb36a43996bcb74d85a7685715700c343e78e754cf6",
+      "bytes": 1110
+    },
+    {
+      "path": "cp1-pytest.log",
+      "sha256": "3d7c18d2dd9cc1fdb805deac7a6ce7f98622d954b4986af45dbda444dc7ee80e",
+      "bytes": 820
+    },
+    {
+      "path": "cp1-receipt.json",
+      "sha256": "7f92a252102ad48a57a3847629262979aabdbc12acda40e52a40422c3325d74b",
+      "bytes": 6409
+    },
+    {
+      "path": "cp1.xml",
+      "sha256": "e13eb783acbef0e4352eed1eff55970abaafd52865b2c11699cd6812c3fc9587",
+      "bytes": 1760
+    },
+    {
+      "path": "cp3-collection.log",
+      "sha256": "c74b422906dfefe0a9475dc449f2eefebed25a9f7c38e0ab68d14af41c3dad29",
+      "bytes": 1110
+    },
+    {
+      "path": "cp3-pytest.log",
+      "sha256": "7df77c6bbe9d9555da26c60568e8efa586e01d0bf5b0a2eb1a083c6b49caac76",
+      "bytes": 820
+    },
+    {
+      "path": "cp3-receipt.json",
+      "sha256": "cf31d0ba0d485020419eb8f3049219a4c2143b344e607fd23c0f0a934f92cd43",
+      "bytes": 6555
+    },
+    {
+      "path": "cp3.xml",
+      "sha256": "de9d05d40717b6d6428936c14caeb21936b579ffb3ed3880fd4c94fc82abc8c1",
+      "bytes": 1760
+    },
+    {
       "path": "cr2-collection.log",
       "sha256": "a0b7c37e0584c7fbde9c3b19a6fb4f89dbbdb494e43ff004085d6c342438f746",
       "bytes": 10498
@@ -291,6 +356,11 @@
       "path": "g00-source.json",
       "sha256": "86f8f05c796f713f3107c65077250b942678a4d6d81015df2f64b758ad0d6f1b",
       "bytes": 1272
+    },
+    {
+      "path": "git-bounded-preflight.json",
+      "sha256": "90d768d7ef3caf9ab8e6a58bfdf011de4634cf9d87d3c54e235f04b4091cb5ae",
+      "bytes": 362
     },
     {
       "path": "intent-row-confirmation-source.diff",

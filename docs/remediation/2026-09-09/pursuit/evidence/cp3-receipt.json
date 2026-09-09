@@ -1,0 +1,109 @@
+{
+  "git_resource_options": {
+    "core.packedGitWindowSize": "1m",
+    "core.packedGitLimit": "32m",
+    "core.deltaBaseCacheLimit": "8m"
+  },
+  "label": "cp3",
+  "runner": "D:\\WOLF15-work\\master-remediation-20260909\\mcp-test-env\\Scripts\\python.exe",
+  "platform": "win32",
+  "collection_command": [
+    "D:\\WOLF15-work\\master-remediation-20260909\\mcp-test-env\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_native_mt5_readonly_mcp.py",
+    "--collect-only",
+    "-q"
+  ],
+  "test_command": [
+    "D:\\WOLF15-work\\master-remediation-20260909\\mcp-test-env\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_native_mt5_readonly_mcp.py",
+    "-q",
+    "--timeout=60",
+    "--basetemp",
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s03-runtime-staging\\ci-temp\\cp3",
+    "--junitxml",
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s03-runtime-staging\\ci-evidence\\cp3.xml"
+  ],
+  "collection_exit": 0,
+  "expected_test_count": 11,
+  "expected_test_ids": [
+    "tests/test_native_mt5_readonly_mcp.py::test_mcp_registry_exposes_only_the_five_read_tools",
+    "tests/test_native_mt5_readonly_mcp.py::test_live_reader_calls_only_read_methods_and_redacts_free_text",
+    "tests/test_native_mt5_readonly_mcp.py::test_empty_snapshot_is_measured_but_connection_failure_is_not",
+    "tests/test_native_mt5_readonly_mcp.py::test_history_window_and_limit_fail_closed_before_native_query",
+    "tests/test_native_mt5_readonly_mcp.py::test_terminal_must_be_running_at_the_exact_pinned_path",
+    "tests/test_native_mt5_readonly_mcp.py::test_missing_hmac_key_fails_closed_without_exposing_login",
+    "tests/test_native_mt5_readonly_mcp.py::test_all_five_reads_emit_the_same_versioned_hmac_and_terminal_identity",
+    "tests/test_native_mt5_readonly_mcp.py::test_collector_rejects_config_surface_before_launch",
+    "tests/test_native_mt5_readonly_mcp.py::test_collector_rejects_listed_surface_before_tool_reads",
+    "tests/test_native_mt5_readonly_mcp.py::test_collector_strips_audit_dsn_and_records_nonsecret_provenance",
+    "tests/test_native_mt5_readonly_mcp.py::test_collector_rejects_helper_source_change"
+  ],
+  "pytest_exit": 0,
+  "xml_counts": {
+    "tests": 11,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "elapsed_seconds": 8.474,
+  "before": {
+    "head": "c46b89bd4da2d965a507c67a7853db59b8a74a59",
+    "diff_sha256": "9fe98d15c0ef1d8164f3f51ef020dd69f87cc28f5247bd4ed2556069dd34df97",
+    "files": {
+      "tests/test_native_mt5_readonly_mcp.py": "6dabfe2aacbfd0d7b1db17736bef279372ed2dabe42a836a767538b753c19c6e"
+    },
+    "integration_source_files": {
+      "analysis/signal_throttle_log_analyzer.py": "95797f2e0ce9da9c73bfeb58f4a12e0f7fc1fab0f251c3484bb566a003e53680",
+      "analysis/strategy_5scr_pair_activity.py": "c0ff373cf65f619a3114eeb90c35287d913d318aebb269716d3733a394922bce",
+      "analysis/strategy_5scr_pair_activity_report.py": "44288d0eea716904c0b6a0aa945a986ba14051c003875033446a995fc6cf3af5",
+      "api/app_factory.py": "460c89be1dfe596f4b1fdc81318dbd7ea504c260888a840483971284c4636da7",
+      "api/owner_dashboard_release.py": "650d9758e76128ff9ed7d563bab3e297c3bde6cf2937d0b44e8ffa73b024ddb2",
+      "contracts/strategy_5scr_pair_activity.py": "848f0b3c486420540685cb7848ebdfdbe77151a67aebf7fe6b59aabea8d85bd1",
+      "deploy/railway/migration_runner.py": "ae33ae5299ed4a3e2612b33618f728ef60299cc91431fa221e3533097aa7dfac",
+      "ops/mt5_mcp/snapshot.py": "fe95485780b9f7dc4944a305f332b378857c9172edd7e05e3be89e3f6b24c3dc",
+      "pipeline/wolf_constitutional_pipeline.py": "d9c571824811b5f5530dfe56abc02ac6a841fc6c6b00c06feba31f05befb800f",
+      "requirements.txt": "1f80669466b282c4e391effe904e5747e2150e87d4623324d10d391531923afb",
+      "tests/test_native_mt5_readonly_mcp.py": "6dabfe2aacbfd0d7b1db17736bef279372ed2dabe42a836a767538b753c19c6e",
+      "tests/test_pair_activity_report_integration.py": "620f6adf559facae89d272e09b03dd0eb0b58bfbd04ddd3a3b353a150e54f43e",
+      "tests/test_signal_throttle_log_analyzer.py": "43032ee732235989d0fc66158b5f0b22dc44297ae8b6300523072d6f58a256d8",
+      "tests/test_strategy_5scr_pair_activity.py": "441974fbe743a0735382221e135ac8035d0145a361d4e98b9ca9bbacf432b265"
+    }
+  },
+  "after": {
+    "head": "c46b89bd4da2d965a507c67a7853db59b8a74a59",
+    "diff_sha256": "9fe98d15c0ef1d8164f3f51ef020dd69f87cc28f5247bd4ed2556069dd34df97",
+    "files": {
+      "tests/test_native_mt5_readonly_mcp.py": "6dabfe2aacbfd0d7b1db17736bef279372ed2dabe42a836a767538b753c19c6e"
+    },
+    "integration_source_files": {
+      "analysis/signal_throttle_log_analyzer.py": "95797f2e0ce9da9c73bfeb58f4a12e0f7fc1fab0f251c3484bb566a003e53680",
+      "analysis/strategy_5scr_pair_activity.py": "c0ff373cf65f619a3114eeb90c35287d913d318aebb269716d3733a394922bce",
+      "analysis/strategy_5scr_pair_activity_report.py": "44288d0eea716904c0b6a0aa945a986ba14051c003875033446a995fc6cf3af5",
+      "api/app_factory.py": "460c89be1dfe596f4b1fdc81318dbd7ea504c260888a840483971284c4636da7",
+      "api/owner_dashboard_release.py": "650d9758e76128ff9ed7d563bab3e297c3bde6cf2937d0b44e8ffa73b024ddb2",
+      "contracts/strategy_5scr_pair_activity.py": "848f0b3c486420540685cb7848ebdfdbe77151a67aebf7fe6b59aabea8d85bd1",
+      "deploy/railway/migration_runner.py": "ae33ae5299ed4a3e2612b33618f728ef60299cc91431fa221e3533097aa7dfac",
+      "ops/mt5_mcp/snapshot.py": "fe95485780b9f7dc4944a305f332b378857c9172edd7e05e3be89e3f6b24c3dc",
+      "pipeline/wolf_constitutional_pipeline.py": "d9c571824811b5f5530dfe56abc02ac6a841fc6c6b00c06feba31f05befb800f",
+      "requirements.txt": "1f80669466b282c4e391effe904e5747e2150e87d4623324d10d391531923afb",
+      "tests/test_native_mt5_readonly_mcp.py": "6dabfe2aacbfd0d7b1db17736bef279372ed2dabe42a836a767538b753c19c6e",
+      "tests/test_pair_activity_report_integration.py": "620f6adf559facae89d272e09b03dd0eb0b58bfbd04ddd3a3b353a150e54f43e",
+      "tests/test_signal_throttle_log_analyzer.py": "43032ee732235989d0fc66158b5f0b22dc44297ae8b6300523072d6f58a256d8",
+      "tests/test_strategy_5scr_pair_activity.py": "441974fbe743a0735382221e135ac8035d0145a361d4e98b9ca9bbacf432b265"
+    }
+  },
+  "source_unchanged": true,
+  "scope": "LOCAL_SUBSET_ONLY_NO_PRODUCTION_DB_BROKER_OR_PROVIDER"
+}

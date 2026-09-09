@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "52a9cb9460e6c66392f85032f22993d14eb7e7a1",
-  "source_verified_at": "2026-09-09T05:51:46.183420+00:00",
+  "source_checkpoint": "12836a04df9f3fbb9e8706aae4264f3c40269d1a",
+  "source_verified_at": "2026-09-09T06:05:08.676528+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K11_CHANNEL_B_REPLAY_VERIFIER",
+  "current_slice": "K11_COLLECTOR_PROVENANCE_FINAL_LOCAL_ACCEPTANCE",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Bind actual collector provenance and trusted retention/verification caller; offline replay verifier is locally tested, active attestor/account/window remain unbound.",
+  "next_action_on_resume": "Use bounded Git cache options for local verification. Continue trusted receipt retention/verification caller and independent collector binding; no general capacity/runtime gate is closed.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_IMPLEMENTATION_AND_LOCAL_ACCEPTANCE",
-  "actual_source_commit": "52a9cb9460e6c66392f85032f22993d14eb7e7a1",
+  "previous_goal_turn_classification": "PROGRESS_BOUNDED_GIT_ALTERNATIVE_FINAL_TEST_AND_COMMIT",
+  "actual_source_commit": "12836a04df9f3fbb9e8706aae4264f3c40269d1a",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -793,13 +793,13 @@
       "DONE": false
     },
     "K11": {
-      "status": "CHANNEL_B_REPLAY_LOCAL_PASS_NOT_ATTESTED",
+      "status": "COLLECTOR_AND_REPLAY_LOCAL_PASS_NOT_ATTESTED",
       "DONE": false,
-      "evidence_ref": "evidence/channel-b-replay-validation.json",
+      "evidence_ref": "evidence/collector-final-validation.json",
       "remaining": [
-        "Configured collector source and active identity binding",
-        "Trusted evidence retention and consumer acceptance",
-        "Actual database/broker recovery and natural DEMO reconciliation"
+        "Trusted receipt retention/verification caller",
+        "Active independent collector/account/window binding",
+        "Real database/broker reconciliation and natural DEMO acceptance"
       ]
     },
     "K12": {
@@ -813,7 +813,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "52a9cb9460e6c66392f85032f22993d14eb7e7a1",
+    "source_commit": "12836a04df9f3fbb9e8706aae4264f3c40269d1a",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,
@@ -850,5 +850,19 @@
         "next": "Bind independent reader identity, account/window/report digest and verification interface; no active attestor or broker authority can be inferred from this flag."
       }
     ]
+  },
+  "host_capacity_blocker": {
+    "key": "B-HOST-MEMORY",
+    "observed_at": "2026-09-09T05:58:10.952036+00:00",
+    "evidence": "evidence/collector-provenance-validation.json",
+    "scope": [
+      "Final source snapshot/test attempt",
+      "Commit/publication verification"
+    ],
+    "condition_to_resume": "Verified sufficient host capacity without stopping preserved workloads or otherwise explicit bound host intervention",
+    "question_repeated": false,
+    "consecutive_goal_turns": 0,
+    "latest_evidence": "evidence/collector-final-validation.json",
+    "status": "MITIGATED_FOR_BOUNDED_GIT_AND_SMALL_NATIVE_FIXTURE_SUITE"
   }
 }
