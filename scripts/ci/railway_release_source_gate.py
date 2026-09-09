@@ -21,6 +21,7 @@ REQUIRED_STEPS = {
         "Require executed S03 PostgreSQL acceptance",
         "Require separate S03 producer and relay PostgreSQL acceptance",
         "Require separate S03 consumer and owner PostgreSQL acceptance",
+        "Require disposable consumer application-role PostgreSQL acceptance",
         "Require separate candidate capacity and TEST_ONLY transaction PostgreSQL acceptance",
         "Run pytest with coverage",
         "Require uninstrumented latency budgets",

@@ -57,6 +57,8 @@ SOURCES = (
     "tests/integration/test_activity_delivery_producer_postgres.py",
     "scripts/ci/run_activity_delivery_producer_acceptance.py",
     "scripts/ci/run_activity_delivery_consumer_acceptance.py",
+    "scripts/ci/run_activity_consumer_role_acceptance.py",
+    "tests/integration/test_activity_consumer_role_postgres.py",
     "storage/strategy_5scr_activity_consumer.py",
     "api/app_factory.py",
     "contracts/strategy_5scr_lifecycle_v2.py",

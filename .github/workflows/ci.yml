@@ -179,6 +179,9 @@ jobs:
       - name: Require separate S03 consumer and owner PostgreSQL acceptance
         run: python scripts/ci/run_activity_delivery_consumer_acceptance.py
 
+      - name: Require disposable consumer application-role PostgreSQL acceptance
+        run: python scripts/ci/run_activity_consumer_role_acceptance.py
+
       - name: Require separate candidate capacity and TEST_ONLY transaction PostgreSQL acceptance
         run: python scripts/ci/run_strategy_persistence_acceptance.py
 
