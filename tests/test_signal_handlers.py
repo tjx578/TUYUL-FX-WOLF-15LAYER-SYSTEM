@@ -43,7 +43,9 @@ def test_install_signal_handlers_falls_back_to_signal_module(monkeypatch):
             return False
 
     monkeypatch.setattr("startup.signal_handlers.asyncio.get_running_loop", lambda: Loop())
-    monkeypatch.setattr("startup.signal_handlers.signal.signal", lambda signum, handler: handlers.setdefault(signum, handler))
+    monkeypatch.setattr(
+        "startup.signal_handlers.signal.signal", lambda signum, handler: handlers.setdefault(signum, handler)
+    )
 
     install_signal_handlers(shutdown_event)
 
