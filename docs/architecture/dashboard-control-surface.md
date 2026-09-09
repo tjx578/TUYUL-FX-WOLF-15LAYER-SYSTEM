@@ -1,144 +1,44 @@
-# Dashboard Control Surface
+# Dashboard Viewer Authority
 
-**Status:** Canonical
-**Scope:** Owner-operated dashboard authority, auth boundary, and runtime limitations.
+**Status:** Canonical repository contract for the selected Railway dashboard.
+**Updated:** 2026-09-09 (dashboard scope only).
 
-## Purpose
+The selected owner interface is `https://wolf15-dashboard-frontend-production.up.railway.app/login`. Its frontend serves on port `8080` and calls `https://wolf15-api-production.up.railway.app` through same-origin Next server handlers. The public login observed during this revision still shows `VIEWER JWT`; the password-login revision is repository work and production acceptance remains HOLD.
 
-This document defines the dashboard as a private owner control surface.
+## Allowed operations
 
-The dashboard is NOT a public multi-user product.
-It is an owner-operated operational interface for visibility, diagnostics, controlled actions, transport orchestration, and explicit owner-scoped system interaction.
+The owner may authenticate with username/password, read sanitized system/feed projections, refresh those observations and log out. The authenticated session is deliberately `role=viewer` with `read:dashboard`, not an administrative or execution role.
 
-## Core Rule
+The selected dashboard cannot synthesize market verdicts, override Layer 12, invoke broker/execution routes, take/close trades, change risk/configuration state or manage engine/orchestrator runtime. Those backend authorities remain separate and are not enabled by owner login.
 
-The dashboard may:
+## Authentication contract
 
-- consume system state
-- display health, diagnostics, and runtime context
-- initiate owner-scoped control actions that are explicitly exposed by backend services
-- manage transport, session, and websocket coordination for the owner interface
-- invoke operational APIs that remain within constitutional and execution boundaries
+- `DASHBOARD_MODE=viewer` is required.
+- Backend password verification issues only the bounded viewer JWT.
+- The Next server holds the JWT in a Secure, HttpOnly, SameSite session cookie; browser JavaScript and storage receive no JWT, signing secret or machine credential.
+- Server-side core validation requires JWT auth, exact viewer role and explicit `read:dashboard` scope.
+- Machine API keys and owner/operator/admin roles cannot substitute for the viewer session.
+- The password-owner session expires after at most 15 minutes and cannot use legacy token reissuance endpoints to extend access.
+- The selected API must be API-only; `WOLF15_EMBED_ORCHESTRATOR` must remain false before any authorized rollout.
 
-The dashboard may NOT:
+## Direct core read boundary
 
-- synthesize market verdicts
-- override Layer 12 constitutional decisions
-- bypass execution, governance, or compliance boundaries
-- act as an alternate strategy engine
-- mutate risk or execution state through undocumented side channels
+Only GET `/api/proxy/dashboard/overview`, `/api/proxy/dashboard/feed-status` and `/api/proxy/dashboard/aggregated-status` are exposed. The Next server maps them to existing core read endpoints, filters response fields before browser delivery and fails closed on unknown paths, query parameters, mutations or upstream errors. There is no BFF dependency, general API fallback, browser WebSocket or SSE channel.
 
-## Auth Model
+`INTERNAL_API_URL` is a server-only HTTPS origin. `DASHBOARD_CANONICAL_ORIGIN` binds browser login/logout to the selected Railway origin. Neither origin is a credential or evidence that the candidate is deployed.
 
-This dashboard is private and owner-only.
+See [the direct API topology contract](dashboard-hybrid-topology.md) for exact paths, schemas, timeout/body limits and deployment gates. Its historical filename is retained for link compatibility.
 
-Therefore:
+## Health and evidence
 
-- public-user login semantics are NOT the primary architecture
-- browser-facing API key fallback is NOT allowed
-- machine/service API keys must remain machine-only
-- owner identity must be explicit and bounded (`DASHBOARD_MODE=owner`)
-- websocket/browser auth must follow a dedicated dashboard contract
+Core `/healthz` and `/health` describe process liveness. Core readiness, deep diagnostics, data freshness, database identity and broker execution evidence remain distinct. The selected viewer receives sanitized status/feed fields; it does not expose raw diagnostic exceptions, private origins or arbitrary backend payloads.
 
-## Key Rotation Policy
+Unsupported account/risk/execution/audit projections remain NOT_MEASURED. A reachable page, a healthy process or successful local test does not prove production login, data freshness or trading readiness.
 
-API keys managed through `APIKeyManager` follow an explicit rotation protocol:
+## Separate legacy machine-key policy
 
-- `ACTIVE` keys validate normally.
-- `ROTATING` keys are only valid during a bounded grace window (default 300 s) measured from the `rotated_at` timestamp.
-- `ROTATING` keys with no `rotated_at` timestamp are rejected immediately.
-- `REVOKED` keys are rejected unconditionally.
-- Key material is persisted atomically (write-then-rename) to prevent corruption.
+Legacy `dashboard/api_key_manager.py` remains backend machinery outside this viewer flow. Its ACTIVE, bounded ROTATING-grace and REVOKED states do not grant browser authority. Keys and rotation operations remain machine-only. The legacy standalone Python BFF is disconnected from this frontend; its presence in the repository is not a current routing prescription.
 
-## Auth Boundary
+## Release boundary
 
-The following auth concerns must remain separated:
-
-### 1. Owner dashboard auth
-
-Used only for the private operator interface.
-
-### 2. Machine / observability auth
-
-Used for `/metrics`, `/healthz`, `/readyz`, and machine-to-machine probes.
-
-### 3. Internal service auth
-
-Used between backend services where required.
-
-These surfaces must not be conflated.
-
-## Proxy Rule
-
-The dashboard uses a single canonical backend access path.
-
-All browser-side REST traffic flows through the runtime proxy at
-`/api/proxy/[...path]` (Next.js route handler). Build-time rewrites have
-been removed (P4) — the proxy reads `INTERNAL_API_URL` at request time,
-eliminating stale-env bugs.
-
-Edge middleware injects the session cookie as an `Authorization` header
-only for `/api/proxy/` requests.
-
-When an optional dashboard-BFF service is deployed, the proxy may route
-a defined allowlist of paths to the BFF upstream instead of core-api.
-The routing decision is made by `resolveDashboardUpstream()` at request
-time. Non-allowlisted paths always resolve to core-api. See
-`docs/architecture/dashboard-hybrid-topology.md` for the full routing
-matrix and safety rules.
-
-Internal Next.js routes (`/api/set-session`, `/api/auth/ws-ticket`) are
-NOT proxied — they handle their own auth.
-
-## Health Rule
-
-Infrastructure health and dashboard operator status are **semantically separate**.
-
-| Surface | Path | Auth | Purpose |
-| --------- | ------ | ------ | --------- |
-
-| Liveness | `/healthz`, `/health` | none | Process alive? Infra probes. |
-| Readiness | `/readyz` | machine-key | Safe to serve traffic? |
-| Operator status | `/api/v1/status` | JWT | Dashboard rich diagnostics (16+ fields). |
-| Deep diagnostics | `/api/v1/status/full` | JWT | Redis, Postgres, config, engine, lockdown. |
-
-The dashboard calls `/api/v1/status` for operator diagnostics.
-Heartbeat / liveness pings (multiplexer, DataStreamDiagnostic) use `/healthz`.
-Docker / Railway / k8s probes use `/healthz` (liveness) and `/readyz` (readiness).
-
-The dashboard must not blur the meaning of infra probe routes.
-
-## Constitutional Rule
-
-The dashboard is allowed to control.
-It is not allowed to decide constitutionally.
-
-Layer 12 remains the sole trade verdict authority.
-
-This rule applies equally to any optional dashboard-BFF service.
-A BFF may aggregate, cache, or pre-process dashboard-facing data,
-but it must not synthesize verdicts, override Layer 12, or bypass
-risk/execution boundaries.
-
-## Optional Dashboard-BFF Topology
-
-An optional backend-for-frontend (BFF) service may be deployed alongside
-core-api to serve dashboard-specific aggregation, caching, or
-pre-processing workloads.
-
-Rules:
-
-- The BFF is non-authoritative. It must not produce constitutional
-  verdicts, risk decisions, or execution commands.
-- The BFF is surface-scoped. It serves only the dashboard frontend
-  and must not become a general-purpose API gateway.
-- Routing to the BFF is controlled by an explicit allowlist in the
-  Next.js proxy layer (`resolveDashboardUpstream()`).
-- All WebSocket channels remain direct to core-api in Phase 1.
-- The BFF must forward session auth headers unchanged.
-- If the BFF is unreachable, the proxy must NOT fall back silently
-  to core-api for BFF-allowlisted paths — it must return an error.
-  This prevents phantom routing drift.
-
-For the full routing matrix, deployment rules, and observability
-contract, see `docs/architecture/dashboard-hybrid-topology.md`.
+This revision changes repository files only. Deployment, provider-variable updates, secret provisioning, database/broker operations and trading activation require separately authorized work. Keep production HOLD until exact-source build, containment, secret scan and selected-origin login/data acceptance have evidence.

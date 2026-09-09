@@ -38,6 +38,10 @@ def test_context_epoch_has_only_audited_downstream_analysis_consumers() -> None:
         "contracts/strategy_5scr_context_epoch_v1.py",
         "storage/strategy_5scr_context_epoch_v1_repository.py",
         "storage/strategy_5scr_directional_thesis_v1_repository.py",
+        # Source-verbatim observer projection only. It mirrors the canonical
+        # transition and remains observational-only; it is not a P4+ strategy
+        # consumer and cannot grant downstream authority.
+        "storage/observer_strategy_events.py",
         "storage/migrations/versions/20260812_01_5scr_context_epoch_v1.py",
     }
     result = subprocess.run(

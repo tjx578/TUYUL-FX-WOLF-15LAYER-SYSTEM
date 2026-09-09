@@ -26,6 +26,8 @@ from contracts.strategy_5scr_lifecycle_v2 import (
     StrategyLifecycleEventLink,
     StrategyLifecycleV2,
 )
+from storage.observer_export_outbox import ObserverExportOutboxRepository
+from storage.observer_strategy_events import analysis_lifecycle_transition_observer_draft
 from storage.postgres_client import PostgresClient, pg_client
 
 LIFECYCLE_TABLE = "strategy_5scr_analysis_lifecycles_v2"
@@ -134,8 +136,16 @@ def lifecycle_from_row(row: Any) -> StrategyLifecycleV2:
 class StrategyLifecycleV2Repository:
     """Upsert episodes and their event links; read back the active episode."""
 
-    def __init__(self, *, pg: PostgresClient | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        pg: PostgresClient | None = None,
+        observer_export_repository: ObserverExportOutboxRepository | None = None,
+    ) -> None:
         self._pg = pg or pg_client
+        self._observer_export = observer_export_repository
+        if pg is None and observer_export_repository is None:
+            self._observer_export = ObserverExportOutboxRepository(pg=self._pg)
 
     @property
     def is_available(self) -> bool:
@@ -391,8 +401,7 @@ class StrategyLifecycleV2Repository:
         """
         try:
             async with self._pg.transaction() as connection:
-                await self.upsert_lifecycle(lifecycle, _executor=connection)
-                if not await self.link_event(link, _executor=connection):
+                if not await self.persist_in_transaction(connection, lifecycle, link):
                     # The lifecycle upsert happened first to satisfy the FK.
                     # Roll it back when another worker already linked this
                     # event, otherwise a lagging worker could overwrite newer
@@ -400,6 +409,40 @@ class StrategyLifecycleV2Repository:
                     raise _DuplicateEventLinkRollbackError
         except _DuplicateEventLinkRollbackError:
             return False
+        return True
+
+    async def persist_in_transaction(
+        self,
+        connection: Any,
+        lifecycle: StrategyLifecycleV2,
+        link: StrategyLifecycleEventLink,
+    ) -> bool:
+        """Persist lifecycle/link/export using one caller-owned transaction."""
+
+        previous_state: str | None = None
+        if self._observer_export is not None:
+            previous = await connection.fetchrow(
+                f"""
+                SELECT state
+                FROM {LIFECYCLE_TABLE}
+                WHERE strategy_lifecycle_id = $1
+                FOR UPDATE
+                """,
+                lifecycle.strategy_lifecycle_id,
+            )
+            previous_state = None if previous is None else str(_row_value(previous, "state"))
+        await self.upsert_lifecycle(lifecycle, _executor=connection)
+        if not await self.link_event(link, _executor=connection):
+            return False
+        if self._observer_export is not None and previous_state != lifecycle.state:
+            await self._observer_export.append_in_transaction(
+                connection,
+                analysis_lifecycle_transition_observer_draft(
+                    lifecycle,
+                    link,
+                    previous_state=previous_state,
+                ),
+            )
         return True
 
     async def fetch_unlinked_events(self, *, limit: int = 100) -> list[dict[str, Any]]:
