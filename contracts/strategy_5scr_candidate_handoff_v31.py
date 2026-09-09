@@ -9,6 +9,7 @@ from pydantic import Field, model_validator
 
 from contracts.strategy_5scr_context_route_v31 import ContextRouteReceiptV31, context_route_receipt_hash_v31
 from contracts.strategy_5scr_net_geometry_v31 import EntryIntervalV31, GeometryContract, Price
+from contracts.strategy_5scr_ordered_proof_v31 import OrderedProofEvidenceV31, ordered_proof_hash_v31
 from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
 
 
@@ -70,11 +71,12 @@ class TradePlanCandidateV31(GeometryContract):
 class CandidateHandoffV31(GeometryContract):
     profile: Literal["TEST_ONLY"]
     selected_ssot_hash: Literal["sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"]
-    proof_policy_id: Literal["S3_S5_HANDOFF_TEST_V2"]
+    proof_policy_id: Literal["S3_S5_HANDOFF_TEST_V3"]
     candidate: TradePlanCandidateV31
     target_universe: TargetUniverseV31
     admission_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     thesis_structural_proof_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    thesis_structural_proof: OrderedProofEvidenceV31
     context_route_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     context_route_receipt: ContextRouteReceiptV31
     price_quality_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
@@ -106,4 +108,27 @@ class CandidateHandoffV31(GeometryContract):
             or context.selected_route not in context.material.allowed_routes
         ):
             raise ValueError("HANDOFF_CONTEXT_ROUTE_NOT_ALLOWED")
+        proof = self.thesis_structural_proof
+        if self.thesis_structural_proof_hash != ordered_proof_hash_v31(proof):
+            raise ValueError("HANDOFF_ORDERED_PROOF_HASH_MISMATCH")
+        if (
+            proof.strategy_thesis_id,
+            proof.strategy_lifecycle_id,
+            proof.context_epoch_id,
+            proof.symbol,
+            proof.direction,
+            proof.selected_route,
+            proof.context_material_hash,
+        ) != (
+            candidate.strategy_thesis_id,
+            candidate.strategy_lifecycle_id,
+            candidate.context_epoch_id,
+            candidate.symbol,
+            candidate.direction,
+            context.selected_route,
+            context.material_context_hash,
+        ):
+            raise ValueError("HANDOFF_ORDERED_PROOF_SCOPE_MISMATCH")
+        if not proof.evaluated_at <= candidate.decision_at < deadline <= proof.valid_until:
+            raise ValueError("HANDOFF_ORDERED_PROOF_EXPIRED")
         return self

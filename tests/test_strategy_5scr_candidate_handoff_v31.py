@@ -14,6 +14,7 @@ from contracts.strategy_5scr_context_route_v31 import (
     material_context_hash_v31,
 )
 from contracts.strategy_5scr_net_geometry_v31 import NetGeometryContextV31, NetGeometryRequestV31
+from contracts.strategy_5scr_ordered_proof_v31 import ordered_proof_hash_v31
 from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
 from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31, propose_canonical_parent_v31
 from risk.strategy_5scr_capacity_v31 import CapacityRejectedError
@@ -21,6 +22,7 @@ from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31
 from tests.test_strategy_5scr_capacity_v31 import NOW, H, request_for, seed
 from tests.test_strategy_5scr_context_route_v31 import receipt as context_fixture
 from tests.test_strategy_5scr_net_geometry_v31 import request_data
+from tests.test_strategy_5scr_ordered_proof_v31 import proof as proof_fixture
 from tests.test_strategy_5scr_target_selection_v31 import fixture as target_fixture
 
 
@@ -81,14 +83,16 @@ def bundle(direction="BUY"):
         decision_at=NOW,
     )
     context_receipt = context_fixture(direction)
+    structural_proof = proof_fixture(context_receipt)
     handoff = CandidateHandoffV31(
         profile="TEST_ONLY",
         selected_ssot_hash="sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
-        proof_policy_id="S3_S5_HANDOFF_TEST_V2",
+        proof_policy_id="S3_S5_HANDOFF_TEST_V3",
         candidate=candidate,
         target_universe=universe,
         admission_receipt_hash=H,
-        thesis_structural_proof_hash=H,
+        thesis_structural_proof_hash=ordered_proof_hash_v31(structural_proof),
+        thesis_structural_proof=structural_proof,
         context_route_receipt_hash=context_route_receipt_hash_v31(context_receipt),
         context_route_receipt=context_receipt,
         price_quality_receipt_hash=H,
@@ -167,6 +171,7 @@ def test_context_binding_rejected_before_risk_verifiers(fault, reason):
     )
     body["candidate"] = handoff.candidate
     body["target_universe"] = handoff.target_universe
+    body["thesis_structural_proof"] = handoff.thesis_structural_proof
     if fault != "missing_body":
         body["context_route_receipt"] = ContextRouteReceiptV31.model_validate(context)
     unsafe = CandidateHandoffV31.model_construct(**body)
@@ -199,6 +204,58 @@ def test_canonical_candidate_to_target_geometry_sizing_capacity_is_bound_and_non
     assert result.reservation.tradeplan_id == str(handoff.candidate.tradeplan_id)
     assert result.execution_authority is result.capital_reservation_authority is False
     assert handoff.candidate.model_dump_json() == candidate_before
+
+
+@pytest.mark.parametrize(
+    "fault,reason",
+    [
+        ("thesis", "ORDERED_PROOF_SCOPE_MISMATCH"),
+        ("epoch", "ORDERED_PROOF_SCOPE_MISMATCH"),
+        ("route", "ORDERED_PROOF_SCOPE_MISMATCH"),
+        ("hash", "ORDERED_PROOF_HASH_MISMATCH"),
+        ("expiry", "ORDERED_PROOF_EXPIRED"),
+        ("future_evaluation", "ORDERED_PROOF_EXPIRED"),
+        ("missing", "Field required"),
+        ("old_policy", "literal_error"),
+    ],
+)
+def test_ordered_proof_binding_rejected_before_risk(fault, reason):
+    ledger, handoff, request = bundle()
+    structural = handoff.thesis_structural_proof
+    if fault == "thesis":
+        structural = structural.model_copy(update={"strategy_thesis_id": UUID(int=99)})
+    elif fault == "epoch":
+        structural = structural.model_copy(update={"context_epoch_id": UUID(int=99)})
+    elif fault == "route":
+        structural = structural.model_copy(update={"selected_route": "OTHER_ROUTE"})
+    elif fault == "expiry":
+        structural = structural.model_copy(update={"valid_until": NOW + timedelta(microseconds=1)})
+    elif fault == "future_evaluation":
+        structural = structural.model_copy(update={"evaluated_at": NOW + timedelta(seconds=1)})
+    body = dict(handoff)
+    body["thesis_structural_proof"] = structural
+    body["thesis_structural_proof_hash"] = H if fault == "hash" else ordered_proof_hash_v31(structural)
+    if fault == "missing":
+        body.pop("thesis_structural_proof")
+    if fault == "old_policy":
+        body["proof_policy_id"] = "S3_S5_HANDOFF_TEST_V2"
+    unsafe = CandidateHandoffV31.model_construct(**body)
+    calls = []
+    with pytest.raises(ValidationError, match=reason):
+        propose_canonical_parent_v31(
+            ledger,
+            unsafe,
+            request,
+            reservation_id=UUID(int=21),
+            expires_at=NOW + timedelta(seconds=1),
+            now=NOW,
+            owner_epoch=ledger.owner_epoch,
+            expected_version=ledger.version,
+            verify_handoff=lambda *args: calls.append(args),
+            verify_universe=None,
+            verify_risk_inputs=None,
+        )
+    assert not calls and not ledger.reservations
 
 
 def test_advisory_candidate_stops_before_verifiers_or_capacity():

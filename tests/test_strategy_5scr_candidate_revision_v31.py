@@ -13,9 +13,11 @@ from contracts.strategy_5scr_candidate_revision_v31 import (
     prepare_candidate_revision_v31,
 )
 from contracts.strategy_5scr_context_route_v31 import context_route_receipt_hash_v31, material_context_hash_v31
+from contracts.strategy_5scr_ordered_proof_v31 import ordered_proof_hash_v31
 from storage.strategy_5scr_activity_consumer import LifecycleOwnerFence
 from storage.strategy_5scr_candidate_revision_v31 import CandidateRevisionRepositoryV31, _stored
 from tests.test_strategy_5scr_candidate_handoff_v31 import NOW, bundle
+from tests.test_strategy_5scr_ordered_proof_v31 import proof as proof_fixture
 
 
 def revision(number=1, previous=None, advisory=False):
@@ -130,6 +132,14 @@ def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
             update={
                 "context_route_receipt": context,
                 "context_route_receipt_hash": context_route_receipt_hash_v31(context),
+            }
+        )
+    if fault in ("symbol", "strategy_lifecycle_id", "strategy_thesis_id"):
+        structural_proof = proof_fixture(handoff.context_route_receipt, thesis_id=candidate.strategy_thesis_id)
+        handoff = handoff.model_copy(
+            update={
+                "thesis_structural_proof": structural_proof,
+                "thesis_structural_proof_hash": ordered_proof_hash_v31(structural_proof),
             }
         )
     request = request.model_copy(update={"handoff": handoff})
