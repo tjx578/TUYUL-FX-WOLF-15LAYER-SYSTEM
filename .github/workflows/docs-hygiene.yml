@@ -1,17 +1,11 @@
 # Docs hygiene — verify architecture reading order, legacy quarantine,
-# and broken cross-references.  Runs on push/PR when docs change.
+# and broken cross-references. Always runs for the required Docs Gate context.
 
 name: Docs Hygiene
 
 on:
   push:
-    paths:
-      - "docs/**"
-      - ".github/workflows/docs-hygiene.yml"
   pull_request:
-    paths:
-      - "docs/**"
-      - ".github/workflows/docs-hygiene.yml"
   workflow_dispatch:
 
 permissions:
@@ -65,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: "No production code may import from docs/legacy/"
+      - name: "Reject legacy documentation references in production Python"
         run: |
           echo "Scanning production code for docs/legacy references..."
           VIOLATIONS=$(grep -rn "docs/legacy" \
@@ -83,7 +77,7 @@ jobs:
           fi
           echo "No legacy doc references in production code."
 
-      - name: "docs/legacy/README.md must exist"
+      - name: "Verify historical quarantine index exists"
         run: |
           if [ ! -f "docs/legacy/README.md" ]; then
             echo "::error::docs/legacy/README.md is missing — quarantine index required."

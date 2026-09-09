@@ -65,6 +65,8 @@ class ConsumerDB:
         return "INSERT 0 1"
 
     async def fetchrow(self, sql, *args):
+        if "bind_5scr_lifecycle_owner_v1" in sql:
+            return {"bound": tuple(vars(self.fence).values()) == args}
         if "owner_fences" in sql:
             return vars(self.fence)
         table = sql.split("strategy_5scr_activity_")[1].split("_v1")[0]

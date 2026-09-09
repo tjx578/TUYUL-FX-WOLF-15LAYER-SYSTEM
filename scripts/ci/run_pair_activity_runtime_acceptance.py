@@ -35,6 +35,7 @@ SOURCES = (
     "scripts/ci/pair_activity_run_evidence.py",
     "scripts/ci/postgres_server_binding.py",
     "tests/conftest.py",
+    "tests/test_detached_preparation_v31.py",
     "conftest.py",
     "requirements.txt",
     "pyproject.toml",
@@ -57,6 +58,8 @@ SOURCES = (
     "tests/integration/test_activity_delivery_producer_postgres.py",
     "scripts/ci/run_activity_delivery_producer_acceptance.py",
     "scripts/ci/run_activity_delivery_consumer_acceptance.py",
+    "scripts/ci/run_activity_consumer_role_acceptance.py",
+    "tests/integration/test_activity_consumer_role_postgres.py",
     "storage/strategy_5scr_activity_consumer.py",
     "api/app_factory.py",
     "contracts/strategy_5scr_lifecycle_v2.py",
@@ -70,6 +73,7 @@ SOURCES = (
     "pipeline/wolf_constitutional_pipeline.py",
     "tests/integration/postgres_test_guard.py",
     "scripts/ci/run_strategy_persistence_acceptance.py",
+    "scripts/ci/run_supported_upgrade_acceptance.py",
     *DOMAIN_TESTS,
 )
 

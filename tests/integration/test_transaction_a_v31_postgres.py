@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from uuid import uuid4
 
+import psycopg
 import pytest
 
 from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
@@ -24,14 +25,17 @@ __all__ = ["pg_dsn"]
 
 
 class FaultConnection:
-    def __init__(self, c, fault):
+    def __init__(self, c, fault, after_write=None):
         self.c, self.fault = c, fault
+        self.after_write = after_write
 
     def __getattr__(self, name):
         return getattr(self.c, name)
 
     async def execute(self, sql, *args):
         result = await self.c.execute(sql, *args)
+        if self.after_write:
+            self.after_write(sql)
         if self.fault and f"INSERT INTO {PREFIX}{self.fault}_v31" in sql:
             raise RuntimeError("injected write failure")
         return result
@@ -47,11 +51,12 @@ class FaultDB(DB):
     def __init__(self, dsn):
         super().__init__(dsn)
         self.fault = None
+        self.after_write = None
 
     @asynccontextmanager
     async def transaction(self):
         async with super().transaction() as c:
-            yield FaultConnection(c, self.fault)
+            yield FaultConnection(c, self.fault, self.after_write)
 
 
 @pytest.mark.parametrize(
@@ -66,9 +71,16 @@ class FaultDB(DB):
         "rollback_parent_legs",
         "rollback_signal_previews",
         "rollback_outbox",
+        "verifier_account_lock_available",
+        "expiry_after_verification",
+        "expiry_during_last_write",
     ],
 )
-def test_transaction_a_postgres_acceptance(pg_dsn, scenario):
+def test_transaction_a_postgres_acceptance(pg_dsn, scenario, monkeypatch):
+    from storage import strategy_5scr_prepared_v31 as detached
+
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(milliseconds=500))
+
     async def run():
         db = FaultDB(pg_dsn)
         constructed, _, ledger, request = await fixture()
@@ -86,11 +98,12 @@ def test_transaction_a_postgres_acceptance(pg_dsn, scenario):
             token=uuid4(),
         )
         capacity = CapacityRepositoryV31(fence=owner)
+        prepared_initial = capacity.prepare_initial_detached(ledger, verify_initial=lambda *_: True)
         async with db.transaction() as c:
             assert await c.fetchval("SELECT to_regclass($1)", PREFIX + "outbox_v31"), (
                 "explicit migration 20260909_06 required"
             )
-            await capacity.initialize_in_transaction(c, ledger, verify_initial=lambda *_: True)
+            await capacity.initialize_in_transaction(c, ledger, prepared=prepared_initial)
         scope = ActivityConsumerScopeV1(
             consumer_scope_id="transaction-a-fixture",
             producer_binding_hash="sha256:" + "a" * 64,
@@ -146,7 +159,44 @@ def test_transaction_a_postgres_acceptance(pg_dsn, scenario):
             verify_risk_inputs=lambda *_: True,
         )
         failed = scenario.startswith("rollback_")
-        if failed:
+        if scenario == "verifier_account_lock_available":
+            calls = []
+
+            def verify(*_):
+                with psycopg.connect(pg_dsn) as other:
+                    acquired = other.execute(
+                        "SELECT pg_try_advisory_xact_lock(hashtextextended('5scr-capacity-v31:' || %s::text,0))",
+                        (account,),
+                    ).fetchone()[0]
+                    assert acquired is True
+                calls.append(True)
+                return True
+
+            repo.verify_handoff = repo.verify_universe = repo.verify_risk_inputs = verify
+            await repo.submit(request, now=NOW)
+            assert len(calls) >= 3
+        elif scenario == "expiry_during_last_write":
+
+            def after_write(sql):
+                if f"INSERT INTO {PREFIX}outbox_v31" in sql:
+                    monkeypatch.setattr(detached, "commit_time_v31", lambda: request.expires_at)
+
+            db.after_write = after_write
+            with pytest.raises(ValueError, match="EXPIRED"):
+                await repo.submit(request, now=NOW)
+            db.after_write = None
+            failed = True
+        elif scenario == "expiry_after_verification":
+
+            def verify(*_):
+                monkeypatch.setattr(detached, "commit_time_v31", lambda: request.expires_at)
+                return True
+
+            repo.verify_handoff = verify
+            with pytest.raises(ValueError, match="EXPIRED"):
+                await repo.submit(request, now=NOW)
+            failed = True
+        elif failed:
             db.fault = scenario.removeprefix("rollback_")
             with pytest.raises(RuntimeError, match="injected write failure"):
                 await repo.submit(request, now=NOW)

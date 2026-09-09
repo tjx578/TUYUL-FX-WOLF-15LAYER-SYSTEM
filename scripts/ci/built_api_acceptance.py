@@ -81,7 +81,7 @@ def listener_ports(pid):
     return sorted(ports)
 
 
-def worker_failure_case(env):
+def worker_failure_case(env, *, resistant=False):
     """Fault the real built API worker after the HTTP listener is available."""
     code = """
 import asyncio, sys
@@ -92,6 +92,17 @@ class FaultWorker:
     def __init__(self, **kwargs): pass
     async def run(self):
         try:
+            if sys.argv[2] == 'resistant':
+                from api_server import app
+                supervisor = app.state.required_task_supervisor
+                supervisor.states['ci_fault_source'] = 'STARTING'
+                async def fault_source():
+                    while not Path(sys.argv[1]).exists(): await asyncio.sleep(0.02)
+                    raise RuntimeError('CI_REQUIRED_WORKER_FAULT')
+                supervisor.start('ci_fault_source', fault_source())
+                while True:
+                    try: await asyncio.Event().wait()
+                    except asyncio.CancelledError: print('CI_CANCEL_RESISTED', flush=True)
             while not Path(sys.argv[1]).exists(): await asyncio.sleep(0.02)
             raise RuntimeError('CI_REQUIRED_WORKER_FAULT')
         finally: print('CI_WORKER_DRAINED', flush=True)
@@ -109,7 +120,12 @@ raise SystemExit(api_server.run_api())
         trigger = Path(folder) / "fail"
         log_path = Path(folder) / "worker.log"
         with log_path.open("w+") as log:
-            process = subprocess.Popen([sys.executable, "-c", code, str(trigger)], env=env, stdout=log, stderr=log)
+            process = subprocess.Popen(
+                [sys.executable, "-c", code, str(trigger), "resistant" if resistant else "ordinary"],
+                env=env,
+                stdout=log,
+                stderr=log,
+            )
             try:
                 deadline = time.monotonic() + 60
                 while time.monotonic() < deadline:
@@ -124,17 +140,33 @@ raise SystemExit(api_server.run_api())
                     raise AssertionError("worker fault fixture listener timeout")
                 assert listener_ports(process.pid) == [18080]
                 trigger.write_text("TEST_ONLY_FAULT")
+                fault_at = time.monotonic()
+                expected_reason = (
+                    "required_task_ci_fault_source_exception" if resistant else "required_task_trade_outbox_exception"
+                )
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
                     status, body = request("/readyz")
-                    if "required_task_trade_outbox_exception" in body.get("reasons", []):
+                    if expected_reason in body.get("reasons", []):
                         assert status == 503 and body["ready"] is False
                         break
                     time.sleep(0.02)
                 else:
                     raise AssertionError("required worker loss was not served as causal 503")
-                assert process.wait(timeout=15) == 1, "required worker loss must exit nonzero"
+                assert process.wait(timeout=55 if resistant else 15) == 1, "required worker loss must exit nonzero"
                 output = log_path.read_text()
+                if resistant:
+                    elapsed = time.monotonic() - fault_at
+                    assert 44 <= elapsed < 55, "resistant shutdown did not obey the process bound"
+                    assert "CI_CANCEL_RESISTED" in output and "CI_POOL_CLOSE" not in output
+                    return {
+                        "case": "resistant_worker_process_bound",
+                        "readyz": 503,
+                        "exit_code": 1,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "pool_closed_while_writer_alive": False,
+                        "passed": True,
+                    }
                 assert output.index("CI_WORKER_DRAINED") < output.index("CI_POOL_CLOSE")
                 return {
                     "case": "required_worker_late_failure",
@@ -142,6 +174,93 @@ raise SystemExit(api_server.run_api())
                     "exit_code": 1,
                     "listener_ports": [18080],
                     "drain_before_pool": True,
+                    "passed": True,
+                }
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=5)
+
+
+def disabled_profile_case(env):
+    """Observe disabled writers in the real built lifespan and HTTP process."""
+    code = """
+import base64, json, os
+from api.owner_dashboard_release import DISABLED_FLAGS
+for name in DISABLED_FLAGS: os.environ[name] = 'false'
+os.environ['WOLF15_API_READ_ONLY_STARTUP'] = 'true'
+os.environ['DASHBOARD_OWNER_USERNAME'] = 'ci-synthetic-owner'
+salt = base64.urlsafe_b64encode(b'test-only-salt-16').decode()
+digest = base64.urlsafe_b64encode(b'x' * 32).decode()
+os.environ['DASHBOARD_OWNER_PASSWORD_HASH'] = f'pbkdf2_sha256$600000${salt}${digest}'
+from storage import trade_outbox_worker
+from infrastructure import cross_instance_relay, peer_health
+from api import ws_routes, owner_dashboard_release
+from storage.postgres_client import pg_client
+def forbidden(*args, **kwargs):
+    print('CI_DISABLED_WRITER_INVOKED', flush=True)
+    raise RuntimeError('CI_DISABLED_WRITER_INVOKED')
+async def forbidden_async(*args, **kwargs): forbidden()
+trade_outbox_worker.TradeOutboxWorker = forbidden
+cross_instance_relay.CrossInstanceRelay = forbidden
+peer_health.PeerHealthChecker = forbidden
+ws_routes._candle_agg.start = forbidden_async
+pg_client.initialize = forbidden_async
+original_attest = owner_dashboard_release.emit_startup_attestation
+def attest(background):
+    original_attest(background)
+    from api_server import app
+    supervisor = app.state.required_task_supervisor
+    state = supervisor.snapshot()
+    assert state == {'ready': True, 'states': {'trade_outbox': 'DISABLED'}, 'reasons': []}
+    assert not supervisor.tasks and not supervisor.fatal.is_set()
+    print('CI_DISABLED_RUNTIME ' + json.dumps(state), flush=True)
+owner_dashboard_release.emit_startup_attestation = attest
+import api_server
+raise SystemExit(api_server.run_api())
+"""
+    with tempfile.TemporaryDirectory() as folder:
+        log_path = Path(folder) / "disabled.log"
+        with log_path.open("w+") as log:
+            process = subprocess.Popen([sys.executable, "-c", code], env=env, stdout=log, stderr=log)
+            try:
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    assert process.poll() is None, "disabled profile exited before listener"
+                    try:
+                        if request("/healthz")[0] == 200:
+                            break
+                    except (OSError, ValueError):
+                        pass
+                    time.sleep(0.05)
+                else:
+                    raise AssertionError("disabled profile listener timeout")
+                status, body = request("/readyz")
+                assert status == 503 and body["router_boot_ok"] is True and body["ready"] is False
+                assert body["runtime"] == {"ready": True, "states": {"trade_outbox": "DISABLED"}, "reasons": []}
+                assert not any(reason.startswith("required_task_") for reason in body.get("reasons", []))
+                assert listener_ports(process.pid) == [18080]
+                output = log_path.read_text()
+                assert "CI_DISABLED_RUNTIME " in output
+                line = next(
+                    line for line in output.splitlines() if line.startswith("WOLF15_OWNER_STARTUP_ATTESTATION ")
+                )
+                attestation = json.loads(line.split(" ", 1)[1])
+                assert not any(attestation["background_started"].values())
+                assert all(attestation["disabled_flags"].values())
+                process.terminate()
+                result = process.wait(timeout=15)
+                output = log_path.read_text()
+                assert result in {0, -signal.SIGTERM} and "Application shutdown complete" in output
+                assert "CI_DISABLED_WRITER_INVOKED" not in output
+                return {
+                    "case": "disabled_read_only_profile",
+                    "healthz": 200,
+                    "readyz": status,
+                    "required_worker_state": "DISABLED",
+                    "background_started": attestation["background_started"],
+                    "disabled_writer_calls": 0,
+                    "graceful_shutdown": True,
                     "passed": True,
                 }
             finally:
@@ -214,6 +333,8 @@ def main():
                 assert "Application shutdown complete" in log_path.read_text(), "lifespan shutdown was not confirmed"
                 receipt["cases"].append({"case": "graceful_shutdown", "exit_code": code, "passed": True})
         receipt["cases"].append(worker_failure_case(env))
+        receipt["cases"].append(worker_failure_case(env, resistant=True))
+        receipt["cases"].append(disabled_profile_case(env))
         faults = (
             (
                 "mandatory_router",

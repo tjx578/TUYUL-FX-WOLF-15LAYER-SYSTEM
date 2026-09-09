@@ -7,10 +7,21 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from analysis.strategy_5scr_reference_pattern_v31 import ReferencePatternHandoffVerifierV31
+from contracts.strategy_5scr_candidate_revision_v31 import CandidateRevisionAppendV31
 from contracts.strategy_5scr_risk_reservation import validate_final_signal_reservation
 from contracts.strategy_5scr_transaction_a_v31 import TransactionARequestV31
+from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31
 from storage.strategy_5scr_transaction_a_v31 import PREFIX, TransactionARepositoryV31
 from tests.test_strategy_5scr_capacity_persistence_v31 import NOW, CapacityDB, parent_fixture
+from tests.test_strategy_5scr_ordered_proof_v31 import reference_policy
+
+
+@pytest.fixture(autouse=True)
+def commit_clock(monkeypatch):
+    from storage import strategy_5scr_prepared_v31 as detached
+
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(milliseconds=500))
 
 
 class TransactionDB(CapacityDB):
@@ -18,16 +29,27 @@ class TransactionDB(CapacityDB):
         super().__init__()
         self.records = {name: {} for name in ("campaigns", "parent_legs", "signal_previews", "outbox")}
         self.fault_after = None
+        self.committed_effect_transactions = 0
 
     @asynccontextmanager
     async def transaction(self):
         before = deepcopy(self.records)
+        capacity_before = deepcopy(self.capacity)
+        fail_writing_commit = self.fail_commit
+        self.fail_commit = False
         try:
             async with super().transaction():
                 yield self
+                changed = before != self.records or capacity_before != self.capacity
+                if fail_writing_commit and changed:
+                    raise RuntimeError("injected writing commit failure")
+            if changed:
+                self.committed_effect_transactions += 1
         except BaseException:
             self.records = before
             raise
+        finally:
+            self.fail_commit = fail_writing_commit
 
     async def fetchrow(self, sql, *args):
         for name, rows in self.records.items():
@@ -70,6 +92,7 @@ async def fixture():
     db = TransactionDB()
     db.capacity = deepcopy(old.capacity)
     db.rows = deepcopy(old.rows)
+    handoff = CandidateRevisionAppendV31.model_validate_json(db.rows[0]["request_payload"]).handoff
     sizing = kwargs["request"].model_copy(update={"campaign_id": str(UUID(int=901))})
     request = TransactionARequestV31(
         profile="TEST_ONLY",
@@ -87,7 +110,10 @@ async def fixture():
         pg=db,
         capacity_repository=capacity,
         candidate_repository=candidates,
-        verify_handoff=kwargs["verify_handoff"],
+        verify_handoff=ReferencePatternHandoffVerifierV31(
+            policy=reference_policy(),
+            attest_remaining=lambda _, digest: digest == candidate_handoff_hash_v31(handoff),
+        ),
         verify_universe=lambda *_: True,
         verify_risk_inputs=lambda *_: True,
     )
@@ -98,7 +124,7 @@ def test_all_records_and_capacity_commit_together_as_non_deliverable_test_only()
     async def run():
         db, repo, _, request = await fixture()
         result = await repo.submit(request, now=NOW)
-        assert result.status == "COMMITTED_TEST_ONLY" and db.commits == 1
+        assert result.status == "COMMITTED_TEST_ONLY" and db.committed_effect_transactions == 1
         assert all(len(rows) == 1 for rows in db.records.values())
         async with db.transaction():
             stored = await repo.capacity.lock_current(db)
@@ -120,8 +146,32 @@ def test_failure_after_each_write_or_commit_rolls_back_every_effect(failure):
         db.fail_commit = failure == "commit"
         with pytest.raises(RuntimeError):
             await repo.submit(request, now=NOW)
-        assert all(not rows for rows in db.records.values()) and db.commits == 0
+        assert all(not rows for rows in db.records.values()) and db.committed_effect_transactions == 0
         db.fail_commit = False
+        async with db.transaction():
+            assert await repo.capacity.lock_current(db) == initial
+
+    asyncio.run(run())
+
+
+def test_expiry_during_last_write_rolls_back_all_effects(monkeypatch):
+    from storage import strategy_5scr_prepared_v31 as detached
+
+    async def run():
+        db, repo, initial, request = await fixture()
+        execute = db.execute
+
+        async def delayed(sql, *args):
+            result = await execute(sql, *args)
+            if f"INSERT INTO {PREFIX}outbox_v31" in sql:
+                monkeypatch.setattr(detached, "commit_time_v31", lambda: request.expires_at)
+            return result
+
+        db.execute = delayed
+        with pytest.raises(ValueError, match="EXPIRED"):
+            await repo.submit(request, now=NOW)
+        assert all(not rows for rows in db.records.values())
+        assert db.committed_effect_transactions == 0
         async with db.transaction():
             assert await repo.capacity.lock_current(db) == initial
 
@@ -201,18 +251,31 @@ def test_orphan_capacity_is_rejected_without_creating_missing_transaction_record
     async def run():
         db, repo, _, request = await fixture()
         async with db.transaction():
+            ledger = await repo.capacity.lock_current(db)
+            latest = await repo.candidates.lock_latest(db, UUID(request.sizing.tradeplan_id))
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=NOW,
+            expected_capacity_version=0,
+        )
+        prepared = repo.candidates.prepare_parent_detached(
+            latest,
+            ledger=ledger,
+            capacity_owner_epoch=repo.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=lambda *_: True,
+            verify_universe=lambda *_: True,
+            verify_risk_inputs=lambda *_: True,
+        )
+        async with db.transaction():
             await repo.capacity.prepare_parent_in_transaction(
                 db,
                 candidate_repository=repo.candidates,
-                request=request.sizing,
-                expected_candidate_revision_hash=request.candidate_revision_hash,
-                reservation_id=request.reservation_id,
-                expires_at=request.expires_at,
-                now=NOW,
-                expected_capacity_version=0,
-                verify_handoff=lambda *_: True,
-                verify_universe=lambda *_: True,
-                verify_risk_inputs=lambda *_: True,
+                **arguments,
+                prepared=prepared,
             )
         with pytest.raises(ValueError, match="ORPHAN_CAPACITY"):
             await repo.submit(request, now=NOW)
@@ -229,5 +292,45 @@ def test_request_rejects_legacy_plan_and_campaign_identity_relabeling():
                 TransactionARequestV31.model_validate(
                     {**request.model_dump(), "sizing": {**request.sizing.model_dump(), field: value}}
                 )
+
+    asyncio.run(run())
+
+
+def test_all_external_transaction_verifiers_run_after_snapshot_exit():
+    async def run():
+        db, repo, _, request = await fixture()
+        calls = []
+
+        def verify(*args):
+            assert not db.active
+            calls.append(len(args))
+            return True
+
+        repo.verify_handoff = repo.verify_universe = repo.verify_risk_inputs = verify
+        result = await repo.submit(request, now=NOW)
+        assert result.status == "COMMITTED_TEST_ONLY" and len(calls) >= 3
+        assert db.committed_effect_transactions == 1
+
+    asyncio.run(run())
+
+
+def test_verifier_delay_cannot_extend_transaction_reservation_expiry(monkeypatch):
+    from storage import strategy_5scr_prepared_v31 as detached
+
+    async def run():
+        db, repo, initial, request = await fixture()
+
+        def verify(*_):
+            assert not db.active
+            monkeypatch.setattr(detached, "commit_time_v31", lambda: request.expires_at)
+            return True
+
+        repo.verify_handoff = verify
+        with pytest.raises(ValueError, match="EXPIRED"):
+            await repo.submit(request, now=NOW)
+        assert all(not rows for rows in db.records.values())
+        assert db.committed_effect_transactions == 0
+        async with db.transaction():
+            assert await repo.capacity.lock_current(db) == initial
 
     asyncio.run(run())

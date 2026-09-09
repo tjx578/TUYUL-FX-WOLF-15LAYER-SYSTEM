@@ -9,11 +9,17 @@ import pytest
 
 from contracts.strategy_5scr_capacity_owner_v31 import CapacityOwnerFenceV31
 from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+from storage import strategy_5scr_prepared_v31 as detached
 from storage.strategy_5scr_capacity_v31 import CapacityRepositoryV31, _ledger
 from tests.test_strategy_5scr_candidate_revision_v31 import FakeDB
 from tests.test_strategy_5scr_capacity_baseline_v31 import evidence_for
 from tests.test_strategy_5scr_capacity_v31 import NOW, seed
 from tests.test_strategy_5scr_latest_candidate_capacity_v31 import fixture as candidate_fixture
+
+
+@pytest.fixture(autouse=True)
+def trusted_clock(monkeypatch):
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(microseconds=500000))
 
 
 class CapacityDB(FakeDB):
@@ -102,10 +108,7 @@ async def initialized():
     db = CapacityDB()
     ledger = seed()
     repo = CapacityRepositoryV31(fence=owner(ledger))
-    async with db.transaction():
-        await repo.initialize_in_transaction(
-            db, ledger, verify_initial=lambda _, digest: digest == capacity_ledger_hash_v31(ledger)
-        )
+    await repo.initialize(db, ledger, verify_initial=lambda _, digest: digest == capacity_ledger_hash_v31(ledger))
     return db, repo, ledger
 
 
@@ -115,27 +118,35 @@ async def parent_fixture():
     db.rows = deepcopy(candidate_db.rows)
     del kwargs["ledger"]
     del kwargs["capacity_owner_epoch"]
+    async with db.transaction():
+        latest = await candidate.lock_latest(db, UUID(kwargs["request"].tradeplan_id))
+    prepared = candidate.prepare_parent_detached(
+        latest, ledger=ledger, capacity_owner_epoch=repo.fence.owner_epoch, **kwargs
+    )
+    kwargs = {k: v for k, v in kwargs.items() if not k.startswith("verify_")}
+    kwargs["prepared"] = prepared
     return db, repo, ledger, candidate, kwargs
 
 
-def test_initialization_is_explicit_verified_and_never_resets_progress():
+def test_initialization_is_explicit_verified_and_never_resets_progress(monkeypatch):
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(seconds=2))
+
     async def run():
         db, repo, initial = await initialized()
+        changed = await repo.refresh(
+            db,
+            evidence_for(initial),
+            expected_version=0,
+            now=NOW + timedelta(seconds=2),
+            verify_refresh=lambda *_: True,
+        )
         async with db.transaction():
-            changed = await repo.refresh_in_transaction(
-                db,
-                evidence_for(initial),
-                expected_version=0,
-                now=NOW + timedelta(seconds=2),
-                verify_refresh=lambda *_: True,
-            )
-        async with db.transaction():
-            replay = await repo.initialize_in_transaction(db, initial, verify_initial=lambda *_: True)
+            replay = await repo.initialize_in_transaction(db, initial)
             assert replay == changed.ledger and replay.version == 1
         conflict = initial.model_copy(update={"closed_balance_usd": Decimal("999")})
         with pytest.raises(ValueError, match="INITIALIZATION_CONFLICT"):
             async with db.transaction():
-                await repo.initialize_in_transaction(db, conflict, verify_initial=lambda *_: True)
+                await repo.initialize_in_transaction(db, conflict)
 
     asyncio.run(run())
 
@@ -193,8 +204,7 @@ def test_initialization_rejects_unverified_or_noninitial_state(fault):
         else:
             initial = initial.model_copy(update={"owner_epoch": 2})
         with pytest.raises(ValueError):
-            async with db.transaction():
-                await repo.initialize_in_transaction(db, initial, verify_initial=verifier)
+            await repo.initialize(db, initial, verify_initial=verifier)
         assert not db.capacity
 
     asyncio.run(run())
@@ -207,7 +217,9 @@ def test_account_then_candidate_preparation_persists_one_capacity_state_and_repl
         async with db.transaction():
             result = await repo.prepare_parent_in_transaction(db, candidate_repository=candidate, **kwargs)
         assert "5scr-capacity-v31:" in db.calls[0]
-        assert next(i for i, s in enumerate(db.calls) if "5scr-owner:" in s) > 0
+        # The binder now owns the symbol lock inside PostgreSQL; account
+        # locking must still precede that capability-validation boundary.
+        assert next(i for i, s in enumerate(db.calls) if "bind_5scr_lifecycle_owner_v1" in s) > 0
         assert result.durable_commit is False and result.capacity.execution_authority is False
         restarted = CapacityRepositoryV31(fence=repo.fence)
         async with db.transaction():
@@ -293,5 +305,266 @@ def test_expiry_transition_persists_without_freeing_pending_broker_risk():
                     now=NOW + timedelta(seconds=2),
                 )
         assert _ledger(db.capacity[repo.fence.account_id]) == pending.ledger
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("operation", ["initial", "refresh", "release"])
+def test_external_verifier_never_runs_inside_capacity_transaction(operation, monkeypatch):
+    async def run():
+        db = CapacityDB()
+        initial = seed()
+        repo = CapacityRepositoryV31(fence=owner(initial))
+        seen = []
+
+        def verified(*_):
+            assert not db.is_in_transaction()
+            seen.append(operation)
+            return True
+
+        if operation == "initial":
+            await repo.initialize(db, initial, verify_initial=verified)
+        else:
+            await repo.initialize(db, initial, verify_initial=lambda *_: True)
+            monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(seconds=2))
+            if operation == "refresh":
+                await repo.refresh(
+                    db,
+                    evidence_for(initial),
+                    expected_version=0,
+                    now=NOW + timedelta(seconds=2),
+                    verify_refresh=verified,
+                )
+            else:
+                from tests.test_strategy_5scr_capacity_v31 import release_proof, reserve
+
+                held = reserve(initial).ledger
+                async with db.transaction():
+                    await repo.lock_current(db)
+                    await repo._save(db, initial, held)
+                record = held.reservations[0]
+                evidence = release_proof(held, NOW).model_copy(
+                    update={"outcome": "NO_BROKER_EFFECT_CONFIRMED", "delivery_disposition": "NEVER_ISSUED"}
+                )
+                await repo.transition(
+                    db,
+                    expected_version=1,
+                    now=NOW,
+                    reservation_id=record.reservation_id,
+                    action="RELEASE_RECONCILED",
+                    release_evidence=evidence,
+                    verify_release=verified,
+                )
+        assert seen == [operation]
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("operation", ["initial", "refresh", "release", "parent"])
+def test_in_transaction_entrypoints_reject_raw_verifiers(operation):
+    async def run():
+        db, repo, initial = await initialized()
+        called = []
+        with pytest.raises(ValueError, match="EXTERNAL_VERIFIER_REQUIRES_DETACHED"):
+            async with db.transaction():
+                if operation == "initial":
+                    await repo.initialize_in_transaction(db, initial, verify_initial=lambda *_: called.append(1))
+                elif operation == "refresh":
+                    await repo.refresh_in_transaction(
+                        db,
+                        evidence_for(initial),
+                        expected_version=0,
+                        now=NOW,
+                        verify_refresh=lambda *_: called.append(1),
+                    )
+                elif operation == "release":
+                    await repo.transition_in_transaction(
+                        db, expected_version=0, verify_release=lambda *_: called.append(1)
+                    )
+                else:
+                    await repo.prepare_parent_in_transaction(
+                        db, candidate_repository=None, verify_risk_inputs=lambda *_: called.append(1)
+                    )
+        assert called == []
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("fault", ["expired", "changed_ledger", "changed_fence", "changed_request", "tampered_token"])
+def test_refresh_rechecks_detached_evidence_after_lock(fault, monkeypatch):
+    async def run():
+        from dataclasses import replace
+
+        db, repo, initial = await initialized()
+        request = evidence_for(initial)
+        now = NOW + timedelta(seconds=2)
+        prepared = repo.prepare_refresh_detached(
+            initial, request, expected_version=0, now=now, verify_refresh=lambda *_: True
+        )
+        monkeypatch.setattr(detached, "commit_time_v31", lambda: now)
+        if fault == "expired":
+            monkeypatch.setattr(detached, "commit_time_v31", lambda: now + timedelta(days=1))
+        elif fault == "changed_ledger":
+            async with db.transaction():
+                await repo.refresh_in_transaction(db, request, expected_version=0, now=now, prepared=prepared)
+            # A different new operation may not consume the old snapshot's token.
+            request = evidence_for(initial, n=2)
+        elif fault == "changed_fence":
+            async with db.transaction():
+                await repo.transfer_owner_in_transaction(db, next_owner_id="next", expected_version=0)
+        elif fault == "changed_request":
+            request = request.model_copy(update={"source_receipt_hash": "sha256:" + "e" * 64})
+        else:
+            prepared = replace(prepared, payload=prepared.payload.replace("1100", "1200"))
+        snapshot = deepcopy(db.capacity)
+        with pytest.raises(ValueError):
+            async with db.transaction():
+                await repo.refresh_in_transaction(db, request, expected_version=0, now=now, prepared=prepared)
+        assert db.capacity == snapshot
+
+    asyncio.run(run())
+
+
+def test_refresh_historical_duplicate_needs_neither_freshness_nor_verifier(monkeypatch):
+    async def run():
+        db, repo, initial = await initialized()
+        now = NOW + timedelta(seconds=2)
+        monkeypatch.setattr(detached, "commit_time_v31", lambda: now)
+        evidence = evidence_for(initial)
+        first = await repo.refresh(db, evidence, expected_version=0, now=now, verify_refresh=lambda *_: True)
+        monkeypatch.setattr(detached, "commit_time_v31", lambda: now + timedelta(days=1))
+        replay = await repo.refresh(db, evidence, expected_version=0, now=now + timedelta(days=1), verify_refresh=None)
+        assert replay.status == "DUPLICATE_TEST_ONLY" and replay.ledger == first.ledger
+
+    asyncio.run(run())
+
+
+def test_release_expiry_during_verification_does_not_free_capacity(monkeypatch):
+    async def run():
+        from tests.test_strategy_5scr_capacity_v31 import release_proof, reserve
+
+        db, repo, initial = await initialized()
+        held = reserve(initial).ledger
+        async with db.transaction():
+            await repo.lock_current(db)
+            await repo._save(db, initial, held)
+        evidence = release_proof(held, NOW).model_copy(
+            update={"outcome": "NO_BROKER_EFFECT_CONFIRMED", "delivery_disposition": "NEVER_ISSUED"}
+        )
+        kwargs = dict(
+            expected_version=1,
+            now=NOW,
+            reservation_id=held.reservations[0].reservation_id,
+            action="RELEASE_RECONCILED",
+            release_evidence=evidence,
+        )
+        prepared = repo.prepare_transition_detached(held, **kwargs, verify_release=lambda *_: True)
+        monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(days=1))
+        with pytest.raises(ValueError, match="COMMIT_RELEASE_STALE"):
+            async with db.transaction():
+                await repo.transition_in_transaction(db, prepared=prepared, **kwargs)
+        assert _ledger(db.capacity[initial.account_id]) == held
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("operation", ["parent", "refresh", "dispatch", "release"])
+def test_delayed_capacity_write_crossing_deadline_rolls_back(operation, monkeypatch):
+    async def run():
+        from tests.test_strategy_5scr_capacity_v31 import release_proof, reserve
+
+        if operation == "parent":
+            db, repo, before, candidate, kwargs = await parent_fixture()
+        else:
+            db, repo, before = await initialized()
+        if operation in {"dispatch", "release"}:
+            held = reserve(before).ledger
+            async with db.transaction():
+                await repo.lock_current(db)
+                await repo._save(db, before, held)
+            before = held
+        now = NOW + timedelta(seconds=2) if operation == "refresh" else NOW
+        monkeypatch.setattr(detached, "commit_time_v31", lambda: now)
+        original_save = repo._save
+        wrote = []
+
+        async def delayed_save(*args, **options):
+            value = await original_save(*args, **options)
+            wrote.append(True)
+            monkeypatch.setattr(detached, "commit_time_v31", lambda: now + timedelta(days=1))
+            return value
+
+        monkeypatch.setattr(repo, "_save", delayed_save)
+        if operation == "refresh":
+            evidence = evidence_for(before)
+            prepared = repo.prepare_refresh_detached(
+                before, evidence, expected_version=before.version, now=now, verify_refresh=lambda *_: True
+            )
+        elif operation == "release":
+            evidence = release_proof(before, now).model_copy(
+                update={"outcome": "NO_BROKER_EFFECT_CONFIRMED", "delivery_disposition": "NEVER_ISSUED"}
+            )
+            arguments = dict(
+                expected_version=before.version,
+                now=now,
+                reservation_id=before.reservations[0].reservation_id,
+                action="RELEASE_RECONCILED",
+                release_evidence=evidence,
+            )
+            prepared = repo.prepare_transition_detached(before, **arguments, verify_release=lambda *_: True)
+        with pytest.raises(ValueError, match="CAPACITY_COMMIT"):
+            async with db.transaction():
+                if operation == "parent":
+                    await repo.prepare_parent_in_transaction(db, candidate_repository=candidate, **kwargs)
+                elif operation == "refresh":
+                    await repo.refresh_in_transaction(
+                        db, evidence, expected_version=before.version, now=now, prepared=prepared
+                    )
+                elif operation == "dispatch":
+                    await repo.transition_in_transaction(
+                        db,
+                        expected_version=before.version,
+                        now=now,
+                        reservation_id=before.reservations[0].reservation_id,
+                        action="MARK_DISPATCHED",
+                    )
+                else:
+                    await repo.transition_in_transaction(db, prepared=prepared, **arguments)
+        assert wrote == [True], "fault must happen after the tentative database update"
+        assert _ledger(db.capacity[before.account_id]) == before
+
+    asyncio.run(run())
+
+
+def test_delayed_expire_unissued_has_no_invented_upper_deadline(monkeypatch):
+    async def run():
+        from tests.test_strategy_5scr_capacity_v31 import reserve
+
+        db, repo, initial = await initialized()
+        held = reserve(initial).ledger
+        async with db.transaction():
+            await repo.lock_current(db)
+            await repo._save(db, initial, held)
+        now = held.reservations[0].expires_at
+        monkeypatch.setattr(detached, "commit_time_v31", lambda: now)
+        original_save = repo._save
+
+        async def delayed_save(*args, **options):
+            value = await original_save(*args, **options)
+            monkeypatch.setattr(detached, "commit_time_v31", lambda: now + timedelta(days=1))
+            return value
+
+        monkeypatch.setattr(repo, "_save", delayed_save)
+        async with db.transaction():
+            result = await repo.transition_in_transaction(
+                db,
+                expected_version=held.version,
+                now=now,
+                reservation_id=held.reservations[0].reservation_id,
+                action="EXPIRE_UNISSUED",
+            )
+        assert result.reservation.state == "EXPIRED_UNISSUED"
+        assert result.reservation.expires_at == now
+        assert _ledger(db.capacity[held.account_id]) == result.ledger
 
     asyncio.run(run())
