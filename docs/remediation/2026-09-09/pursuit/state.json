@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "5aa0d0becc1e9e46da977f4ede279bc6c061c544",
-  "source_verified_at": "2026-09-09T08:48:14.620524+00:00",
+  "source_checkpoint": "a3c3639146d3deb52ec35187406d51653644a33c",
+  "source_verified_at": "2026-09-09T08:57:56.721187+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K05_ORDERED_CANDLE_EVIDENCE_HANDOFF_BINDING",
+  "current_slice": "K05_EXPLICIT_REFERENCE_PATTERN_DERIVATION",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Bind actual pattern derivation and resolution evidence under an explicit versioned policy to the handoff, with inherited admission/hypothesis and independent expiry/invalidation. Evidence integrity alone is not pattern or source authority. Keep historical TEST_ONLY V1/V2 compatibility explicit and preserve runtime blockers.",
+  "next_action_on_resume": "Bind later-candle liveness/invalidation and complete-window evidence for the selected reference proof, then inherited admission/hypothesis and operational context/policy. Reference policy remains TEST_ONLY; do not treat synthetic remaining attestation as runtime authority.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_REQUIRED_ORDERED_EVIDENCE_BINDING_AND_LOCAL_REGRESSIONS",
-  "actual_source_commit": "5aa0d0becc1e9e46da977f4ede279bc6c061c544",
+  "previous_goal_turn_classification": "PROGRESS_SOURCE_DERIVED_REFERENCE_PATTERN_AND_CALLER_COMPOSITION",
+  "actual_source_commit": "a3c3639146d3deb52ec35187406d51653644a33c",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -754,17 +754,18 @@
       "DONE": false
     },
     "K05": {
-      "status": "ORDERED_CANDLE_AND_CONTEXT_BINDING_LOCAL_PASS_RUNTIME_PARTIAL",
+      "status": "EXPLICIT_REFERENCE_PATTERN_CALLER_LOCAL_PASS_RUNTIME_PARTIAL",
       "DONE": false,
-      "evidence_ref": "evidence/k05-ordered-proof-validation.json",
+      "evidence_ref": "evidence/k05-reference-pattern-validation.json",
       "previous_evidence_refs": [
+        "evidence/k05-ordered-proof-validation.json",
         "evidence/k05-context-validation.json"
       ],
       "remaining": [
-        "Actual source/registry/LocationRoutePolicy and pattern derivation with attestor binding",
-        "Lifecycle/admission/hypothesis inheritance and independent proof invalidation/expiry",
-        "Immutable context epoch persistence, recovery and operational consumer",
-        "Explicit compatibility/re-evaluation for historical TEST_ONLY V1/V2 handoffs"
+        "Latest witness selection, later-candle invalidation and full session/source coverage attestation",
+        "Operational source/registry/LocationRoutePolicy and active pattern selection",
+        "Lifecycle/admission/hypothesis inheritance and independent clocks",
+        "Immutable context epoch persistence/recovery and historical TEST_ONLY compatibility"
       ]
     },
     "K06": {
@@ -833,7 +834,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "5aa0d0becc1e9e46da977f4ede279bc6c061c544",
+    "source_commit": "a3c3639146d3deb52ec35187406d51653644a33c",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,
