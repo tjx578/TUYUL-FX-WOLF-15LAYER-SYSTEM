@@ -58,6 +58,7 @@ class TestHighFrequencyTickBurst:
     """Simulate rapid-fire ticks on a single pair."""
 
     @pytest.mark.asyncio
+    @pytest.mark.performance
     async def test_process_10k_ticks_within_time_bound(self) -> None:
         """10 000 ticks must be processed under MAX_PROCESS_TIME_S."""
         builder, mock_bus = _setup_builder()
@@ -78,6 +79,7 @@ class TestHighFrequencyTickBurst:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.performance
     async def test_throughput_meets_minimum(self) -> None:
         """Measured throughput must exceed THROUGHPUT_FLOOR_TPS."""
         builder, mock_bus = _setup_builder()
@@ -155,6 +157,7 @@ class TestMultiSymbolConcurrentLoad:
                 assert tick["symbol"] == sym, f"Tick for {tick['symbol']} found in {sym} buffer"
 
     @pytest.mark.asyncio
+    @pytest.mark.performance
     async def test_multi_symbol_throughput(self) -> None:
         """Multi-symbol load must still meet throughput floor."""
         builder, mock_bus = _setup_builder()
@@ -400,6 +403,7 @@ class TestSustainedLoad:
         assert total_candles > 0, "No candles produced over 50 sustained cycles"
 
     @pytest.mark.asyncio
+    @pytest.mark.performance
     async def test_processing_latency_per_cycle(self) -> None:
         """Each individual cycle must complete in <100ms for real-time viability."""
         builder, mock_bus = _setup_builder()

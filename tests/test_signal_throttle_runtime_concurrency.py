@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from random import Random
-from threading import Event
+from threading import Barrier, Event, Lock
+
+import pytest
 
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer, SignalThrottleLogEvent
 from analysis.strategy_5scr_pair_admission import build_pair_admission_audit
@@ -13,14 +17,12 @@ from analysis.strategy_5scr_raw_admission_blocks import (
 )
 
 START = datetime(2026, 8, 10, 2, 0, tzinfo=UTC)
+_PORTABLE_WORKERS = 32
+_PORTABLE_EVENTS = 64
 
 
-def _recorded_events(count: int) -> tuple[SignalThrottleLogEvent, ...]:
-    analyzer = SignalThrottleLiveAnalyzer(
-        retention_seconds=7200,
-        max_events=count + 100,
-    )
-    events = tuple(
+def _single_symbol_events(count: int) -> tuple[SignalThrottleLogEvent, ...]:
+    return tuple(
         SignalThrottleLogEvent(
             timestamp=START + timedelta(milliseconds=index),
             severity="warning",
@@ -37,27 +39,61 @@ def _recorded_events(count: int) -> tuple[SignalThrottleLogEvent, ...]:
         )
         for index in range(count)
     )
+
+
+def _recorded_events(count: int) -> tuple[SignalThrottleLogEvent, ...]:
+    analyzer = SignalThrottleLiveAnalyzer(
+        retention_seconds=7200,
+        max_events=count + 100,
+    )
+    events = _single_symbol_events(count)
     with ThreadPoolExecutor(max_workers=32) as executor:
         tuple(executor.map(analyzer._record_runtime_event, events))
     with analyzer._lock:
         return tuple(analyzer._events)
 
 
-def test_concurrent_scanner_metadata_is_lossless_and_deterministic_at_10k() -> None:
-    first = _recorded_events(10_000)
-    second = _recorded_events(10_000)
+def _run_forced_wave(
+    executor: ThreadPoolExecutor,
+    actions: tuple[Callable[[], object], ...],
+) -> int:
+    assert len(actions) == _PORTABLE_WORKERS
+    barrier = Barrier(_PORTABLE_WORKERS + 1)
+    arrival_lock = Lock()
+    arrived_workers = 0
 
-    assert len(first) == 10_000
-    assert len(second) == 10_000
-    assert all(event.scanner_cycle_id for event in first)
-    assert all(event.observed_cycle_index == 1 for event in first)
+    def execute(action: Callable[[], object]) -> None:
+        nonlocal arrived_workers
+        with arrival_lock:
+            arrived_workers += 1
+        barrier.wait()
+        action()
 
-    first_population = build_raw_admission_population(first)
-    second_population = build_raw_admission_population(second)
-    assert len(first_population.events) == 10_000
-    assert len(first_population.blocks) == 1
-    assert first_population.blocks[0].source_event_ids == second_population.blocks[0].source_event_ids
-    assert first_population.blocks[0].raw_block_id == second_population.blocks[0].raw_block_id
+    futures = tuple(executor.submit(execute, action) for action in actions)
+    barrier.wait()
+    assert arrived_workers == _PORTABLE_WORKERS
+    for future in futures:
+        future.result()
+    return arrived_workers
+
+
+def _run_forced_two_waves(actions: tuple[Callable[[], object], ...]) -> tuple[int, int]:
+    assert len(actions) == _PORTABLE_EVENTS
+    with ThreadPoolExecutor(max_workers=_PORTABLE_WORKERS) as executor:
+        first_wave = _run_forced_wave(executor, actions[:_PORTABLE_WORKERS])
+        second_wave = _run_forced_wave(executor, actions[_PORTABLE_WORKERS:])
+    return first_wave, second_wave
+
+
+def _portable_recorded_events() -> tuple[tuple[SignalThrottleLogEvent, ...], tuple[int, int]]:
+    analyzer = SignalThrottleLiveAnalyzer(
+        retention_seconds=7200,
+        max_events=_PORTABLE_EVENTS + 100,
+    )
+    events = _single_symbol_events(_PORTABLE_EVENTS)
+    arrivals = _run_forced_two_waves(tuple(partial(analyzer._record_runtime_event, event) for event in events))
+    with analyzer._lock:
+        return tuple(analyzer._events), arrivals
 
 
 def _multi_symbol_event(index: int) -> SignalThrottleLogEvent:
@@ -92,60 +128,141 @@ def _canonical_events(events: tuple[SignalThrottleLogEvent, ...]) -> tuple[tuple
     )
 
 
-def test_concurrent_multi_symbol_stream_matches_sequential_reference_at_10k() -> None:
-    events = tuple(_multi_symbol_event(index) for index in range(10_000))
-    sequential = SignalThrottleLiveAnalyzer(retention_seconds=7200, max_events=10_100)
-    concurrent = SignalThrottleLiveAnalyzer(retention_seconds=7200, max_events=10_100)
+class TestSignalThrottleRuntimeConcurrency:
+    def test_portable_single_symbol_runtime_lineage_is_lossless_and_deterministic(self) -> None:
+        first, first_arrivals = _portable_recorded_events()
+        second, second_arrivals = _portable_recorded_events()
 
-    for event in events:
-        sequential._record_runtime_event(event)
+        assert first_arrivals == second_arrivals == (_PORTABLE_WORKERS, _PORTABLE_WORKERS)
+        assert len(first) == _PORTABLE_EVENTS
+        assert len(second) == _PORTABLE_EVENTS
+        assert all(event.scanner_cycle_id for event in first)
+        assert all(event.observed_cycle_index == 1 for event in first)
 
-    # Seed the first observation of each symbol in canonical order. Subsequent
-    # writer scheduling may vary, but cycle indexes and global event-time
-    # ordering must remain identical to the sequential reference.
-    concurrent._record_runtime_event(events[0])
-    concurrent._record_runtime_event(events[1])
-    start = Event()
+        first_population = build_raw_admission_population(first)
+        second_population = build_raw_admission_population(second)
+        assert len(first_population.events) == _PORTABLE_EVENTS
+        assert len(first_population.blocks) == 1
+        assert first_population.blocks[0].source_event_ids == second_population.blocks[0].source_event_ids
+        assert first_population.blocks[0].raw_block_id == second_population.blocks[0].raw_block_id
 
-    def write(event: SignalThrottleLogEvent) -> None:
-        start.wait()
-        concurrent._record_runtime_event(event)
+    @pytest.mark.performance
+    @pytest.mark.slow
+    def test_concurrent_scanner_metadata_is_lossless_and_deterministic_at_10k(self) -> None:
+        first = _recorded_events(10_000)
+        second = _recorded_events(10_000)
 
-    def read_snapshot() -> None:
-        start.wait()
-        concurrent.snapshot()
+        assert len(first) == 10_000
+        assert len(second) == 10_000
+        assert all(event.scanner_cycle_id for event in first)
+        assert all(event.observed_cycle_index == 1 for event in first)
 
-    with ThreadPoolExecutor(max_workers=32) as executor:
-        readers = [executor.submit(read_snapshot) for _ in range(2)]
-        writers = [executor.submit(write, event) for event in events[2:]]
-        start.set()
-        for future in writers + readers:
-            future.result()
+        first_population = build_raw_admission_population(first)
+        second_population = build_raw_admission_population(second)
+        assert len(first_population.events) == 10_000
+        assert len(first_population.blocks) == 1
+        assert first_population.blocks[0].source_event_ids == second_population.blocks[0].source_event_ids
+        assert first_population.blocks[0].raw_block_id == second_population.blocks[0].raw_block_id
 
-    with sequential._lock:
-        sequential_events = tuple(sequential._events)
-    with concurrent._lock:
-        concurrent_events = tuple(concurrent._events)
+    def test_portable_multi_symbol_stream_matches_sequential_reference(self) -> None:
+        events = tuple(_multi_symbol_event(index) for index in range(_PORTABLE_EVENTS))
+        sequential = SignalThrottleLiveAnalyzer(retention_seconds=7200, max_events=_PORTABLE_EVENTS + 100)
+        concurrent = SignalThrottleLiveAnalyzer(retention_seconds=7200, max_events=_PORTABLE_EVENTS + 100)
 
-    assert len(sequential_events) == len(concurrent_events) == 10_000
-    assert concurrent_events == tuple(sorted(concurrent_events, key=concurrent._canonical_event_key))
-    assert _canonical_events(concurrent_events) == _canonical_events(sequential_events)
-    assert {event.symbol: event.observed_cycle_index for event in concurrent_events[:2]} == {
-        "EURUSD": 1,
-        "GBPJPY": 2,
-    }
+        for event in events:
+            sequential._record_runtime_event(event)
 
-    sequential_population = build_raw_admission_population(sequential_events)
-    concurrent_population = build_raw_admission_population(concurrent_events)
-    assert concurrent_population.duplicate_event_count == 0
-    assert len(concurrent_population.events) == 10_000
-    assert len(concurrent_population.blocks) == 10_000
-    assert [block.symbol for block in concurrent_population.blocks] == [
-        block.symbol for block in sequential_population.blocks
-    ]
-    assert [block.raw_block_id for block in concurrent_population.blocks] == [
-        block.raw_block_id for block in sequential_population.blocks
-    ]
+        concurrent._record_runtime_event(events[0])
+        concurrent._record_runtime_event(events[1])
+        actions = (
+            partial(concurrent.snapshot),
+            partial(concurrent.snapshot),
+            *(partial(concurrent._record_runtime_event, event) for event in events[2:]),
+        )
+        arrivals = _run_forced_two_waves(actions)
+
+        with sequential._lock:
+            sequential_events = tuple(sequential._events)
+        with concurrent._lock:
+            concurrent_events = tuple(concurrent._events)
+
+        assert arrivals == (_PORTABLE_WORKERS, _PORTABLE_WORKERS)
+        assert len(sequential_events) == len(concurrent_events) == _PORTABLE_EVENTS
+        assert concurrent_events == tuple(sorted(concurrent_events, key=concurrent._canonical_event_key))
+        assert _canonical_events(concurrent_events) == _canonical_events(sequential_events)
+        assert {event.symbol: event.observed_cycle_index for event in concurrent_events[:2]} == {
+            "EURUSD": 1,
+            "GBPJPY": 2,
+        }
+
+        sequential_population = build_raw_admission_population(sequential_events)
+        concurrent_population = build_raw_admission_population(concurrent_events)
+        assert concurrent_population.duplicate_event_count == 0
+        assert len(concurrent_population.events) == _PORTABLE_EVENTS
+        assert len(concurrent_population.blocks) == _PORTABLE_EVENTS
+        assert [block.symbol for block in concurrent_population.blocks] == [
+            block.symbol for block in sequential_population.blocks
+        ]
+        assert [block.raw_block_id for block in concurrent_population.blocks] == [
+            block.raw_block_id for block in sequential_population.blocks
+        ]
+
+    @pytest.mark.performance
+    @pytest.mark.slow
+    def test_concurrent_multi_symbol_stream_matches_sequential_reference_at_10k(self) -> None:
+        events = tuple(_multi_symbol_event(index) for index in range(10_000))
+        sequential = SignalThrottleLiveAnalyzer(retention_seconds=7200, max_events=10_100)
+        concurrent = SignalThrottleLiveAnalyzer(retention_seconds=7200, max_events=10_100)
+
+        for event in events:
+            sequential._record_runtime_event(event)
+
+        # Seed the first observation of each symbol in canonical order. Subsequent
+        # writer scheduling may vary, but cycle indexes and global event-time
+        # ordering must remain identical to the sequential reference.
+        concurrent._record_runtime_event(events[0])
+        concurrent._record_runtime_event(events[1])
+        start = Event()
+
+        def write(event: SignalThrottleLogEvent) -> None:
+            start.wait()
+            concurrent._record_runtime_event(event)
+
+        def read_snapshot() -> None:
+            start.wait()
+            concurrent.snapshot()
+
+        with ThreadPoolExecutor(max_workers=32) as executor:
+            readers = [executor.submit(read_snapshot) for _ in range(2)]
+            writers = [executor.submit(write, event) for event in events[2:]]
+            start.set()
+            for future in writers + readers:
+                future.result()
+
+        with sequential._lock:
+            sequential_events = tuple(sequential._events)
+        with concurrent._lock:
+            concurrent_events = tuple(concurrent._events)
+
+        assert len(sequential_events) == len(concurrent_events) == 10_000
+        assert concurrent_events == tuple(sorted(concurrent_events, key=concurrent._canonical_event_key))
+        assert _canonical_events(concurrent_events) == _canonical_events(sequential_events)
+        assert {event.symbol: event.observed_cycle_index for event in concurrent_events[:2]} == {
+            "EURUSD": 1,
+            "GBPJPY": 2,
+        }
+
+        sequential_population = build_raw_admission_population(sequential_events)
+        concurrent_population = build_raw_admission_population(concurrent_events)
+        assert concurrent_population.duplicate_event_count == 0
+        assert len(concurrent_population.events) == 10_000
+        assert len(concurrent_population.blocks) == 10_000
+        assert [block.symbol for block in concurrent_population.blocks] == [
+            block.symbol for block in sequential_population.blocks
+        ]
+        assert [block.raw_block_id for block in concurrent_population.blocks] == [
+            block.raw_block_id for block in sequential_population.blocks
+        ]
 
 
 def _retention_event(seconds: int, symbol: str) -> SignalThrottleLogEvent:

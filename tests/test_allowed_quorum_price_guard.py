@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from analysis.frozen_quote_detector import FrozenQuoteDetector
 from analysis.market_context_validator import MarketContext
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
@@ -118,14 +119,71 @@ def test_allowed_quorum_uses_symbol_market_context_price_not_execution_fallback(
     assert payload["reference_price_status"] == "AVAILABLE"
 
 
+def test_allowed_quorum_unprimed_live_tick_is_fail_closed_during_quote_warmup() -> None:
+    pipeline = _pipeline()
+    tick_at = datetime(2026, 7, 3, 2, 13, 15, tzinfo=UTC)
+    pipeline._context_bus = _FakeContextBus(
+        status="LIVE",
+        age_seconds=0.0,
+        timestamp=tick_at.timestamp(),
+    )
+    market_context = MarketContext(
+        symbol="EURUSD",
+        raw_allowed_direction="BUY",
+        bid=1.1500,
+        ask=1.1502,
+        price_at_signal_end=1.1501,
+    )
+
+    payload = pipeline._allowed_quorum_decision_update_payload(
+        symbol="EURUSD",
+        synthesis={},
+        l12_verdict={"verdict": "EXECUTE_BUY", "direction": "BUY"},
+        report=_report(),
+        market_contexts={"EURUSD": market_context},
+        source_verdict="EXECUTE_BUY",
+    )
+
+    assert payload is not None
+    assert payload["price_freshness_status"] == "PRICE_QUALITY_WARMING_UP"
+    assert payload["reference_price_is_live"] is False
+    assert payload["valid_for_execution"] is False
+
+
 def test_allowed_quorum_labels_stale_live_tick_reference_price() -> None:
     pipeline = _pipeline()
-    tick_ts = datetime(2026, 7, 3, 2, 13, 15, tzinfo=UTC).timestamp()
+    tick_at = datetime(2026, 7, 3, 2, 13, 15, tzinfo=UTC)
+    tick_ts = tick_at.timestamp()
     pipeline._context_bus = _FakeContextBus(
         status="STALE_PRESERVED",
         age_seconds=382.125,
         timestamp=tick_ts,
     )
+    detector = FrozenQuoteDetector()
+    first = detector.observe(
+        symbol="EURUSD",
+        price=1.1498,
+        observed_at=tick_at - timedelta(seconds=60),
+        source="LIVE_TICK_MID",
+        market_open=True,
+    )
+    detector.observe(
+        symbol="EURUSD",
+        price=1.1499,
+        observed_at=tick_at - timedelta(seconds=30),
+        source="LIVE_TICK_MID",
+        market_open=True,
+    )
+    ready = detector.observe(
+        symbol="EURUSD",
+        price=1.1500,
+        observed_at=tick_at - timedelta(seconds=1),
+        source="LIVE_TICK_MID",
+        market_open=True,
+    )
+    assert first.status == "PRICE_QUALITY_WARMING_UP"
+    assert ready.status == "LIVE"
+    pipeline._frozen_quote_detector = detector
     market_context = MarketContext(
         symbol="EURUSD",
         raw_allowed_direction="BUY",

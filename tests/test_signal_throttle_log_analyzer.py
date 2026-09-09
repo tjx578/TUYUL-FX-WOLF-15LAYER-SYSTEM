@@ -324,8 +324,12 @@ def test_live_record_throttled_keeps_inferred_direction_for_audit_only(monkeypat
     assert by_type["THROTTLED"].throttled_inferred_direction == "BUY"
     assert by_type["DOWNGRADED_TO_HOLD"].direction == "BUY"
     assert by_type["DOWNGRADED_TO_HOLD"].is_downgraded is True
+    assert by_type["THROTTLED"].is_downgraded is False
+    assert list(analyzer._event_keys) == sorted(analyzer._event_keys)
     assert all(event.timestamp == timestamp for event in events)
     assert all(event.eligible_for_execution is False for event in events)
+    assert all(event.effective_action == "HOLD" for event in events)
+    assert all(event.execution_block_reason == "signal_throttled" for event in events)
 
 
 def test_csv_fixture_reports_data_quality_without_large_raw_export():

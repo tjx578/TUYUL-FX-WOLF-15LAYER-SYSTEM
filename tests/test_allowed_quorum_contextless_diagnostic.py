@@ -120,7 +120,7 @@ def test_integration_missing_context_emits_pressure_state(monkeypatch, caplog):
     monkeypatch.setenv(_FLAG, "true")
     p = _pipeline()
     report = {"allowed_quorum": _quorum()}
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO, logger="signal_json"):
         _apply(p, report=report, market_contexts={})  # empty contexts -> priced payload is None
     assert "[SignalPressureStateJSON]" in caplog.text
     assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
@@ -141,7 +141,7 @@ def test_integration_legacy_diagnostic_flag_off_still_emits_pressure_state(monke
     monkeypatch.setenv(_FLAG, "false")
     p = _pipeline()
     report = {"allowed_quorum": _quorum()}
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO, logger="signal_json"):
         _apply(p, report=report, market_contexts={})
     assert "[SignalPressureStateJSON]" in caplog.text
     assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
@@ -194,7 +194,7 @@ def test_integration_cooldown_blocks_second_pressure_state(monkeypatch, caplog):
     monkeypatch.setenv(_OUTER_FLAG, "true")
     monkeypatch.setenv(_FLAG, "true")
     p = _pipeline()
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO, logger="signal_json"):
         _apply(p, report={"allowed_quorum": _quorum()}, market_contexts={})
         _apply(p, report={"allowed_quorum": _quorum()}, market_contexts={})
     assert caplog.text.count("[SignalPressureStateJSON]") == 1
