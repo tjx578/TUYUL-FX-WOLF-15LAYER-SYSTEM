@@ -182,6 +182,10 @@ class ExecutionIntentResponse(BaseModel):
 # ── Repository ────────────────────────────────────────────────────────────────
 
 
+class ExecutionIntentWriteConflictError(RuntimeError):
+    """The database did not confirm exactly one intended row mutation."""
+
+
 class ExecutionIntentRepository:
     """Persistence for execution intent records."""
 
@@ -279,7 +283,7 @@ class ExecutionIntentRepository:
         data = record.model_dump(mode="json")
         data.update(updates)
 
-        await self._pg_update(execution_intent_id, updates)
+        await self._pg_update(execution_intent_id, updates, expected_state=current.value)
         self._cache_set(execution_intent_id, data)
         self._memory[execution_intent_id] = data
 
@@ -319,7 +323,7 @@ class ExecutionIntentRepository:
 
             if not pg_client.is_available:
                 return
-            await pg_client.execute(
+            result = await pg_client.execute(
                 """
                 INSERT INTO execution_intents (
                     execution_intent_id, idempotency_key, take_id, signal_id,
@@ -354,11 +358,13 @@ class ExecutionIntentRepository:
                 data.get("actual_lot_size"),
                 data.get("rejection_code"),
             )
+            if result != "INSERT 0 1":
+                raise ExecutionIntentWriteConflictError("Intent insert was not confirmed; reload by idempotency key")
         except Exception:
             logger.warning("[ExecIntentRepo] PG insert failed", exc_info=True)
             raise
 
-    async def _pg_update(self, eid: str, updates: dict[str, Any]) -> None:
+    async def _pg_update(self, eid: str, updates: dict[str, Any], *, expected_state: str) -> None:
         try:
             from storage.postgres_client import pg_client  # noqa: PLC0415
 
@@ -369,10 +375,15 @@ class ExecutionIntentRepository:
                 parts.append(f"{col} = ${i}")
                 args.append(val)
             args.append(eid)
-            await pg_client.execute(
-                f"UPDATE execution_intents SET {', '.join(parts)} WHERE execution_intent_id = ${len(args)}",
+            id_parameter = len(args)
+            args.append(expected_state)
+            result = await pg_client.execute(
+                f"UPDATE execution_intents SET {', '.join(parts)} "
+                f"WHERE execution_intent_id = ${id_parameter} AND state = ${len(args)}",
                 *args,
             )
+            if result != "UPDATE 1":
+                raise ExecutionIntentWriteConflictError("Intent update was not confirmed; reload authoritative state")
         except Exception:
             logger.warning("[ExecIntentRepo] PG update failed", exc_info=True)
             raise
