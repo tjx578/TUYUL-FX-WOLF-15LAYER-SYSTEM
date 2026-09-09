@@ -11,7 +11,12 @@ from decimal import Decimal
 from fractions import Fraction
 
 from analysis.strategy_5scr_net_geometry_v31 import solve_net_geometry_v31
-from contracts.strategy_5scr_risk_adapter_v31 import ExactAmountV31, ParentSizingRequestV31, ParentSizingResultV31
+from contracts.strategy_5scr_risk_adapter_v31 import (
+    ExactAmountV31,
+    ParentSizingRequestV31,
+    ParentSizingResultV31,
+    risk_amount_fraction_v31,
+)
 
 
 def parent_sizing_request_hash_v31(request: ParentSizingRequestV31) -> str:
@@ -86,7 +91,7 @@ def size_parent_v31(
     point, tick, tick_profit, tick_loss, minimum, maximum, step = map(Fraction, values)
     if (spec.digits, point, tick) != (geometry.digits, Fraction(geometry.point), Fraction(geometry.tick_size)):
         return reject("RISK_GEOMETRY_SPEC_MISMATCH")
-    if request.campaign_committed_and_reserved_risk_usd != 0:
+    if risk_amount_fraction_v31(request.campaign_committed_and_reserved_risk_usd) != 0:
         return reject("RISK_PARENT_CAMPAIGN_ALREADY_HAS_EXPOSURE", "REJECTED")
     solved = solve_net_geometry_v31(geometry)
     if solved.status != "FEASIBLE_TEST_ONLY":
@@ -114,7 +119,7 @@ def size_parent_v31(
     if volume > maximum:
         return reject("RISK_VOLUME_ABOVE_MAXIMUM", "REJECTED")
     planned = volume * loss_per_lot
-    account_risk = Fraction(request.account_committed_and_reserved_risk_usd)
+    account_risk = risk_amount_fraction_v31(request.account_committed_and_reserved_risk_usd)
     if account_risk + planned > balance * Fraction(policy.maximum_account_open_risk_fraction):
         return reject("RISK_ACCOUNT_CAPACITY_EXCEEDED", "REJECTED")
     return ParentSizingResultV31(

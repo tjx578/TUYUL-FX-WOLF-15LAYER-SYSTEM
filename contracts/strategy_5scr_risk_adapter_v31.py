@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
+from fractions import Fraction
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -33,6 +34,17 @@ class ParentSizingPolicyV31(GeometryContract):
         return self
 
 
+class ExactAmountV31(GeometryContract):
+    numerator: int = Field(ge=0, strict=True)
+    denominator: int = Field(gt=0, strict=True)
+
+
+def risk_amount_fraction_v31(value: Decimal | ExactAmountV31) -> Fraction:
+    if isinstance(value, ExactAmountV31):
+        return Fraction(value.numerator, value.denominator)
+    return Fraction(value)
+
+
 class ParentSizingRequestV31(GeometryContract):
     profile: Literal["TEST_ONLY"]
     entry_role: Literal["PARENT"]
@@ -53,8 +65,8 @@ class ParentSizingRequestV31(GeometryContract):
     policy: ParentSizingPolicyV31
     # Held reservations and broker exposure must both be included by the
     # independent risk-state provider. Zero is explicit, never inferred.
-    account_committed_and_reserved_risk_usd: Amount
-    campaign_committed_and_reserved_risk_usd: Amount
+    account_committed_and_reserved_risk_usd: Amount | ExactAmountV31
+    campaign_committed_and_reserved_risk_usd: Amount | ExactAmountV31
     risk_state_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     risk_state_captured_at: datetime
 
@@ -63,11 +75,6 @@ class ParentSizingRequestV31(GeometryContract):
         if any(t.tzinfo is None or t.utcoffset() is None for t in (self.evaluated_at, self.risk_state_captured_at)):
             raise ValueError("evaluation clock must be timezone-aware")
         return self
-
-
-class ExactAmountV31(GeometryContract):
-    numerator: int = Field(strict=True)
-    denominator: int = Field(gt=0, strict=True)
 
 
 class ParentSizingResultV31(GeometryContract):
