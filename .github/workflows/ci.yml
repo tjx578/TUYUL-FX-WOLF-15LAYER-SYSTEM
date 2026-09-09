@@ -202,6 +202,7 @@ jobs:
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --junitxml=artifacts/python-suite/tests.xml
+          python scripts/ci/validate_suite_junit.py artifacts/python-suite/tests.xml
 
       - name: Require uninstrumented latency budgets
         if: ${{ !cancelled() }}
