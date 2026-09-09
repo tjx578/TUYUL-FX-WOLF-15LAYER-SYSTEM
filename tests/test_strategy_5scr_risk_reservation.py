@@ -86,7 +86,7 @@ def test_final_signal_promotion_is_credential_free_and_does_not_mutate_candidate
 @pytest.mark.parametrize(
     ("path", "value", "match"),
     [
-        (("risk_reservation_id",), str(uuid4()), "does not match proof"),
+        (("risk_reservation_id",), "44444444-4444-4444-8444-444444444444", "does not match proof"),
         (("risk_snapshot_id",), "other-snapshot", "does not match proof"),
         (("reserved_volume",), 0.2, "does not match proof"),
         (("broker_symbol",), "CHFJPY.other", "does not match reservation proof"),
