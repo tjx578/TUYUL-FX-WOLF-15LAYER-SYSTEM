@@ -195,7 +195,7 @@ jobs:
         run: |
           pytest tests/ \
             --ignore=tests/test_native_mt5_readonly_mcp.py \
-            -v --tb=short \
+            -v --tb=short -m "not benchmark" \
             --timeout=60 \
             --cov=analysis --cov=constitution --cov=execution \
             --cov=dashboard --cov=journal --cov=risk \
@@ -203,12 +203,31 @@ jobs:
             --cov-report=xml:coverage.xml \
             --junitxml=artifacts/python-suite/tests.xml
 
+      - name: Require uninstrumented WebSocket latency budgets
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pytest tests/test_ws_connection_stress.py -m benchmark \
+            -o addopts= -q --timeout=60 \
+            --junitxml=artifacts/python-suite/benchmark.xml
+          python - <<'PYEOF'
+          from xml.etree import ElementTree as ET
+          root = ET.parse('artifacts/python-suite/benchmark.xml')
+          cases = root.findall('.//testcase')
+          assert {case.get('name') for case in cases} == {
+              'test_broadcast_50_clients_under_100ms',
+              'test_broadcast_1000_messages_to_10_clients',
+          }
+          assert len(cases) == 2
+          assert all(not list(case.iter('skipped')) and not list(case.iter('failure'))
+                     and not list(case.iter('error')) for case in cases)
+          PYEOF
+
       - name: Upload complete Python test outcomes
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: python-suite-junit
-          path: artifacts/python-suite/tests.xml
+          path: artifacts/python-suite/*.xml
           if-no-files-found: error
           retention-days: 14
 
@@ -286,7 +305,7 @@ jobs:
       - name: Install isolated MCP test dependencies
         # Never install/import the native MetaTrader5 terminal package in this job.
         # Its tests supply FakeMT5; mcp2 needs newer Pydantic than API requirements.
-        run: pip install mcp==2.0.0 psutil==7.2.2 pytest==8.4.2 pytest-asyncio pytest-timeout
+        run: pip install mcp==2.0.0 psutil==7.2.2 pytest==9.0.3 pytest-asyncio==1.3.0 pytest-timeout
 
       - name: Run native MCP fixture suite
         run: python -m pytest tests/test_native_mt5_readonly_mcp.py -v --tb=short --timeout=60

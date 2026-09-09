@@ -215,6 +215,7 @@ class TestBroadcastThroughput:
             assert "seq" in sent
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_broadcast_50_clients_under_100ms(self):
         """Broadcast to 50 mock clients must complete in under 100ms."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
@@ -232,6 +233,7 @@ class TestBroadcastThroughput:
         assert elapsed_ms < 100, f"Broadcast to 50 clients took {elapsed_ms:.1f}ms (limit: 100ms)"
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_broadcast_1000_messages_to_10_clients(self):
         """1000 sequential broadcasts to 10 clients must stay under 1s total."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415

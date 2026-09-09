@@ -75,6 +75,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
 markers = [
+    "benchmark: hard latency budget measured without coverage instrumentation",
     "integration: exercises multiple components or a disposable external service",
 ]
 
