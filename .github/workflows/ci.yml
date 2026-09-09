@@ -247,6 +247,11 @@ jobs:
         run: npm test
 
       - name: Build
+        env:
+          # Build-only fixture origins; no deployed service or credentials.
+          INTERNAL_API_URL: https://core.ci.invalid
+          DASHBOARD_CANONICAL_ORIGIN: https://dashboard.ci.invalid
+          DASHBOARD_MODE: viewer
         run: npm run build
 
   # MCP2 and the API intentionally use separate dependency environments.
