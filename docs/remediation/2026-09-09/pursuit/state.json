@@ -1,8 +1,8 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "f560ed6702cb3a7a6e4525a82b3fca8bf33bbd4a",
-  "source_verified_at": "2026-09-09T10:29:48.369483+00:00",
+  "source_checkpoint": "22766647a10b52503a28ea8464c7bb1d96f54b3d",
+  "source_verified_at": "2026-09-09T11:19:54.609140+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
@@ -48,7 +48,8 @@
         "evidence/strategy-audit.json",
         "evidence/release-audit.json",
         "validation.json",
-        "pursuit/evidence/p1-ci-20260909/validation.json"
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json"
       ]
     },
     "C03": {
@@ -70,7 +71,8 @@
         "followup-runner-binding/validation.json",
         "followup-delivery-contract/README.md",
         "followup-delivery-contract/validation.json",
-        "pursuit/evidence/p1-ci-20260909/validation.json"
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json"
       ]
     },
     "C04": {
@@ -111,7 +113,7 @@
     },
     "C06": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "BUILT_RUNTIME_ACCEPTANCE_NOT_EXECUTED",
+      "execution_stage": "BUILT_API_BOOTSTRAP_HTTP_SHUTDOWN_PASS_FULL_RUNTIME_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -120,7 +122,8 @@
         "evidence/strategy-audit.json",
         "evidence/release-audit.json",
         "validation.json",
-        "pursuit/evidence/p1-ci-20260909/validation.json"
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json"
       ]
     },
     "S01": {
@@ -597,45 +600,59 @@
   "known_blockers": [
     {
       "id": "B-RUNNER",
-      "cause": "No verified disposable Linux host/configuration",
+      "cause": "Existing GitHub-hosted Linux runner qualified",
       "scope": [
         "C04",
         "PostgreSQL acceptance"
       ],
-      "status": "OPEN_KNOWN",
-      "last_evidence_ref": "sources/latest-reported-checkpoint.json",
-      "recheck_trigger": "Owner supplies existing bound runner or applicable provision authorization/capability; do not poll repeatedly",
+      "status": "RESOLVED_CI_BOOTSTRAP",
+      "last_evidence_ref": "evidence/p1-ci-20260909/c04-closure.json",
+      "recheck_trigger": "Qualify again only if runner workload/configuration changes materially; VPS remains unprovisioned",
       "question_state": "ALREADY_DISCLOSED",
       "first_seen": "PRIOR_SESSION",
-      "last_evidence": "No verified disposable Linux host; Windows cleanup not performed; historical VPS/workloads retained",
+      "last_evidence": "C04 ACTION_DONE; clean checkout, capacity, PG16.15 and Redis7.4.11 measured",
       "asked_once": true,
       "answer_ref": "existing user answers in this task",
       "independent_work_remaining": true,
       "searched_locations": [
         "current task answers",
         "docs/remediation/2026-09-09/followup-consumer-owner"
-      ]
+      ],
+      "historical_observation_before_p1": {
+        "cause": "No verified disposable Linux host/configuration",
+        "status": "OPEN_KNOWN",
+        "last_evidence_ref": "sources/latest-reported-checkpoint.json",
+        "last_evidence": "No verified disposable Linux host; Windows cleanup not performed; historical VPS/workloads retained",
+        "recheck_trigger": "Owner supplies existing bound runner or applicable provision authorization/capability; do not poll repeatedly"
+      }
     },
     {
       "id": "B-CI",
-      "cause": "GitHub platform annotation account locked billing",
+      "cause": "Actions executes; required source checks still fail",
       "scope": [
         "required remote checks",
         "merge/release eligibility"
       ],
-      "status": "OPEN_KNOWN",
-      "last_evidence_ref": "sources/latest-reported-checkpoint.json",
-      "recheck_trigger": "Owner reports platform condition changed or a fresh authorized run exists; billing remains excluded",
+      "status": "PLATFORM_BLOCKER_RESOLVED_SOURCE_CHECKS_OPEN",
+      "last_evidence_ref": "evidence/p1-ci-20260909/c04-closure.json",
+      "recheck_trigger": "Read current candidate run34341226710; diagnose actual failures, not stale billing annotations",
       "question_state": "ALREADY_DISCLOSED",
       "first_seen": "PRIOR_SESSION",
-      "last_evidence": "Billing excluded. Exact-head annotation on79597e91 reports account lock; no rerun without change",
+      "last_evidence": "PAID_REPORTED; real CI run34340383026 passed all jobs except Python suite/aggregate gate; command/compliance fixture corrected in c7e97629",
       "asked_once": true,
       "answer_ref": "existing user answers in this task",
       "independent_work_remaining": true,
       "searched_locations": [
         "current task answers",
         "docs/remediation/2026-09-09/followup-consumer-owner"
-      ]
+      ],
+      "historical_observation_before_p1": {
+        "cause": "GitHub platform annotation account locked billing",
+        "status": "OPEN_KNOWN",
+        "last_evidence_ref": "sources/latest-reported-checkpoint.json",
+        "last_evidence": "Billing excluded. Exact-head annotation on79597e91 reports account lock; no rerun without change",
+        "recheck_trigger": "Owner reports platform condition changed or a fresh authorized run exists; billing remains excluded"
+      }
     },
     {
       "id": "B-DEMO",
@@ -705,7 +722,10 @@
       "recheck_trigger": "Binding references become available or concrete operation packet ready"
     }
   ],
-  "evidence_receipts": [],
+  "evidence_receipts": [
+    "evidence/p1-ci-20260909/validation.json",
+    "evidence/p1-ci-20260909/c04-closure.json"
+  ],
   "owned_changes": [],
   "deferred_nonblocking_debt": [],
   "coordination": {
@@ -715,7 +735,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Bind later-candle liveness/invalidation and complete-window evidence for the selected reference proof, then inherited admission/hypothesis and operational context/policy. Reference policy remains TEST_ONLY; do not treat synthetic remaining attestation as runtime authority.",
+  "next_action_on_resume": "Inspect live CI 34344760831 on 22766647; complete C03 full-suite/security and C06 worker supervision. Preserve C04 closure and separate DEMO binding.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -728,8 +748,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_SOURCE_DERIVED_REFERENCE_PATTERN_AND_CALLER_COMPOSITION",
-  "actual_source_commit": "a3c3639146d3deb52ec35187406d51653644a33c",
+  "previous_goal_turn_classification": "PROGRESS_REAL_PG_87_C04_CLOSED_REQUIRED_CI_REMEDIATION",
+  "actual_source_commit": "22766647a10b52503a28ea8464c7bb1d96f54b3d",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -846,14 +866,15 @@
     "K05_POST_PROOF_VALIDITY"
   ],
   "publication": {
-    "source_commit": "f560ed6702cb3a7a6e4525a82b3fca8bf33bbd4a",
-    "remote_checkpoint": "d9515f8e433f2752aab4258ef380a4a9ef200998",
+    "source_commit": "22766647a10b52503a28ea8464c7bb1d96f54b3d",
+    "remote_checkpoint": "c7e9762993349fcf9e4f222133d8188d0d7425fa",
     "pr": 428,
     "draft": true,
-    "push": "PR_D951_PUBLISHED_NEW_RELEASE_GATE_COMMIT_LOCAL",
-    "reason": "Frontend auto-deploy disabled; other connected branches differ; scoped Draft publication authorized",
+    "push": "DRAFT_PR428_PUBLISHED_22766647_CI_PENDING",
+    "reason": "Verified Draft publication; CI ongoing; merge/deployment HOLD",
     "no_main_merge": true,
-    "no_deployment": true
+    "no_deployment": true,
+    "merge": "HOLD"
   },
   "new_blockers": {
     "B-PUBLISH-FRONTEND-BRANCH": {
