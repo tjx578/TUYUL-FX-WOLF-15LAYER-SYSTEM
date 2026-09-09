@@ -1,5 +1,5 @@
 {
-  "source_commit": "1ad5c7a13bbcea5d4eff3eaded6f90989cb14f46",
+  "source_commit": "dd65625140d3ac391f97ca46c3ef7a540e855390",
   "scope": "Evidence files; individual receipts retain historical source bindings",
   "files": [
     {
@@ -41,6 +41,46 @@
       "path": "bf2.xml",
       "sha256": "ea04ed48680bb2593a5516aeaaba14d250c15fcbc0716bf6b30f369998b3b604",
       "bytes": 4798
+    },
+    {
+      "path": "br1-collection.log",
+      "sha256": "d8c430a21a01a45d194ca919d3e7be96190ab1dc18b3d30d71e013bb5a6e4315",
+      "bytes": 5948
+    },
+    {
+      "path": "br1-pytest.log",
+      "sha256": "3bf2f8b0799803764d290f1346c6b5bcfff544da59b92e99f70ad0716ef42e3c",
+      "bytes": 3580
+    },
+    {
+      "path": "br1-receipt.json",
+      "sha256": "a2f0cd4f1999b743de5872580cdac58d61ee595dfaf267c35c3b0aefda86ae8a",
+      "bytes": 10997
+    },
+    {
+      "path": "br1.xml",
+      "sha256": "73eaa3cf5f437f6ca730d5bbb0a77bd33b8e2765727dddf6b80c58ee3d41167c",
+      "bytes": 9704
+    },
+    {
+      "path": "br2-collection.log",
+      "sha256": "4f2a13809c8dfafd9115ab96f18ac0cc79148ddea2b582c76471736ce3832487",
+      "bytes": 5948
+    },
+    {
+      "path": "br2-pytest.log",
+      "sha256": "b1747bfad8f8e70cf6ccfb430893d872edc5e981419bfef0fbbade7201c4d573",
+      "bytes": 974
+    },
+    {
+      "path": "br2-receipt.json",
+      "sha256": "ebfa5c409fefaccca27f19da0b67771b67246c1adb0aae1164da401ef65bb205",
+      "bytes": 10998
+    },
+    {
+      "path": "br2.xml",
+      "sha256": "a1c0e00bb02a41367303048eeacc8b329e66cdc8e2beacb2101d8d25153ae2e0",
+      "bytes": 7337
     },
     {
       "path": "bridge-factory-source.diff",
@@ -86,6 +126,16 @@
       "path": "candle-target-validation.json",
       "sha256": "22b9f59a19f5343a90dd574af5fb444e274a686d4955536a080c664fd447432e",
       "bytes": 13128
+    },
+    {
+      "path": "channel-b-measurement-source.diff",
+      "sha256": "5a04a69b380d7d85165a2f0f163b1cb914ae0eab5d6c08ac5a8c6806a993620b",
+      "bytes": 6972
+    },
+    {
+      "path": "channel-b-measurement-validation.json",
+      "sha256": "c8de230cdfcdf32acded6a9a04d928a251da0b51669016ec6b366973b2bc4810",
+      "bytes": 6541
     },
     {
       "path": "ct1-collection.log",
