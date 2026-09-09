@@ -6619,9 +6619,12 @@ class WolfConstitutionalPipeline:
             reference_status = "MARKET_CLOSED"
             reference_is_live = False
         elif quote_health.status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
-            reference_status = quote_health.status
             reference_is_live = False
-            freshness = quote_health.status
+            # Detector warmup does not erase an already observed stale feed.
+            # Quote quality is exposed separately and still blocks execution.
+            if reference_status != "STALE":
+                reference_status = quote_health.status
+                freshness = quote_health.status
         payload = {
             "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
             "reference_price_used_for_decision_update": price,

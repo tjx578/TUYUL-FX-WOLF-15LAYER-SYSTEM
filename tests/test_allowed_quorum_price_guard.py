@@ -151,6 +151,8 @@ def test_allowed_quorum_labels_stale_live_tick_reference_price() -> None:
     assert payload["price_snapshot_time_utc"] == "2026-07-03T02:13:15+00:00"
     assert payload["price_age_seconds"] == 382.125
     assert payload["price_freshness_status"] == "STALE_PRESERVED"
+    assert payload["quote_health_status"] == "PRICE_QUALITY_WARMING_UP"
+    assert payload["quote_health_execution_blocked"] is True
     assert payload["reference_price_is_live"] is False
     assert payload["valid_for_execution"] is False
     assert payload["observed_price"] == 1.1501

@@ -126,6 +126,10 @@ def test_p4_runtime_defaults_off_and_requires_shadow_mode() -> None:
 
 def test_p4_has_no_production_consumer_or_runtime_wiring() -> None:
     allowed_p5_consumers = {
+        # Explicit TEST_ONLY proof contracts reuse V1 candle/pattern predicates;
+        # neither is a service caller or an execution writer.
+        ("contracts/strategy_5scr_ordered_proof_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
+        ("analysis/strategy_5scr_reference_pattern_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
         (
             "analysis/strategy_5scr_execution_box_v1.py",
             "contracts.strategy_5scr_directional_thesis_v1",
