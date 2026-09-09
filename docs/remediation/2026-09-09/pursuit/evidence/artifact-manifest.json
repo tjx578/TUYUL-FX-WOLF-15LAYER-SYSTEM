@@ -1,5 +1,5 @@
 {
-  "source_commit": "01eb39efa679564eebab1ba7542453054ae4bfef",
+  "source_commit": "e996b331dac08067d848fbdd9268f4088c12adda",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -421,6 +421,36 @@
       "path": "iw4.xml",
       "sha256": "a9113baeb798430978732cb503efc3aab8f953aca9f5bbdc8d97727e3883cef7",
       "bytes": 9353
+    },
+    {
+      "path": "k03-owner-transaction-source.diff",
+      "sha256": "a5ec75006df9423537e0dd536fae5f6323f396bf75ca6241a621c2749a677f65",
+      "bytes": 6546
+    },
+    {
+      "path": "k03-owner-transaction-validation.json",
+      "sha256": "47a26389e9b235f9832783303bff19dc3232cfd134aa4cac83274382f42a7f5e",
+      "bytes": 24148
+    },
+    {
+      "path": "k03-tx-0909-a1-collection.log",
+      "sha256": "6ef1dca056a1f2ee8f363b8e2773fc46eee28d0b8e592f91cb9d98ab2993fc40",
+      "bytes": 17365
+    },
+    {
+      "path": "k03-tx-0909-a1-pytest.log",
+      "sha256": "3ee1fdb48a0b29380481c90d076e274352e80175bdf6745b686552e02c2c1e69",
+      "bytes": 1767
+    },
+    {
+      "path": "k03-tx-0909-a1-receipt.json",
+      "sha256": "a9cfa4f3683471cac46cb172449e854f5c00501b35a61eb92f672695fe55814f",
+      "bytes": 25297
+    },
+    {
+      "path": "k03-tx-0909-a1.xml",
+      "sha256": "3a326e9a2d9625f071ff3e3748b9a6380f40995f86960b850b1c9d46ded54911",
+      "bytes": 21745
     },
     {
       "path": "k07-adapter-20260909-a1-collection.log",
