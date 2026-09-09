@@ -1,6 +1,6 @@
 {
-  "source_commit": "188c78d5072653aa73f950da06860ffea75efd18",
-  "scope": "Evidence files; individual receipts retain historical source bindings",
+  "source_commit": "404ef14eac2bfe715a53060204ce8c9d40f3ca08",
+  "scope": "Evidence files; individual receipts retain historical source binding",
   "files": [
     {
       "path": "candle-target-source.diff",
@@ -81,6 +81,16 @@
       "path": "lint-format.json",
       "sha256": "c4a29214c34eebcbfa480dce46084424cb2659d5362d06835fa1cd0d0b915bf2",
       "bytes": 755
+    },
+    {
+      "path": "lock-provenance-source.diff",
+      "sha256": "25046018300d02018af0a2f4d1f32d8ece48071fbc5f598d4a8a2a6f6bbc746e",
+      "bytes": 5844
+    },
+    {
+      "path": "lock-provenance-validation.json",
+      "sha256": "5baac4e301806bc862dd26b785aa8ae40ecef115e051d99d15a3ecea29e11c8e",
+      "bytes": 6058
     },
     {
       "path": "net-geometry-source.diff",
@@ -251,6 +261,66 @@
       "path": "risk-binding-validation.json",
       "sha256": "d7a55de634afec2b39c51e8ff67b494b3e534dee622c538490a78ec4e619672c",
       "bytes": 6369
+    },
+    {
+      "path": "rp1-collection.log",
+      "sha256": "f63762a80c3e54310ab679e9179817acf5814428e35db25e82fb661bd37901d6",
+      "bytes": 4903
+    },
+    {
+      "path": "rp1-pytest.log",
+      "sha256": "c1b7a5120f9369af8eae734ed2342bcfb117ea95202d7e875cdf6638b29fa2dc",
+      "bytes": 974
+    },
+    {
+      "path": "rp1-receipt.json",
+      "sha256": "6a53616abfe76d8fc48653d89d56d1af5993028358986d9d69c54e7403235ed0",
+      "bytes": 10194
+    },
+    {
+      "path": "rp1.xml",
+      "sha256": "aabbed583d1025b49faf873bdb891db3eaa9bab888faf92a58749c17ceb6cb03",
+      "bytes": 5941
+    },
+    {
+      "path": "rp2-collection.log",
+      "sha256": "534b77dce7fc7f19f533476f968ef697b43eb2a7b300d24fb442878c7c452e37",
+      "bytes": 4981
+    },
+    {
+      "path": "rp2-pytest.log",
+      "sha256": "9dfe2dc51005b14ac4953918c9fde565848ef88051fe6975aa86ec7735498acf",
+      "bytes": 974
+    },
+    {
+      "path": "rp2-receipt.json",
+      "sha256": "269bba1cd2421f6f5f197cb6f44db8131a217166e0c4797d20d7f6e294e2628c",
+      "bytes": 10279
+    },
+    {
+      "path": "rp2.xml",
+      "sha256": "1c316de052ca25c5efa68583de5c7b690a8fd08c769694fad873e773b5f276e9",
+      "bytes": 6058
+    },
+    {
+      "path": "rp3-collection.log",
+      "sha256": "84d1e1cf551fe7c4ebe34fe0a2ff9f21ab215e4daf75f4d27f5f6fb4d1b0e401",
+      "bytes": 4981
+    },
+    {
+      "path": "rp3-pytest.log",
+      "sha256": "a277e3acde65abb3e34603d5599405db5bb40cc244fda3bad39e2ad08997e73a",
+      "bytes": 974
+    },
+    {
+      "path": "rp3-receipt.json",
+      "sha256": "216d34e3f0331293e63731d7392e1034af8ed5aef4a796ce64e9e01c5ceb1329",
+      "bytes": 10279
+    },
+    {
+      "path": "rp3.xml",
+      "sha256": "ded6c367fb8d83ba2800ff474579718b09f0f6a851c5481e7037d7acb95fd542",
+      "bytes": 6058
     },
     {
       "path": "target-geometry-source.diff",
