@@ -1,0 +1,50 @@
+{
+  "schema_version": "wolf15.s01-source-comparison.v1",
+  "observed_at_utc": "2026-09-08T20:13:34.768320+00:00",
+  "selected": {
+    "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
+    "git_path": "docs/strategy/WOLF15_STRATEGY_5SCR_CANONICAL_SSOT_V3_1_CANDIDATE.md",
+    "git_blob": "cd848447a2e923d0ea0de6c566a558c7205d3d3b",
+    "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "bytes": 86002,
+    "lines": 3491,
+    "committed_evidence_copy_sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "evidence_copy_exact_match": true,
+    "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
+  },
+  "historical_assessment_copy": {
+    "sha256": "2cd41d01fdd3661af59284c78df669f7b312a7b7e4870f1620cfcfbe1aedb624",
+    "reported_bytes": 85414,
+    "reported_lines": 3478,
+    "receipt_records": [
+      {
+        "sha256": "2cd41d01fdd3661af59284c78df669f7b312a7b7e4870f1620cfcfbe1aedb624",
+        "paths": [
+          "/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/inputs/WOLF15_Integration_Evidence_Bundle_2026-09-08/project-documents/13-WOLF15_STRATEGY_5SCR_CANONICAL_SSOT_V3_1_CANDIDATE_REPO_READY-1-.md",
+          "/workspace/scratch/3c52c2735051/project_sources/13-WOLF15_STRATEGY_5SCR_CANONICAL_SSOT_V3_1_CANDIDATE_REPO_READY-1-.md"
+        ],
+        "bytes": 85414,
+        "suffix": ".md",
+        "parse_status": "TEXT_READ",
+        "lines": 3478
+      }
+    ],
+    "content_present_in_master_zip": false,
+    "matching_members": [],
+    "status": "ORIGINAL_BYTES_UNAVAILABLE_IN_BOUND_INPUT_PACKAGE",
+    "semantic_parity": "NOT_VERIFIABLE",
+    "size_delta_selected_minus_reported": 588,
+    "line_delta_selected_minus_reported": 13,
+    "interpretation": "Different reported digest/size/line count prove distinct declared bytes; do not infer the588-byte/13-line delta is metadata-only. Historical source anchors are not transferred as exact selected-file line numbers.",
+    "effect_on_current_engineering": "Historical comparison limitation only; selected repo source is already the chosen authority. Does not require version reapproval or block source-only S03 work; never claim unavailable full parity."
+  },
+  "bounded_lookup": [
+    "Master ZIP all48member hash comparison",
+    "deduplicated-corpus.json matching historical digest record",
+    "strategy-findings.json S-13 source locator",
+    "DoD AppendixC digest",
+    "Existing committed full SSOT and immutable docsbranch source"
+  ],
+  "not_searched": "No broad disk or external account scan; absence refers only to bound input package.",
+  "authority_note": "Selected v3.1 is design source with PROPOSED_CANONICAL/SHADOW_ONLY; binding does not create risk or execution authority."
+}

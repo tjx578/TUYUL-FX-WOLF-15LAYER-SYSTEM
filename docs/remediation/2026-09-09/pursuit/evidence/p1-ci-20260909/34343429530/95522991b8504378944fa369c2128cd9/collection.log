@@ -1,0 +1,17 @@
+tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor
+tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[mappings]
+tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[emissions]
+tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[inbox]
+tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[consumer_cursors]
+tests/integration/test_activity_delivery_consumer_postgres.py::test_legacy_writer_and_old_owner_cannot_bypass_handover
+tests/integration/test_activity_delivery_consumer_postgres.py::test_payload_conflict_quarantined_in_database
+tests/integration/test_activity_delivery_consumer_postgres.py::test_successor_waits_for_consumer_predecessor
+tests/integration/test_activity_delivery_consumer_postgres.py::test_existing_advisory_lifecycle_is_attached_without_remint
+tests/integration/test_activity_delivery_consumer_postgres.py::test_concurrent_consumer_duplicate_has_one_effect
+tests/integration/test_activity_delivery_consumer_postgres.py::test_fresh_consumer_after_restart_recovers_committed_inbox
+
+11 tests collected in 0.82s
+/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

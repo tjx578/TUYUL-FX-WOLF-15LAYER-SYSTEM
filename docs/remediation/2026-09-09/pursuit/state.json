@@ -1,0 +1,974 @@
+{
+  "schema_version": "wolf15-pursuit-state/v1",
+  "status": "IN_PROGRESS",
+  "source_checkpoint": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+  "source_verified_at": "2026-09-09T14:38:39.851456+00:00",
+  "selected_ssot": "repository_existing_v3.1",
+  "readme_updates_allowed": false,
+  "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
+  "current_slice": "C06_ENGINE_SHARED_PROBE_AND_FATAL_LIFECYCLE",
+  "canonical_action_state": {
+    "A00": {
+      "historical_report": "DONE_ACQUISITION_ONLY",
+      "execution_stage": "ASSESSMENT_DONE",
+      "closing_receipt_refs": [
+        "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json"
+      ],
+      "stale_evidence_refs": [],
+      "closure_status": "ACTION_DONE",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "C01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "LOCAL_GATE_CONTROLS_PASS_ALTERNATE_DEPLOY_PATH_OPEN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
+      ]
+    },
+    "C02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "DISPOSABLE_APPLICATION_ROLE_FENCING_PASS_RUNTIME_OWNER_AND_ZERO_SUBMIT_OPEN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
+        "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
+        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/consumer-fence-20260909/review.json",
+        "pursuit/evidence/k05-detached-pg-20260909/review.json"
+      ]
+    },
+    "C03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "CURRENT_LINUX_CI_SECURITY_ZERO_SKIP_PASS_C01_DEPENDENCY_OPEN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json",
+        "followup-s01-s03/README.md",
+        "followup-s01-s03/followup-validation.json",
+        "followup-s03-runtime/README.md",
+        "followup-s03-runtime/validation.json",
+        "followup-runner-binding/README.md",
+        "followup-runner-binding/validation.json",
+        "followup-delivery-contract/README.md",
+        "followup-delivery-contract/validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
+        "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
+        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
+        "pursuit/evidence/consumer-fence-20260909/review.json",
+        "pursuit/evidence/k05-detached-pg-20260909/review.json"
+      ]
+    },
+    "C04": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "LINUX_CI_BOOTSTRAP_ACCEPTANCE_PASSED",
+      "closing_receipt_refs": [
+        "pursuit/evidence/p1-ci-20260909/34340383026/runner-qualification.json"
+      ],
+      "stale_evidence_refs": [],
+      "closure_status": "ACTION_DONE",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json",
+        "followup-runner-binding/README.md",
+        "followup-runner-binding/validation.json",
+        "followup-delivery-contract/README.md",
+        "followup-delivery-contract/validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/34340383026/runner-qualification.json"
+      ],
+      "closure_scope": "C04 existing GitHub-hosted disposable Linux runner bootstrap; no VPS provisioning; no other P1 action inferred complete"
+    },
+    "C05": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "CLASSIC_MAIN_PROTECTION_OBSERVED_REVIEW_AND_RELEASE_BINDING_OPEN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
+        "pursuit/evidence/consumer-fence-20260909/review.json",
+        "pursuit/evidence/k05-detached-pg-20260909/review.json"
+      ]
+    },
+    "C06": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BUILT_API_TEN_CASES_PASS_ENGINE_AND_OTHER_ROLES_OPEN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
+        "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
+        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
+      ]
+    },
+    "S01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "VERSIONED_SCHEMA_LOCAL_PARTIAL",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json",
+        "followup-s01-s03/README.md",
+        "followup-s01-s03/followup-validation.json",
+        "followup-s03-runtime/README.md",
+        "followup-s03-runtime/validation.json",
+        "followup-runner-binding/README.md",
+        "followup-runner-binding/validation.json"
+      ]
+    },
+    "S02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "INCOMPLETE",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "S03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "DISPOSABLE_DELIVERY_AND_RESTRICTED_ROLE_PASS_OPERATIONAL_BINDING_OPEN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json",
+        "followup-s01-s03/README.md",
+        "followup-s01-s03/followup-validation.json",
+        "followup-s03-runtime/README.md",
+        "followup-s03-runtime/validation.json",
+        "followup-runner-binding/README.md",
+        "followup-runner-binding/validation.json",
+        "followup-delivery-contract/README.md",
+        "followup-delivery-contract/validation.json",
+        "followup-producer-relay/README.md",
+        "followup-producer-relay/validation.json",
+        "followup-producer-relay/acceptance-inventory.json",
+        "followup-consumer-owner/README.md",
+        "followup-consumer-owner/validation.json",
+        "followup-consumer-owner/acceptance-inventory.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/consumer-fence-20260909/review.json",
+        "pursuit/evidence/k05-detached-pg-20260909/review.json"
+      ]
+    },
+    "S04": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "S05": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "FAIL",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "S06": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "INCOMPLETE",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "R01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNBOUND_USER_CONFIRMED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "R02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "R03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "E01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "E02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNBOUND_INDEPENDENT_READER",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "E03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "E04": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "E05": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "COMPILER_FOUND_ARTIFACT_UNBOUND",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "E06": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNBOUND_USER_CONFIRMED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "D01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "E07": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "E08": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_NOT_PROVEN_THIS_AUDIT",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "E09": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_UNBOUND_DEMO_SCOPE",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "N01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "N02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "N03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "N04": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "NOT_EXECUTED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "D02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_DEPENDENCIES",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "N05": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_DEPENDENCIES",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "N06": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_DEPENDENCIES",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "N07": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "J01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_DEPENDENCIES",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "J02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_DEPENDENCIES",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "J03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_DEPENDENCIES",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "N08": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_DEPENDENCIES",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "O01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_DEPENDENCIES",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "O02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "BLOCKED_DEPENDENCIES",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    },
+    "O03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "PARTIAL_DOSSIER_HOLD",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": [],
+      "closure_status": "NOT_CLOSED",
+      "source_evidence_refs": [
+        "evidence/contract-audit.json",
+        "evidence/strategy-audit.json",
+        "evidence/release-audit.json",
+        "validation.json"
+      ]
+    }
+  },
+  "milestone_state": {
+    "P1": "NOT_CLOSED",
+    "P2": "NOT_CLOSED",
+    "P3": "NOT_CLOSED",
+    "P4": "NOT_CLOSED",
+    "P5": "NOT_CLOSED",
+    "P6": "NOT_CLOSED"
+  },
+  "known_blockers": [
+    {
+      "id": "B-RUNNER",
+      "cause": "Existing GitHub-hosted Linux runner qualified",
+      "scope": [
+        "C04",
+        "PostgreSQL acceptance"
+      ],
+      "status": "RESOLVED_CI_BOOTSTRAP",
+      "last_evidence_ref": "evidence/p1-ci-20260909/c04-closure.json",
+      "recheck_trigger": "Qualify again only if runner workload/configuration changes materially; VPS remains unprovisioned",
+      "question_state": "ALREADY_DISCLOSED",
+      "first_seen": "PRIOR_SESSION",
+      "last_evidence": "C04 ACTION_DONE; clean checkout, capacity, PG16.15 and Redis7.4.11 measured",
+      "asked_once": true,
+      "answer_ref": "existing user answers in this task",
+      "independent_work_remaining": true,
+      "searched_locations": [
+        "current task answers",
+        "docs/remediation/2026-09-09/followup-consumer-owner"
+      ],
+      "historical_observation_before_p1": {
+        "cause": "No verified disposable Linux host/configuration",
+        "status": "OPEN_KNOWN",
+        "last_evidence_ref": "sources/latest-reported-checkpoint.json",
+        "last_evidence": "No verified disposable Linux host; Windows cleanup not performed; historical VPS/workloads retained",
+        "recheck_trigger": "Owner supplies existing bound runner or applicable provision authorization/capability; do not poll repeatedly"
+      }
+    },
+    {
+      "id": "B-CI",
+      "cause": "Actions executes; required source checks still fail",
+      "scope": [
+        "required remote checks",
+        "merge/release eligibility"
+      ],
+      "status": "PLATFORM_BLOCKER_RESOLVED_SOURCE_CHECKS_OPEN",
+      "last_evidence_ref": "evidence/p1-ci-20260909/c04-closure.json",
+      "recheck_trigger": "Read current candidate run34341226710; diagnose actual failures, not stale billing annotations",
+      "question_state": "ALREADY_DISCLOSED",
+      "first_seen": "PRIOR_SESSION",
+      "last_evidence": "PAID_REPORTED; real CI run34340383026 passed all jobs except Python suite/aggregate gate; command/compliance fixture corrected in c7e97629",
+      "asked_once": true,
+      "answer_ref": "existing user answers in this task",
+      "independent_work_remaining": true,
+      "searched_locations": [
+        "current task answers",
+        "docs/remediation/2026-09-09/followup-consumer-owner"
+      ],
+      "historical_observation_before_p1": {
+        "cause": "GitHub platform annotation account locked billing",
+        "status": "OPEN_KNOWN",
+        "last_evidence_ref": "sources/latest-reported-checkpoint.json",
+        "last_evidence": "Billing excluded. Exact-head annotation on79597e91 reports account lock; no rerun without change",
+        "recheck_trigger": "Owner reports platform condition changed or a fresh authorized run exists; billing remains excluded"
+      }
+    },
+    {
+      "id": "B-DEMO",
+      "cause": "Account/risk/EA/window/reader runtime package unbound",
+      "scope": [
+        "E06",
+        "E07",
+        "E09",
+        "N05",
+        "N06",
+        "N08"
+      ],
+      "status": "OPEN_KNOWN",
+      "last_evidence_ref": "sources/latest-reported-checkpoint.json",
+      "recheck_trigger": "Binding references become available or concrete operation packet ready",
+      "question_state": "ALREADY_DISCLOSED",
+      "first_seen": "PRIOR_SESSION",
+      "last_evidence": "No valid runtime package verified; E06/R01/E09/E05-E07/E02 are preparation actions, not active bindings",
+      "asked_once": true,
+      "answer_ref": "existing user answers in this task",
+      "independent_work_remaining": true,
+      "searched_locations": [
+        "current task answers",
+        "docs/remediation/2026-09-09/followup-consumer-owner"
+      ]
+    }
+  ],
+  "decision_log": [
+    {
+      "id": "AUTH-ENGINEERING-20260909",
+      "at": "2026-09-09T04:12:37.856475+00:00",
+      "decision": "User adopted START_CODEX_DESKTOP: source/test/migration-file engineering and scoped Draft branch publication; no README edits",
+      "preserved": [
+        "existing inputs and dirty original checkout",
+        "VPS and Windows workloads",
+        "SSOT v3.1",
+        "existing monorepo and Railway services"
+      ],
+      "excluded": [
+        "billing/provisioning",
+        "host process cleanup",
+        "rulesets",
+        "merge main",
+        "production migration/deploy",
+        "broker execution",
+        "REAL activation"
+      ]
+    }
+  ],
+  "question_ledger": [
+    {
+      "key": "B-RUNNER",
+      "status": "ANSWERED_UNAVAILABLE_DO_NOT_REASK",
+      "answer": "No verified disposable Linux host; Windows cleanup not performed; historical VPS/workloads retained",
+      "recheck_trigger": "Owner supplies existing bound runner or applicable provision authorization/capability; do not poll repeatedly"
+    },
+    {
+      "key": "B-CI",
+      "status": "ANSWERED_UNAVAILABLE_DO_NOT_REASK",
+      "answer": "Billing excluded. Exact-head annotation on79597e91 reports account lock; no rerun without change",
+      "recheck_trigger": "Owner reports platform condition changed or a fresh authorized run exists; billing remains excluded"
+    },
+    {
+      "key": "B-DEMO",
+      "status": "ANSWERED_UNAVAILABLE_DO_NOT_REASK",
+      "answer": "No valid runtime package verified; E06/R01/E09/E05-E07/E02 are preparation actions, not active bindings",
+      "recheck_trigger": "Binding references become available or concrete operation packet ready"
+    }
+  ],
+  "evidence_receipts": [
+    "evidence/p1-ci-20260909/validation.json",
+    "evidence/p1-ci-20260909/c04-closure.json"
+  ],
+  "owned_changes": [],
+  "deferred_nonblocking_debt": [],
+  "coordination": {
+    "topology": "SERIAL_DUE_PRIOR_AGENT_QUOTA",
+    "assignments": [],
+    "measurements": [],
+    "changes": [],
+    "independent_review": "NOT_EXECUTED"
+  },
+  "next_action_on_resume": "Check evidence-publication required checks, then implement C06 shared engine probe and fatal required-task process lifecycle; K05 operational policy and evidence bindings remain open.",
+  "no_executable_default_credentials": true,
+  "selected_ssot_binding": {
+    "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
+    "git_path": "docs/strategy/WOLF15_STRATEGY_5SCR_CANONICAL_SSOT_V3_1_CANDIDATE.md",
+    "git_blob": "cd848447a2e923d0ea0de6c566a558c7205d3d3b",
+    "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "bytes": 86002,
+    "lines": 3491,
+    "committed_evidence_copy_sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "evidence_copy_exact_match": true,
+    "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
+  },
+  "previous_goal_turn_classification": "PROGRESS_DETACHED_VERIFICATION_REAL_PG_94_AND_REQUIRED_CI_PASS",
+  "actual_source_commit": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+  "slice_state": {
+    "G00": {
+      "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
+      "DONE": false,
+      "evidence_ref": "evidence/g00-source.json",
+      "remaining": [
+        "Frontend branch trigger omitted by provider configuration."
+      ]
+    },
+    "K01": {
+      "status": "SELECTED_SSOT_EXACT_BYTES_REBOUND_IMPLEMENTATION_MATRIX_PARTIAL",
+      "DONE": false,
+      "evidence_ref": "binding-review.md",
+      "active_policy": "UNBOUND"
+    },
+    "K02": {
+      "status": "EXISTING_OWNER_GUARD_SOURCE_IMPORTED_RUNTIME_NOT_EXECUTED",
+      "DONE": false,
+      "evidence_ref": "../followup-consumer-owner/validation.json"
+    },
+    "K03": {
+      "status": "OWNER_TRANSACTION_PRECONDITION_LOCAL_PASS_DATABASE_ACCEPTANCE_PENDING",
+      "DONE": false,
+      "evidence_ref": "evidence/k03-owner-transaction-validation.json",
+      "postgres_acceptance": "NOT_EXECUTED",
+      "previous_evidence_refs": [
+        "../followup-consumer-owner/validation.json"
+      ]
+    },
+    "K04": {
+      "status": "NOT_YET_REBOUND",
+      "DONE": false
+    },
+    "K05": {
+      "status": "DETACHED_VERIFICATION_POSTGRES_PASS_OPERATIONAL_PARTIAL",
+      "DONE": false,
+      "evidence_ref": "pursuit/evidence/k05-detached-pg-20260909/review.json",
+      "previous_evidence_refs": [
+        "evidence/k05-ordered-proof-validation.json",
+        "evidence/k05-context-validation.json",
+        "evidence/k05-reference-pattern-validation.json",
+        "pursuit/evidence/k05-detached-20260909/validation.json"
+      ],
+      "remaining": [
+        "Latest witness selection, later-candle invalidation and full session/source coverage attestation",
+        "Operational source/registry/LocationRoutePolicy and active pattern selection",
+        "Lifecycle/admission/hypothesis inheritance and independent clocks",
+        "Immutable context epoch persistence/recovery and historical TEST_ONLY compatibility"
+      ]
+    },
+    "K06": {
+      "status": "CANONICAL_CANDLE_SWINGS_TO_NET_GEOMETRY_TEST_ONLY_LOCAL_PASS",
+      "DONE": false,
+      "evidence_ref": "evidence/candle-target-validation.json",
+      "remaining": [
+        "Full target-family policy and derivation",
+        "Authoritative source/market-calendar and attestor binding",
+        "Active policy and operational candidate/persistence integration"
+      ]
+    },
+    "K07": {
+      "status": "TEST_ONLY_MULTI_RECORD_COMPOSITION_LOCAL_PASS_AUTHORITY_AND_DB_PARTIAL",
+      "DONE": false,
+      "evidence_ref": "evidence/k07-transaction-a-validation.json",
+      "previous_evidence_refs": [
+        "evidence/k07-capacity-persistence-validation.json",
+        "evidence/k07-latest-capacity-validation.json",
+        "evidence/k07-revisions-validation.json",
+        "evidence/k07-handoff-validation.json"
+      ],
+      "remaining": [
+        "Authority-bearing v3.1 FinalSignal and full Transaction A/Transaction B with bound policy/proofs",
+        "Real PostgreSQL migration/atomicity/concurrency/recovery acceptance",
+        "Legacy risk writer convergence and active strategy/risk/account/provider bindings",
+        "Child eligibility, margin and actual independent broker family/compounding reconciliation"
+      ]
+    },
+    "K08": {
+      "status": "EXPLICIT_FACTORY_BRIDGE_LOCAL_PASS_PARTIAL",
+      "DONE": false,
+      "evidence_ref": "evidence/bridge-factory-validation.json",
+      "remaining": [
+        "Bound actual service entrypoint and complete registry acceptance",
+        "Combined strategy-risk-FinalSignal-natural-command lineage",
+        "EA/native and independent broker runtime evidence"
+      ]
+    },
+    "K09": {
+      "status": "NOT_YET_REBOUND",
+      "DONE": false
+    },
+    "K10": {
+      "status": "NOT_YET_REBOUND",
+      "DONE": false
+    },
+    "K11": {
+      "status": "RETENTION_CALLER_AND_RELOAD_REPLAY_LOCAL_PASS_NOT_ATTESTED",
+      "DONE": false,
+      "evidence_ref": "evidence/replay-retention-validation.json",
+      "remaining": [
+        "Bound confidential durable sink and independent receipt custody",
+        "Active independent collector/account/window binding",
+        "Real database/broker reconciliation and natural DEMO acceptance"
+      ]
+    },
+    "K12": {
+      "status": "NOT_YET_REBOUND",
+      "DONE": false
+    }
+  },
+  "next_frontier": [
+    "C01_ALTERNATE_CANARY_EQUIVALENT_GATE",
+    "C02_RUNTIME_OWNER_AND_LEGACY_ZERO_SUBMIT",
+    "C06_ENGINE_SHARED_PROBE_AND_FATAL_LIFECYCLE",
+    "K05_POST_PROOF_VALIDITY"
+  ],
+  "publication": {
+    "source_commit": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+    "remote_checkpoint": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+    "pr": 428,
+    "draft": false,
+    "push": "PR428_PUBLISHED_0D00F140",
+    "reason": "CI34363944821, Security and Docs PASS; 10235 Python and 94 distinct PostgreSQL tests passed with no skip. Current source manifests verified. Evidence publication may have a later SHA; required review and operational bindings remain open.",
+    "no_main_merge": true,
+    "no_deployment": true,
+    "merge": "HOLD"
+  },
+  "new_blockers": {
+    "B-PUBLISH-FRONTEND-BRANCH": {
+      "status": "RESOLVED_FOR_CURRENT_DRAFT_PUSH",
+      "scope": "new push only; local engineering remains executable",
+      "evidence": "evidence/railway-source-bindings.json",
+      "condition_to_retry": "Read-only authoritative branch trigger binding for frontend service b9cd6d24-beae-4211-b475-9b3bfe78b392",
+      "question_asked": false,
+      "latest_evidence": "evidence/p1-ci-20260909/p1-railway-trigger-current.json"
+    }
+  },
+  "integration_frontier_audit": {
+    "evidence_ref": "evidence/bridge-integration-audit.json",
+    "findings": [
+      {
+        "id": "K11-INTENT-CALLER",
+        "finding": "ExecutionIntentRepository is referenced by ExecutionReconciler; no non-test service caller of ExecutionReconciler found in tracked Python source. Prior intent tests prove isolated component behavior.",
+        "next": "Do not prioritize more intent micro-fixes as natural DEMO integration."
+      },
+      {
+        "id": "K08-BRIDGE-ROUTER",
+        "finding": "Executor bridge router exists and calls MT5CommandRepository; application router registry omits that module. API tests mount the router directly on a fixture application.",
+        "next": "Design explicit default-off application factory binding and prove registration/auth/gates through the actual factory before any runtime activation."
+      },
+      {
+        "id": "K11-INDEPENDENT-READER",
+        "finding": "AccountSnapshotV1.broker_ledger_reconciled is a boolean supplied by executor heartbeat; record_heartbeat persists snapshot payload. C2 shadow code consumes that boolean. This is not independently attested broker truth.",
+        "next": "Bind independent reader identity, account/window/report digest and verification interface; no active attestor or broker authority can be inferred from this flag."
+      }
+    ]
+  },
+  "host_capacity_blocker": {
+    "key": "B-HOST-MEMORY",
+    "observed_at": "2026-09-09T05:58:10.952036+00:00",
+    "evidence": "evidence/collector-provenance-validation.json",
+    "scope": [
+      "Final source snapshot/test attempt",
+      "Commit/publication verification"
+    ],
+    "condition_to_resume": "Verified sufficient host capacity without stopping preserved workloads or otherwise explicit bound host intervention",
+    "question_repeated": false,
+    "consecutive_goal_turns": 0,
+    "latest_evidence": "evidence/collector-final-validation.json",
+    "status": "MITIGATED_FOR_BOUNDED_GIT_AND_SMALL_NATIVE_FIXTURE_SUITE"
+  },
+  "platform_status": {
+    "github_billing": "PAID_REPORTED",
+    "actions": "VERIFIED_EXECUTED",
+    "evidence_ref": "evidence/p1-ci-20260909/validation.json"
+  },
+  "detached_verification_checkpoint": {
+    "base_head": "bf20631d44f7b3ed4c0caf8e17f943c3003535d6",
+    "source": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+    "local_distinct": 205,
+    "pg_collected": 94,
+    "pg_current_source": "94_PASS_NO_FAILURE_ERROR_SKIP_SOURCE_VERIFIED",
+    "ref": "pursuit/evidence/k05-detached-pg-20260909/review.json",
+    "observed_at_utc": "2026-09-09T14:22:52.013110+00:00"
+  },
+  "publication_history": [
+    {
+      "source_commit": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
+      "remote_checkpoint": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
+      "pr": 428,
+      "draft": false,
+      "push": "PR428_PUBLISHED_E70264CE",
+      "reason": "Security/Docs and PostgreSQL gates on e70264ce passed. Full CI failed on a stale lock-order assertion (10185pass/1fail); follow-up assertion repair requires new CI. Evidence publication may have a later SHA. Operational binding and fresh review remain open.",
+      "no_main_merge": true,
+      "no_deployment": true,
+      "merge": "HOLD"
+    }
+  ]
+}

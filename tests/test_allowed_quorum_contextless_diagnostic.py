@@ -56,7 +56,7 @@ def test_flag_off_no_diagnostic(monkeypatch, caplog):
     monkeypatch.delenv(_FLAG, raising=False)
     p = _pipeline()
     report: dict = {}
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         out = p._emit_contextless_quorum_diagnostic(
             symbol="GBPCAD", allowed_quorum=_quorum(), l12_verdict={}, report=report
         )
@@ -71,7 +71,7 @@ def test_flag_on_emits_diagnostic_contract(monkeypatch, caplog):
     monkeypatch.setenv(_FLAG, "true")
     p = _pipeline()
     report: dict = {}
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         out = p._emit_contextless_quorum_diagnostic(
             symbol="GBPCAD", allowed_quorum=_quorum(), l12_verdict={}, report=report
         )
@@ -99,7 +99,7 @@ def test_flag_on_missing_direction_not_invented(monkeypatch, caplog):
     """Direction is preserved from quorum/intel if present, never fabricated."""
     monkeypatch.setenv(_FLAG, "true")
     p = _pipeline()
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         out = p._emit_contextless_quorum_diagnostic(
             symbol="GBPCAD", allowed_quorum=_quorum(direction=None), l12_verdict={}, report={}
         )
@@ -120,7 +120,7 @@ def test_integration_missing_context_emits_pressure_state(monkeypatch, caplog):
     monkeypatch.setenv(_FLAG, "true")
     p = _pipeline()
     report = {"allowed_quorum": _quorum()}
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         _apply(p, report=report, market_contexts={})  # empty contexts -> priced payload is None
     assert "[SignalPressureStateJSON]" in caplog.text
     assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
@@ -141,7 +141,7 @@ def test_integration_legacy_diagnostic_flag_off_still_emits_pressure_state(monke
     monkeypatch.setenv(_FLAG, "false")
     p = _pipeline()
     report = {"allowed_quorum": _quorum()}
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         _apply(p, report=report, market_contexts={})
     assert "[SignalPressureStateJSON]" in caplog.text
     assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
@@ -158,7 +158,7 @@ def test_integration_watch_candidate_blocks_diagnostic(monkeypatch, caplog):
         "allowed_quorum": _quorum(),
         "microboost_watch_entry": {"status": "EARLY_SELL_WATCH", "symbol": "GBPCAD"},
     }
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         _apply(p, report=report, market_contexts={})
     assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
     assert "[SignalPressureStateJSON]" not in caplog.text
@@ -181,7 +181,7 @@ def test_integration_priced_path_unchanged(monkeypatch, caplog):
         "cluster_id": "GBPCAD_PRICED_DECISION",
     }
     report = {"allowed_quorum": _quorum()}
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         _apply(p, report=report, market_contexts={})
     assert emitted  # the normal priced path ran
     assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
@@ -194,7 +194,7 @@ def test_integration_cooldown_blocks_second_pressure_state(monkeypatch, caplog):
     monkeypatch.setenv(_OUTER_FLAG, "true")
     monkeypatch.setenv(_FLAG, "true")
     p = _pipeline()
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         _apply(p, report={"allowed_quorum": _quorum()}, market_contexts={})
         _apply(p, report={"allowed_quorum": _quorum()}, market_contexts={})
     assert caplog.text.count("[SignalPressureStateJSON]") == 1

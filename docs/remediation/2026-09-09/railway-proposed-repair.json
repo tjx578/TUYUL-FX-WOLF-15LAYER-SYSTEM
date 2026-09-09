@@ -1,0 +1,15 @@
+{
+  "status": "PROPOSED_NOT_APPLIED",
+  "service_id": "e555dbb1-76ea-4300-8244-80747cfc9786",
+  "project_id": "af4d15d8-d4cb-44b7-80e7-d99a37ca0045",
+  "environment_id": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+  "observed_start_command": "[start_pressure_outbox.sh](C:/Users/INTEL/OneDrive/Documents/GitHub/TUYUL-FX-WOLF-15LAYER-SYSTEM/deploy/railway/start_pressure_outbox.sh).",
+  "proposed_start_command": "bash deploy/railway/start_pressure_outbox.sh",
+  "preconditions": [
+    "Review current staged patch without applying unrelated changes",
+    "Bind tested source/image/config/schema and flags to target",
+    "Pass mandatory release gates",
+    "Confirm compatible recovery and single ownership"
+  ],
+  "reason": "Observed config contains a Markdown Windows-path link; this is a proposed repair, not proof of effective runtime state or deploy readiness."
+}

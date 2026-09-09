@@ -1,0 +1,77 @@
+{
+  "label": "NEGATIVE_CONTROL_ONLY_NOT_POSTGRES_PASS",
+  "at_utc": "2026-09-08T21:13:11.767287+00:00",
+  "python": "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+  "platform": "win32",
+  "source_before": {
+    "tests/integration/test_pair_activity_runtime_postgres.py": "2aa90a87df61c6fafb7084d953cf40736c1c65e43f5c1ac6cfb29f03229604c8",
+    "scripts/ci/run_pair_activity_runtime_acceptance.py": "aba938afae4e07dd3c9f4138245b57160cd56d09a4002fe455863e5642313843",
+    "analysis/strategy_5scr_raw_admission_blocks.py": "b534117a1ca53af90174bebe117f8b56f75add83e270f7a58a87be1bac92cdcd",
+    "analysis/signal_throttle_log_analyzer.py": "95797f2e0ce9da9c73bfeb58f4a12e0f7fc1fab0f251c3484bb566a003e53680",
+    "analysis/strategy_5scr_pair_activity.py": "c0ff373cf65f619a3114eeb90c35287d913d318aebb269716d3733a394922bce",
+    "analysis/strategy_5scr_pair_activity_report.py": "44288d0eea716904c0b6a0aa945a986ba14051c003875033446a995fc6cf3af5",
+    "analysis/strategy_5scr_activity_service.py": "763d1af01745d5258139c3f163b6f47d65e82e4a43fc3fd5663bab9825f3d905",
+    "contracts/strategy_5scr_pair_activity.py": "848f0b3c486420540685cb7848ebdfdbe77151a67aebf7fe6b59aabea8d85bd1",
+    "contracts/strategy_5scr_activity_runtime.py": "7ae75b6f6bf6a707ae0724c39804872642666e2540ddc01dc0d1758181852e2a",
+    "storage/strategy_5scr_activity_runtime.py": "2a9e2d9460422fdd1de3437df13704897d5b7741ad759105af731bc148b53367",
+    "storage/strategy_5scr_activity_schema.py": "ea38653ee636db378e4068f375954faabcdd680894a3026c53fa9ca4544962d8",
+    "storage/migrations/versions/20260909_01_pair_activity_runtime.py": "05d515b9119a61ad9c7b3eb014603e405d7881466b59a7862c7db78a59e54a8a",
+    "pipeline/wolf_constitutional_pipeline.py": "d9c571824811b5f5530dfe56abc02ac6a841fc6c6b00c06feba31f05befb800f",
+    "tests/integration/postgres_test_guard.py": "cd047468f45ea06e57bae138831df2a0d63b50e8d98c71cfa1a63a04582b1129",
+    ".github/workflows/ci.yml": "a5da25e9cfd9885c7412672372fb452f810dbe1eaa9edfdeec9267cc888862b8",
+    "requirements.txt": "1f80669466b282c4e391effe904e5747e2150e87d4623324d10d391531923afb"
+  },
+  "source_after": {
+    "tests/integration/test_pair_activity_runtime_postgres.py": "2aa90a87df61c6fafb7084d953cf40736c1c65e43f5c1ac6cfb29f03229604c8",
+    "scripts/ci/run_pair_activity_runtime_acceptance.py": "aba938afae4e07dd3c9f4138245b57160cd56d09a4002fe455863e5642313843",
+    "analysis/strategy_5scr_raw_admission_blocks.py": "b534117a1ca53af90174bebe117f8b56f75add83e270f7a58a87be1bac92cdcd",
+    "analysis/signal_throttle_log_analyzer.py": "95797f2e0ce9da9c73bfeb58f4a12e0f7fc1fab0f251c3484bb566a003e53680",
+    "analysis/strategy_5scr_pair_activity.py": "c0ff373cf65f619a3114eeb90c35287d913d318aebb269716d3733a394922bce",
+    "analysis/strategy_5scr_pair_activity_report.py": "44288d0eea716904c0b6a0aa945a986ba14051c003875033446a995fc6cf3af5",
+    "analysis/strategy_5scr_activity_service.py": "763d1af01745d5258139c3f163b6f47d65e82e4a43fc3fd5663bab9825f3d905",
+    "contracts/strategy_5scr_pair_activity.py": "848f0b3c486420540685cb7848ebdfdbe77151a67aebf7fe6b59aabea8d85bd1",
+    "contracts/strategy_5scr_activity_runtime.py": "7ae75b6f6bf6a707ae0724c39804872642666e2540ddc01dc0d1758181852e2a",
+    "storage/strategy_5scr_activity_runtime.py": "2a9e2d9460422fdd1de3437df13704897d5b7741ad759105af731bc148b53367",
+    "storage/strategy_5scr_activity_schema.py": "ea38653ee636db378e4068f375954faabcdd680894a3026c53fa9ca4544962d8",
+    "storage/migrations/versions/20260909_01_pair_activity_runtime.py": "05d515b9119a61ad9c7b3eb014603e405d7881466b59a7862c7db78a59e54a8a",
+    "pipeline/wolf_constitutional_pipeline.py": "d9c571824811b5f5530dfe56abc02ac6a841fc6c6b00c06feba31f05befb800f",
+    "tests/integration/postgres_test_guard.py": "cd047468f45ea06e57bae138831df2a0d63b50e8d98c71cfa1a63a04582b1129",
+    ".github/workflows/ci.yml": "a5da25e9cfd9885c7412672372fb452f810dbe1eaa9edfdeec9267cc888862b8",
+    "requirements.txt": "1f80669466b282c4e391effe904e5747e2150e87d4623324d10d391531923afb"
+  },
+  "source_unchanged": true,
+  "results": {
+    "final-activity-postgres-NEGATIVE-CONTROL": {
+      "command": [
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+        "-B",
+        "scripts/ci/run_pair_activity_runtime_acceptance.py"
+      ],
+      "exit_code": 1
+    }
+  },
+  "negative_control_rejection_proved": true,
+  "counts": {
+    "tests": 45,
+    "skipped": 45,
+    "failures": 0,
+    "errors": 0
+  },
+  "acceptance_expected": 45,
+  "acceptance_accepted": false,
+  "postgres_runtime": "NOT_EXECUTED",
+  "linux_runtime": "NOT_EXECUTED",
+  "capacity_recheck": false,
+  "environment": {
+    "inherited_keys": [
+      "COMSPEC",
+      "PATH",
+      "PATHEXT",
+      "SYSTEMROOT",
+      "WINDIR"
+    ],
+    "WOLF15_LOAD_DOTENV": "false",
+    "WOLF15_RUN_POSTGRES_INTEGRATION": "0",
+    "database_credentials_in_runner_environment": false
+  }
+}

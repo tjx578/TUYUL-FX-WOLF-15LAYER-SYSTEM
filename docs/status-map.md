@@ -98,7 +98,7 @@ Each entry is classified by maturity tier so readers know what to trust, what to
 
 | Surface | Tier | Key file(s) | Notes |
 | --------- | ------ | ------------- | ------- |
-| Go-live checklist | C | `docs/architecture/operations/go-live-checklist.md` | Vercel + Railway pre-launch |
+| Go-live checklist | C | `docs/architecture/operations/go-live-checklist.md` | Railway viewer/core acceptance; production HOLD |
 | Go-live (prop firm) | C | `docs/architecture/operations/go-live-checklist-prop-firm.md` | Compliance-specific launch |
 | Deploy order | C | `docs/architecture/operations/deploy-order-staging-prod.md` | Staging → production sequence |
 | Forensic replay & RCA | C | `docs/architecture/operations/forensic-replay-rca.md` | Incident investigation |
@@ -108,10 +108,11 @@ Each entry is classified by maturity tier so readers know what to trust, what to
 
 | Surface | Tier | Key file(s) | Notes |
 | --------- | ------ | ------------- | ------- |
-| Dashboard control surface | C | `docs/architecture/dashboard-control-surface.md` | Owner-operated; not public multi-user |
+| Dashboard control surface | C | `docs/architecture/dashboard-control-surface.md` | Owner-password viewer; no execution authority |
 | API key rotation | C | `dashboard/api_key_manager.py` | HMAC + grace-period rotation |
 | State manager (RWLock) | C | `dashboard/state_manager.py` | Write-preferring lock, torn-read prevention |
-| Next.js frontend | U | `dashboard/nextjs/` | TypeScript, CI build-gated |
+| Next.js frontend | U | `dashboard/nextjs/` | Selected Railway viewer, port 8080; direct core API, production acceptance HOLD |
+| Dashboard direct API topology | C | `docs/architecture/dashboard-hybrid-topology.md` | Historical filename; current exact GET + HttpOnly contract |
 
 ## 10. CI / Quality
 

@@ -1,0 +1,279 @@
+{
+  "scope": "DISPOSABLE_PG_APPLICATION_ROLE_AND_BUILT_API_PROCESS_BOUND",
+  "source_commit": "9fcfd80c058178116db31d498c45546746873ad6",
+  "captured_at": "2026-09-09T12:34:50.502088+00:00",
+  "ci_run": "34350658499",
+  "security_run": "34350658549",
+  "python_suite": {
+    "tests": 10168,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "pg_receipts": [
+    {
+      "module": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "0bd0583e13c843681b3d7cf4da8de84a52e889bd",
+      "receipt": "p1-ci-20260909/34350658499/0c8f19acc7014d52a6d9e3b9bf189da0/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_transaction_a_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 9
+      },
+      "tested_merge_sha": "0bd0583e13c843681b3d7cf4da8de84a52e889bd",
+      "receipt": "p1-ci-20260909/34350658499/222b128fcb724c57a915e703011a770d/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_activity_consumer_role_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "tested_merge_sha": "0bd0583e13c843681b3d7cf4da8de84a52e889bd",
+      "receipt": "p1-ci-20260909/34350658499/2b7cc1ef014c43f985ad31cceb245e6d/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "tested_merge_sha": "0bd0583e13c843681b3d7cf4da8de84a52e889bd",
+      "receipt": "p1-ci-20260909/34350658499/2c8d3fec241c4101b0d04c51bab08700/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 45
+      },
+      "tested_merge_sha": "0bd0583e13c843681b3d7cf4da8de84a52e889bd",
+      "receipt": "p1-ci-20260909/34350658499/9b3e8e3b1b8541579e62347aa141aab6/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "0bd0583e13c843681b3d7cf4da8de84a52e889bd",
+      "receipt": "p1-ci-20260909/34350658499/de723ace7df8404d829793942d93a7b8/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 11
+      },
+      "tested_merge_sha": "0bd0583e13c843681b3d7cf4da8de84a52e889bd",
+      "receipt": "p1-ci-20260909/34350658499/fa8c8c2eaed64ada98efebaa1db15b1f/receipt.json"
+    }
+  ],
+  "built_api": {
+    "scope": "BUILT_API_BOOTSTRAP_LIFESPAN_AND_HTTP_ONLY",
+    "accepted": true,
+    "cases": [
+      {
+        "case": "full_built_registry",
+        "passed": true
+      },
+      {
+        "case": "served_dependency_failure",
+        "healthz": 200,
+        "readyz": 503,
+        "passed": true
+      },
+      {
+        "case": "single_configured_listener",
+        "ports": [
+          18080
+        ],
+        "passed": true
+      },
+      {
+        "case": "graceful_shutdown",
+        "exit_code": -15,
+        "passed": true
+      },
+      {
+        "case": "required_worker_late_failure",
+        "readyz": 503,
+        "exit_code": 1,
+        "listener_ports": [
+          18080
+        ],
+        "drain_before_pool": true,
+        "passed": true
+      },
+      {
+        "case": "resistant_worker_process_bound",
+        "readyz": 503,
+        "exit_code": 1,
+        "elapsed_seconds": 46.116,
+        "pool_closed_while_writer_alive": false,
+        "passed": true
+      },
+      {
+        "case": "mandatory_router",
+        "exit_code": 1,
+        "passed": true
+      },
+      {
+        "case": "bootstrap",
+        "exit_code": 1,
+        "passed": true
+      },
+      {
+        "case": "required_worker_bootstrap",
+        "exit_code": 1,
+        "passed": true
+      }
+    ]
+  },
+  "application_role": {
+    "committed_and_duplicate": true,
+    "credential_recorded": false,
+    "forbidden_privilege_cases": 4,
+    "granted_tables": [
+      "strategy_5scr_owner_fences_v1",
+      "strategy_5scr_analysis_lifecycles_v2",
+      "strategy_5scr_activity_inbox_v1",
+      "strategy_5scr_activity_conflicts_v1",
+      "strategy_5scr_activity_consumer_cursors_v1",
+      "strategy_5scr_activity_mappings_v1",
+      "strategy_5scr_activity_emissions_v1"
+    ],
+    "identity": {
+      "effective_user": "s03_app_07d8d6b11a2f4f00",
+      "login_user": "s03_app_07d8d6b11a2f4f00",
+      "rolbypassrls": false,
+      "rolcreatedb": false,
+      "rolcreaterole": false,
+      "rolreplication": false,
+      "rolsuper": false
+    },
+    "legacy_unfenced_write_rejected": true,
+    "run_id": "2b7cc1ef014c43f985ad31cceb245e6d",
+    "scope": "DISPOSABLE_LOGIN_ROLE_ONLY_NOT_PRODUCTION_GRANTS",
+    "stale_owner_rejected": true
+  },
+  "delivery_mapping": {
+    "D01": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D02": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_fresh_consumer_after_restart_recovers_committed_inbox"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D03": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_payload_conflict_quarantined_in_database"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D04": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_successor_waits_for_consumer_predecessor"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D05": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D06": {
+      "postgres_test_ids": [],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D07": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[mappings]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[emissions]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[inbox]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[consumer_cursors]"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D08": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_legacy_writer_and_old_owner_cannot_bypass_handover",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_concurrent_consumer_duplicate_has_one_effect"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D09": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_existing_advisory_lifecycle_is_attached_without_remint"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D10": {
+      "postgres_test_ids": [],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D11": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_legacy_writer_and_old_owner_cannot_bypass_handover"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    }
+  },
+  "delivery_mapping_note": "Historical IDs retained. Current 11 consumer identities execute without skip; original mapping NOT_EXECUTED labels are historical, not current results. D06 uses separate producer gate; D10 expiry/policy remains model-only. No whole-S03 closure.",
+  "expected_actual": {
+    "ack_loss": "consumer commit, expired relay ACK rejected, same delivery on new lease deduplicated, valid ACK permits successor",
+    "atomicity": "four injected write-stage failures leave no consumer partial state",
+    "owner": "real LOGIN consumer commits; legacy unfenced and stale owner writes rejected; four privilege escalations denied",
+    "resistant_shutdown": "causal readiness 503, exit 1 after 46.116s, pool not closed while writer alive",
+    "governance": "main strict CI/Security/Docs checks, admin enforcement and one fresh approval required; PR OPEN/REVIEW_REQUIRED"
+  },
+  "review": "AUTHOR_SERIAL_ONLY",
+  "limits": [
+    "Application-role privileges created only in disposable database, not production grants",
+    "Transport uses authenticated ASGI with actual PostgreSQL, not deployed HTTPS/TLS",
+    "Operational policy/attestor/account/broker binding remains open",
+    "C01 alternate canary path, C02 runtime owner/zero-submit and C06 other roles remain open",
+    "No main merge or Railway deployment"
+  ],
+  "milestones_done": 0
+}

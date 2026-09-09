@@ -1,0 +1,450 @@
+{
+  "accepted": true,
+  "scope": "SOURCE_SECRET_DETECTION_NO_CREDENTIAL_VALIDATION",
+  "findings": [
+    {
+      "path": ".github/workflows/railway-deploy.yml",
+      "line": 40,
+      "detector": "RailwayApp",
+      "raw_sha256": "8c04415719b886742f7dcbe2b445f6fb58ca8570e0a6f4e9a1426a111e488eb3",
+      "source_file_sha256": "5ad2e640454b03b0a4e75de68049f485bf6041fc4f76e897038146940cf33ee3",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "NON_SECRET_RESOURCE_ID: exact Railway project/environment UUID, not an authentication token"
+    },
+    {
+      "path": ".github/workflows/railway-deploy.yml",
+      "line": 39,
+      "detector": "RailwayApp",
+      "raw_sha256": "d2e3b20f6e2b5ba3f44e66f84076d06c7a4fc38d2382e9cca94dffa36abc3d1e",
+      "source_file_sha256": "5ad2e640454b03b0a4e75de68049f485bf6041fc4f76e897038146940cf33ee3",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "NON_SECRET_RESOURCE_ID: exact Railway project/environment UUID, not an authentication token"
+    },
+    {
+      "path": "dashboard/nextjs/src/__tests__/dashboardTopology.test.ts",
+      "line": 16,
+      "detector": "URI",
+      "raw_sha256": "0331e8e5e54bedb2f7d2b6a229856d4ed03a45876215657f9d420e262abf701d",
+      "source_file_sha256": "a1ba3368d3ff5e231c9cd362df60bb0f40b167c162c7115be444a4ccebeb120d",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "dashboard/nextjs/src/__tests__/canonical-origin.test.ts",
+      "line": 28,
+      "detector": "URI",
+      "raw_sha256": "1231625e7e70c4e56347672932d37a1c35eff89051483b37cbd09f7b9c58337e",
+      "source_file_sha256": "eefa3aca6bc84893e00c3fedfd02c61e06df368e919d95b23ccb1f0e3647b50b",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "dashboard/nextjs/src/tests/nextConfigEnv.test.ts",
+      "line": 14,
+      "detector": "URI",
+      "raw_sha256": "cb120e22dbafb0fbff2f262dcc6f8dc5d57406ee06237a5d3dbad19f81b736be",
+      "source_file_sha256": "98aaff6f8c4c090fd353730246ac3a40c4bb00b5cee484475ceebd2fc49a0732",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/evidence/release-audit.json",
+      "line": 33,
+      "detector": "RailwayApp",
+      "raw_sha256": "d2e3b20f6e2b5ba3f44e66f84076d06c7a4fc38d2382e9cca94dffa36abc3d1e",
+      "source_file_sha256": "3dfe55ae7052aa93a22a692a590bfefe05a284a587ce70f8ec05727e6c26bfa0",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "NON_SECRET_RESOURCE_ID: exact Railway project/environment UUID, not an authentication token"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-runner-binding/evidence/runner-evidence-final-v2.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "5565487019dad6f83ba57f815610d9230b9f9b2de71cc78c160bf7cbbabd4fbc",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-runner-binding/evidence/runner-evidence-final-v2-collection.log",
+      "line": 203,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "54a6406241f4f1246a2952dee8b22f18d41b8c27c6dcc2cdb738c7e4d0fd5827",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-runner-binding/evidence/runner-evidence-final-v2-collection.log",
+      "line": 202,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "54a6406241f4f1246a2952dee8b22f18d41b8c27c6dcc2cdb738c7e4d0fd5827",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-runner-binding/evidence/runner-evidence-final-v2-receipt.json",
+      "line": 251,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "d560116ba9dd142f27a412c2a57b7e19800c63d24c247272561bb7f6762ed927",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-runner-binding/evidence/runner-evidence-final-v2-receipt.json",
+      "line": 252,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "d560116ba9dd142f27a412c2a57b7e19800c63d24c247272561bb7f6762ed927",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-runner-binding/evidence/runner-evidence-final-v2.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "5565487019dad6f83ba57f815610d9230b9f9b2de71cc78c160bf7cbbabd4fbc",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-combined.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "6701fb018a05cc1117c8ec1245306acec7033a3ea3d9419a8bbc5f3165aae434",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-combined-receipt.json",
+      "line": 677,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "96a2411b87a0e997a5d8d9bbc52d8e70b3806fec4071e855f6e216d42d41e90a",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-combined-receipt.json",
+      "line": 676,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "96a2411b87a0e997a5d8d9bbc52d8e70b3806fec4071e855f6e216d42d41e90a",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/inputs/WOLF15_Master_Evidence_2026-09-08.zip",
+      "line": 200,
+      "detector": "RailwayApp",
+      "raw_sha256": "d2e3b20f6e2b5ba3f44e66f84076d06c7a4fc38d2382e9cca94dffa36abc3d1e",
+      "source_file_sha256": "f38972426d532a4275bab088a3a7d7953f1a4b9732e758129f04b804b18800c0",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "NON_SECRET_RESOURCE_ID: exact Railway project/environment UUID, not an authentication token"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-combined.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "6701fb018a05cc1117c8ec1245306acec7033a3ea3d9419a8bbc5f3165aae434",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-final-receipt.json",
+      "line": 678,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "2bc7f1a5a3759a4f4b6634628395f5509b590fdb10d0a5ec56d5db0f8bafd882",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-combined-collection.log",
+      "line": 602,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "1211e633b82e52f58d348cd59cb1177870be855da3d440e1ef5f4d359a0a53f6",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-final-collection.log",
+      "line": 602,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "f981137a5fa0e5fa29af4acde0a396a7a8feace8797e05bda461539cb2dbd0ac",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-final-collection.log",
+      "line": 603,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "f981137a5fa0e5fa29af4acde0a396a7a8feace8797e05bda461539cb2dbd0ac",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-final.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "f06c24a5f41f2abac95d459255756ccdcbcc8bbc075ffb36448c7db75842e5b1",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-final.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "f06c24a5f41f2abac95d459255756ccdcbcc8bbc075ffb36448c7db75842e5b1",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/inputs/WOLF15_Master_Evidence_2026-09-08.zip",
+      "line": 3,
+      "detector": "RailwayApp",
+      "raw_sha256": "d2e3b20f6e2b5ba3f44e66f84076d06c7a4fc38d2382e9cca94dffa36abc3d1e",
+      "source_file_sha256": "f38972426d532a4275bab088a3a7d7953f1a4b9732e758129f04b804b18800c0",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "NON_SECRET_RESOURCE_ID: exact Railway project/environment UUID, not an authentication token"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-final-receipt.json",
+      "line": 677,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "2bc7f1a5a3759a4f4b6634628395f5509b590fdb10d0a5ec56d5db0f8bafd882",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/followup-s03-runtime/evidence/s03-runtime-combined-collection.log",
+      "line": 601,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "1211e633b82e52f58d348cd59cb1177870be855da3d440e1ef5f4d359a0a53f6",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/inputs/WOLF15_Master_Remediation_2026-09-08.md",
+      "line": 200,
+      "detector": "RailwayApp",
+      "raw_sha256": "d2e3b20f6e2b5ba3f44e66f84076d06c7a4fc38d2382e9cca94dffa36abc3d1e",
+      "source_file_sha256": "787f2ca210dd9099f6495919c61a7481fa3f327973df2c9d90a8e9c2f144adfe",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "NON_SECRET_RESOURCE_ID: exact Railway project/environment UUID, not an authentication token"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/inputs/pasted-assessment-1.txt",
+      "line": 15,
+      "detector": "RailwayApp",
+      "raw_sha256": "d2e3b20f6e2b5ba3f44e66f84076d06c7a4fc38d2382e9cca94dffa36abc3d1e",
+      "source_file_sha256": "40cbe747c2aac98033089ffa6a761bbf5edbd4fbac24b46c75caae66cdbb304c",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "NON_SECRET_RESOURCE_ID: exact Railway project/environment UUID, not an authentication token"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/34342279046/python-suite/tests.xml",
+      "line": 167,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "75db2e549aa7e1a750ae5e373214f92913d469946ad092aefe592b5d2916ed61",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/34342279046/python-suite/tests.xml",
+      "line": 167,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "75db2e549aa7e1a750ae5e373214f92913d469946ad092aefe592b5d2916ed61",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/34343429530/python-suite/tests.xml",
+      "line": 187,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "1391df2bc3410bd54c0cc0e944b38275a4662a62bf4dbc16ad20aa1a7829f139",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/34343429530/python-suite/tests.xml",
+      "line": 187,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "1391df2bc3410bd54c0cc0e944b38275a4662a62bf4dbc16ad20aa1a7829f139",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-gate-a1-collection.log",
+      "line": 18,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "9b25f2d44dc2455458266a1606b38bbdb95421f9d8198917ed45f63b297ea2b9",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-ip-a1-collection.log",
+      "line": 18,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "d235961a384b487a52c64cbab9edb014c1f68341282c32f1c007006f365dc501",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-ip-a1.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "ab19f0177127c551626e55a59c8cb03ea8b3f61f8239cc97279ead828dbdc8eb",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-ip-a1-collection.log",
+      "line": 17,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "d235961a384b487a52c64cbab9edb014c1f68341282c32f1c007006f365dc501",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-gate-a1-receipt.json",
+      "line": 59,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "a1a7caddc2a18186bb657ffd02a65557cf827db618b5249a0503901c512a16ca",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-gate-a1-receipt.json",
+      "line": 60,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "a1a7caddc2a18186bb657ffd02a65557cf827db618b5249a0503901c512a16ca",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-gate-a1-collection.log",
+      "line": 17,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "9b25f2d44dc2455458266a1606b38bbdb95421f9d8198917ed45f63b297ea2b9",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-ip-a1-receipt.json",
+      "line": 60,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "94fe7d417ffedea4368ddc80e3d6c290c2e1271e2a8ed428245f555bfbb2c0e5",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-ip-a1-receipt.json",
+      "line": 59,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "94fe7d417ffedea4368ddc80e3d6c290c2e1271e2a8ed428245f555bfbb2c0e5",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-ip-a1.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "ab19f0177127c551626e55a59c8cb03ea8b3f61f8239cc97279ead828dbdc8eb",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-gate-a1.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "96a308362b5ea80dbd91f4984ffc18a6f04fc9fd358890dce24b1825eb0c2cd8",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "docs/remediation/2026-09-09/pursuit/evidence/p1-ci-20260909/p1-gate-a1.xml",
+      "line": 1,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "96a308362b5ea80dbd91f4984ffc18a6f04fc9fd358890dce24b1825eb0c2cd8",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "tests/test_log_redaction.py",
+      "line": 32,
+      "detector": "Postgres",
+      "raw_sha256": "85834c60ab66b581c5eddef0918349aa246dbadf54ef221812350afa44a09f3e",
+      "source_file_sha256": "12d7215d696c8c54876a057d061d23ba10f6d87dac52c9b43b8bd7ec0c9fdf59",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "tests/test_log_redaction.py",
+      "line": 9,
+      "detector": "Postgres",
+      "raw_sha256": "eb661234f2f45ebb27ec9d881ccae6b2f95454d520adabcd95dc271c01289960",
+      "source_file_sha256": "12d7215d696c8c54876a057d061d23ba10f6d87dac52c9b43b8bd7ec0c9fdf59",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "tests/test_log_redaction.py",
+      "line": 12,
+      "detector": "Postgres",
+      "raw_sha256": "eb661234f2f45ebb27ec9d881ccae6b2f95454d520adabcd95dc271c01289960",
+      "source_file_sha256": "12d7215d696c8c54876a057d061d23ba10f6d87dac52c9b43b8bd7ec0c9fdf59",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "tests/test_postgres_test_guard.py",
+      "line": 81,
+      "detector": "Postgres",
+      "raw_sha256": "06047ca0e0268f212bdb942bfc4880c74ae9189368428b9f1472bfb4766d45d4",
+      "source_file_sha256": "bdf858e120da7ee097d287e7f8098d440b6ed354346ae0b9768fe4c40eda949e",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    },
+    {
+      "path": "tests/test_postgres_test_guard.py",
+      "line": 80,
+      "detector": "Postgres",
+      "raw_sha256": "e82f6ecc5cfb895b4b9dfc1233fc80864c1b7724414d97119ef6fe301b445586",
+      "source_file_sha256": "bdf858e120da7ee097d287e7f8098d440b6ed354346ae0b9768fe4c40eda949e",
+      "disposition": "REVIEWED_EXACT_BYTES",
+      "reason": "REVIEWED_FIXTURE: exact dummy credential literal in negative validation/redaction tests or immutable receipts of those test IDs"
+    }
+  ],
+  "source_commit": "627a6e230a2488d7b63e257aca0ca0720f80b985",
+  "scanner_exit": 183,
+  "review_policy_sha256": "7c691584f8f7758c5e7cce144cd5d201f8b749c6122d750defb51ca4f701e342"
+}

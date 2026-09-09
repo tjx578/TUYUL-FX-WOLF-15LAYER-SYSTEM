@@ -1,17 +1,20 @@
-# Wolf-15 Production Go-Live (Vercel + Railway)
+# Wolf-15 Production Go-Live Gates (Railway)
 
 See also: docs/architecture/operations/deploy-order-staging-prod.md for step-by-step deployment order in staging and production.
 
-## 1) Final Architecture
 
-- Browser → HTTPS → Vercel (Next.js)
-- Vercel → HTTPS (server-to-server) → Railway FastAPI backend
-- Backend only service that talks to Redis + Postgres
+> Dashboard revision 2026-09-09: repository-only direct-core owner-login changes target the existing Railway frontend `https://wolf15-dashboard-frontend-production.up.railway.app`, port `8080`, and API `https://wolf15-api-production.up.railway.app`. The observed public login still displays `VIEWER JWT`. Password-login/direct-core production acceptance remains HOLD; no deployment, provider-variable mutation, secret provisioning or trading activation was performed.
+
+## 1) Selected architecture
+
+- Browser -> HTTPS -> selected Railway Next.js viewer (port 8080)
+- Next server -> HTTPS -> Railway core API; no standalone BFF dependency
+- The selected frontend never connects to Redis/Postgres; independent backend services retain their existing state access
 - EA bridge private/internal only (not public route exposure)
 
 ## 2) Backend ENV (Railway Variables)
 
-Set exactly in Railway service variables:
+The following backend-wide checklist is a review reference, not authorization to change provider variables. Confirm actual API-only runtime and current auth configuration before any separately authorized rollout. Owner-password sessions remain capped at 15 minutes regardless of a legacy token-lifetime setting:
 
 - `ENV=production`
 - `DEBUG=false`
@@ -46,7 +49,7 @@ Rules:
 
 This repo now runs API via Gunicorn worker model in:
 
-- [deploy/railway/start_api.sh](deploy/railway/start_api.sh)
+- [../../../deploy/railway/start_api.sh](../../../deploy/railway/start_api.sh)
 
 Parameters:
 
@@ -86,27 +89,28 @@ Requirements:
 
 App status:
 
-- async pool already used in [storage/postgres_client.py](storage/postgres_client.py)
-- health integrated in [api_server.py](api_server.py#L332)
+- async pool already used in [../../../storage/postgres_client.py](../../../storage/postgres_client.py)
+- health integrated in [api_server.py](../../../api_server.py#L332)
 
-## 6) Vercel Config
+## 6) Selected Railway frontend configuration
 
-Frontend env:
+Repository contract, to verify against provider metadata before an authorized deployment:
 
-- `NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com`
-- `NEXT_PUBLIC_WS_URL=wss://api.yourdomain.com/ws`
+- `DASHBOARD_MODE=viewer`
+- `DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app`
+- `INTERNAL_API_URL=https://wolf15-api-production.up.railway.app` (server-only)
+- `PORT=8080`
+- API-only core startup; `WOLF15_EMBED_ORCHESTRATOR=false`
 
-Do not store secrets in Vercel public vars.
+No browser API/WS variable, machine key, signing secret or dashboard-BFF URL is required by the selected frontend. Use Secure HttpOnly SameSite sessions and the exact three direct-core GET projections. A legacy Python BFF may still exist independently; this checklist does not assert that it has been stopped or removed from the provider.
 
-Frontend config updated:
-
-- [dashboard/nextjs/next.config.js](dashboard/nextjs/next.config.js)
+See [direct API contract](../dashboard-hybrid-topology.md) and `dashboard/nextjs/next.config.js` for source behavior. Public login remains the observed legacy `VIEWER JWT` page until exact-source deployment and password-login acceptance are separately proven.
 
 ## 7) Rate Limit
 
 Redis-backed limiter configured in:
 
-- [api/middleware/rate_limit.py](api/middleware/rate_limit.py)
+- [../../../api/middleware/rate_limit.py](../../../api/middleware/rate_limit.py)
 
 Supports:
 
@@ -115,11 +119,11 @@ Supports:
 - Redis prefix via `RATE_LIMIT_REDIS_PREFIX`
 - trusted proxy behavior via `TRUSTED_PROXY_ENABLED`
 
-## 8) WebSocket Hardening
+## 8) Separate backend WebSocket hardening (not the selected viewer)
 
 Implemented in:
 
-- [api/ws_routes.py](api/ws_routes.py)
+- [../../../api/ws_routes.py](../../../api/ws_routes.py)
 
 Controls:
 
@@ -132,7 +136,7 @@ Controls:
 
 Implemented in:
 
-- [api_server.py](api_server.py)
+- [../../../api_server.py](../../../api_server.py)
 
 Includes:
 
@@ -159,7 +163,7 @@ Operator status checks:
 
 File:
 
-- [api_server.py](api_server.py#L332)
+- [api_server.py](../../../api_server.py#L332)
 
 Recommended Railway alerts:
 
@@ -182,4 +186,11 @@ Recommended Railway alerts:
 - [ ] 429 response triggered when limit exceeded
 - [ ] HTTPS redirect active (`FORCE_HTTPS=true`)
 - [ ] CSP header present in responses
-- [ ] Vercel points to `https://api.yourdomain.com` and `wss://api.yourdomain.com/ws`
+- [ ] Selected Railway origin, port 8080 and server-only core HTTPS origin match reviewed configuration
+- [ ] API-only effective startup is verified with embedded orchestrator disabled
+- [ ] Exact source, image and selected-domain identity are bound together
+- [ ] Strict build, focused auth/containment tests and source/browser credential scans pass
+- [ ] Production password login, wrong-password denial, viewer scope, expiry and logout pass
+- [ ] All three production read projections contain only sanitized real core data; failures preserve unknown/HOLD
+- [ ] Browser requests contain no machine credentials or JavaScript-readable JWT
+- [ ] No BFF/legacy frontend fallback or execution/broker mutation route is reachable

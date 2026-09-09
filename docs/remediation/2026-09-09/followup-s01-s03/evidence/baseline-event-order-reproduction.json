@@ -1,0 +1,100 @@
+{
+  "baseline_sha": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+  "baseline_file_sha256": "8f2f4f9393333abe0ac6d6ded56109b464e1bdb1fe138454e19f9ae15dd2b1b8",
+  "current_file_sha256": "7c19974d97b5a8c3eb43c673e133723c0f09304f40e5e41dc613cf1cc63da70b",
+  "recording_method_ast_hashes_baseline": {
+    "_record_runtime_event": "017188de892fb6a41152203b7da556619736c8b02b6ae8ca1f2ab967d76321a9",
+    "record_throttled": "68773c8c66fbff9e6aa8433895a4d38a30ea2228e175470ae249205d40011c23",
+    "_canonical_event_key": "1a2146ff745cf6e8846c6f7f3d4e504c3a4427b0553fb49564c9f03ce99ce86b",
+    "_insert_event_canonically_locked": "dcaa77a1479ed8b546469b48fdbddb9b44130330bbc25daababde83f779bfe1c"
+  },
+  "recording_method_ast_hashes_current": {
+    "_record_runtime_event": "017188de892fb6a41152203b7da556619736c8b02b6ae8ca1f2ab967d76321a9",
+    "record_throttled": "68773c8c66fbff9e6aa8433895a4d38a30ea2228e175470ae249205d40011c23",
+    "_canonical_event_key": "1a2146ff745cf6e8846c6f7f3d4e504c3a4427b0553fb49564c9f03ce99ce86b",
+    "_insert_event_canonically_locked": "dcaa77a1479ed8b546469b48fdbddb9b44130330bbc25daababde83f779bfe1c"
+  },
+  "recording_methods_identical": true,
+  "examples": [
+    {
+      "timestamp": "2026-09-08T20:20:00+00:00",
+      "baseline": [
+        {
+          "type": "THROTTLED",
+          "timestamp": "2026-09-08T20:20:00+00:00",
+          "raw_id": "sha256:52dd205e2f805f8cce4aaf19e0f15a5bded6d0e3beefb1ff144c3f7da255248f",
+          "direction": null,
+          "inferred_direction": "BUY",
+          "eligible_for_execution": false
+        },
+        {
+          "type": "DOWNGRADED_TO_HOLD",
+          "timestamp": "2026-09-08T20:20:00+00:00",
+          "raw_id": "sha256:ce4f89788d43d808e568ad10b64201da1063e066c431ff1b1dde375917fcb7b5",
+          "direction": "BUY",
+          "inferred_direction": null,
+          "eligible_for_execution": false
+        }
+      ],
+      "current": [
+        {
+          "type": "THROTTLED",
+          "timestamp": "2026-09-08T20:20:00+00:00",
+          "raw_id": "sha256:52dd205e2f805f8cce4aaf19e0f15a5bded6d0e3beefb1ff144c3f7da255248f",
+          "direction": null,
+          "inferred_direction": "BUY",
+          "eligible_for_execution": false
+        },
+        {
+          "type": "DOWNGRADED_TO_HOLD",
+          "timestamp": "2026-09-08T20:20:00+00:00",
+          "raw_id": "sha256:ce4f89788d43d808e568ad10b64201da1063e066c431ff1b1dde375917fcb7b5",
+          "direction": "BUY",
+          "inferred_direction": null,
+          "eligible_for_execution": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-09-08T20:20:03+00:00",
+      "baseline": [
+        {
+          "type": "DOWNGRADED_TO_HOLD",
+          "timestamp": "2026-09-08T20:20:03+00:00",
+          "raw_id": "sha256:562f4117860abed9d5d9364fe54c656b89f51fbbb6001e8fc767f3581a034849",
+          "direction": "BUY",
+          "inferred_direction": null,
+          "eligible_for_execution": false
+        },
+        {
+          "type": "THROTTLED",
+          "timestamp": "2026-09-08T20:20:03+00:00",
+          "raw_id": "sha256:a6ce2f4d368562632219c8e458d87f5c7cf1cfab600b73eb9d058777ecc40780",
+          "direction": null,
+          "inferred_direction": "BUY",
+          "eligible_for_execution": false
+        }
+      ],
+      "current": [
+        {
+          "type": "DOWNGRADED_TO_HOLD",
+          "timestamp": "2026-09-08T20:20:03+00:00",
+          "raw_id": "sha256:562f4117860abed9d5d9364fe54c656b89f51fbbb6001e8fc767f3581a034849",
+          "direction": "BUY",
+          "inferred_direction": null,
+          "eligible_for_execution": false
+        },
+        {
+          "type": "THROTTLED",
+          "timestamp": "2026-09-08T20:20:03+00:00",
+          "raw_id": "sha256:a6ce2f4d368562632219c8e458d87f5c7cf1cfab600b73eb9d058777ecc40780",
+          "direction": null,
+          "inferred_direction": "BUY",
+          "eligible_for_execution": false
+        }
+      ]
+    }
+  ],
+  "classification": "PREEXISTING_TEST_ASSUMES_ARRIVAL_ORDER_DESPITE_RAW_ID_TIEBREAK",
+  "production_or_broker_access": false
+}

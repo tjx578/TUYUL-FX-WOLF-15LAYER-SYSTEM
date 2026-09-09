@@ -1,0 +1,38 @@
+{
+  "observed_at_utc": "2026-09-09T02:46:24.217646+00:00",
+  "source": {
+    "source_commit": "a25b41cf020a0ffb349aa6dfe3e34d6184e2d45e",
+    "parent": "0f7a98b28d9b3ee3a72cd1309ada2236b6a9e3fb",
+    "git_sha256": {
+      "contracts/strategy_5scr_activity_delivery.py": "3603e126e75f8fb5feed2b0eb67c22c0ab23c21f10b7a24648a3745c8c77c4db",
+      "tests/test_activity_delivery_contract.py": "ea3734fbf2167fc835d072748c370bbd2ebf307c5c16b760458f2bdf4de6345f"
+    },
+    "local_tests": 126,
+    "scope": "DRAFT_PROTOCOL_AND_EXISTING_LOCAL_REGRESSION",
+    "runtime_wiring": "NOT_IMPLEMENTED",
+    "postgres_acceptance": "NOT_EXECUTED",
+    "linux_acceptance": "NOT_EXECUTED"
+  },
+  "verdict": "INCOMPLETE_HOLD",
+  "milestones_done": 0,
+  "milestones_total": 6,
+  "local_tests": {
+    "expected": 126,
+    "passed": 126,
+    "new_protocol_cases": 28,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "source_unchanged": true
+  },
+  "schema_examples": 3,
+  "runtime_delivery_integration": "NOT_IMPLEMENTED",
+  "postgres_acceptance": "NOT_EXECUTED",
+  "linux_acceptance": "NOT_EXECUTED",
+  "self_hosted_runner_inventory_interpretation": "SELF_HOSTED_ONLY",
+  "hosted_runner_target": "ubuntu-latest",
+  "github_reported_failure_on_0f7a98b2": "ACCOUNT_LOCKED_DUE_TO_BILLING_ISSUE",
+  "billing_remediation": "EXCLUDED_BY_USER",
+  "production_mutations": false,
+  "independent_final_review": "NOT_EXECUTED"
+}
