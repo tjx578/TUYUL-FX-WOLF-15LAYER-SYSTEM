@@ -98,6 +98,7 @@ def run(image, redis_image, output):
                 REDIS_SOCKET_CONNECT_TIMEOUT_SEC="1",
                 REDIS_POOL_TIMEOUT_SEC="1",
                 DEGRADED_HOLD_TIMEOUT_SEC="8",
+                ORCHESTRATOR_FATAL_DIAGNOSTIC_HOLD_SEC="8",
             )
             command = [
                 "run",
