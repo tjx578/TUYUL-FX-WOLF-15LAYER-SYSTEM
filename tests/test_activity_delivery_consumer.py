@@ -31,6 +31,9 @@ class ConsumerDB:
         self.active = False
         self.fail_at = None
 
+    def is_in_transaction(self):
+        return self.active
+
     @asynccontextmanager
     async def transaction(self):
         assert not self.active
@@ -38,6 +41,8 @@ class ConsumerDB:
         self.active = True
         try:
             yield self
+            if self.fail_at == "commit":
+                raise RuntimeError("injected consumer commit failure")
         except BaseException:
             self.data = before
             raise
@@ -115,7 +120,7 @@ def test_commit_then_expired_relay_ack_then_duplicate_ack_recovers():
     assert len(db.data["lifecycles"]) == len(db.data["emissions"]) == len(db.data["inbox"]) == 1
 
 
-@pytest.mark.parametrize("fail_at", ["mappings", "emissions", "inbox", "consumer_cursors"])
+@pytest.mark.parametrize("fail_at", ["mappings", "emissions", "inbox", "consumer_cursors", "commit"])
 def test_every_consumer_write_failure_rolls_back(fail_at):
     db = ConsumerDB()
     db.fail_at = fail_at
@@ -176,6 +181,35 @@ def test_authenticated_route_returns_ack_only_after_commit():
         )
     assert response.status_code == 200 and response.json()["outcome"] == "COMMITTED"
     assert not db.active and len(db.data["inbox"]) == 1
+
+
+def test_authenticated_route_does_not_ack_failed_commit_and_retry_succeeds():
+    db = ConsumerDB()
+    db.fail_at = "commit"
+    binding = ActivityTransportBinding(
+        destination="https://consumer.test/internal/s03/activity-deliveries",
+        identity="fixture-producer",
+        key=b"x" * 32,
+        maximum_skew_seconds=30,
+    )
+    app = FastAPI()
+    app.include_router(activity_consumer_router(binding=binding, consumer=consumer(db), maximum_payload_bytes=100000))
+    wire = delivery().model_dump_json().encode()
+    timestamp = str(int(time.time()))
+    headers = {
+        "X-S03-Identity": binding.identity,
+        "X-S03-Time": timestamp,
+        "X-S03-Signature": binding.signature(timestamp, wire),
+    }
+    with TestClient(app, raise_server_exceptions=False) as client:
+        failed = client.post("/internal/s03/activity-deliveries", content=wire, headers=headers)
+        assert failed.status_code == 500
+        assert "COMMITTED" not in failed.text
+        assert all(not rows for rows in db.data.values()) and not db.active
+        db.fail_at = None
+        retry = client.post("/internal/s03/activity-deliveries", content=wire, headers=headers)
+    assert retry.status_code == 200 and retry.json()["outcome"] == "COMMITTED"
+    assert len(db.data["lifecycles"]) == len(db.data["emissions"]) == len(db.data["inbox"]) == 1
 
 
 @pytest.mark.parametrize("field", ["identity", "timestamp", "payload", "signature"])

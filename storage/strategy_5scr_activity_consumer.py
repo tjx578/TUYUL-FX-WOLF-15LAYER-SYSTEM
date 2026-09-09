@@ -47,6 +47,10 @@ class LifecycleOwnerFence:
 
 
 async def lock_symbol(connection, symbol):
+    # Both the advisory lock and owner-token GUC are transaction scoped. In
+    # autocommit they expire before the subsequent owner read/write can use them.
+    if connection.is_in_transaction() is not True:
+        raise ValueError("LIFECYCLE_OWNER_TRANSACTION_REQUIRED")
     await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('5scr-owner:' || $1::text,0))", symbol)
 
 
