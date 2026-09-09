@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from infrastructure.redis_url import get_redis_url
+from services.orchestrator import state_manager
 from services.orchestrator.execution_mode import ExecutionMode
 from services.orchestrator.state_manager import StateManager
 
@@ -95,7 +96,9 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
         )
 
         _wait_until(
-            lambda: manager.process_once() or manager.snapshot().mode == ExecutionMode.SAFE,
+            # This case isolates command delivery before scheduled compliance
+            # and heartbeat ticks. Missing-account compliance is tested below.
+            lambda: manager.process_once(now=0.0) or manager.snapshot().mode == ExecutionMode.SAFE,
             timeout=2.0,
             interval=0.02,
         )
@@ -112,6 +115,58 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
     finally:
         manager.close()
         redis_client.delete(state_key, account_key, risk_key)
+
+
+@pytest.fixture(autouse=True)
+def isolated_governance_keys(redis_client: Any, monkeypatch: pytest.MonkeyPatch):
+    keys = []
+    for name in ("KILL_SWITCH", "HEARTBEAT_ORCHESTRATOR", "HEARTBEAT_INGEST", "_NEWS_LOCK_STATE_KEY"):
+        key = f"wolf15:test:orchestrator:{uuid.uuid4().hex}:{name}"
+        keys.append(key)
+        monkeypatch.setattr(state_manager, name, key)
+    yield
+    redis_client.delete(*keys)
+
+
+@pytest.mark.integration
+def test_missing_account_kill_switch_cannot_be_cleared_by_redis_command(
+    redis_client: Any, monkeypatch: pytest.MonkeyPatch
+):
+    suffix = uuid.uuid4().hex
+    keys = {
+        name: f"wolf15:test:orchestrator:{suffix}:{name}"
+        for name in (
+            "ORCHESTRATOR_CHANNEL",
+            "ORCHESTRATOR_STATE_KEY",
+            "ORCHESTRATOR_ACCOUNT_STATE_KEY",
+            "ORCHESTRATOR_TRADE_RISK_KEY",
+        )
+    }
+    for name, key in keys.items():
+        monkeypatch.setenv(name, key)
+    manager = StateManager(redis_client=_RedisAdapter(redis_client))
+    manager.start_listener()
+    try:
+        manager.process_once(now=10.0)
+        assert manager.snapshot().mode == ExecutionMode.KILL_SWITCH
+        assert manager.snapshot().compliance_code == "ACCOUNT_STATE_MISSING"
+        # Confirm delivery through the real subscriber before checking the veto.
+        observed = []
+        original = manager._handle_channel_message
+
+        def handle(payload):
+            if payload.get("command") == "SET_MODE":
+                observed.append(payload)
+            original(payload)
+
+        monkeypatch.setattr(manager, "_handle_channel_message", handle)
+        redis_client.publish(keys["ORCHESTRATOR_CHANNEL"], json.dumps({"command": "SET_MODE", "mode": "SAFE"}))
+        _wait_until(lambda: manager.process_once(now=10.0) or bool(observed))
+        assert manager.snapshot().mode == ExecutionMode.KILL_SWITCH
+        assert manager.snapshot().compliance_code == "ACCOUNT_STATE_MISSING"
+    finally:
+        manager.close()
+        redis_client.delete(*keys.values())
 
 
 @pytest.mark.integration
