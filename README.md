@@ -14,6 +14,8 @@
 
 Strategy 5S-CR · Modular monorepo · MetaTrader 5 · Institutional design intent
 
+**[Buka Dashboard Railway](https://wolf15-dashboard-frontend-production.up.railway.app/)** · [Login dashboard](https://wolf15-dashboard-frontend-production.up.railway.app/login)
+
 **`ENGINEERING: INCOMPLETE / HOLD`** &nbsp; **`SSOT: v3.1 REPOSITORY`** &nbsp; **`AUTOMATED DEMO: NOT PROVEN`**
 
 [Status](#status-dan-bukti) · [Arsitektur](#arsitektur-sistem) · [Strategi](#strategi-5s-cr) · [Layanan](#peta-layanan) · [Developer](#mulai-untuk-developer) · [Roadmap](#roadmap-dan-definition-of-done) · [Dokumentasi](#indeks-dokumentasi)
