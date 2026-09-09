@@ -124,7 +124,8 @@ def main():
                     assert (
                         connection.execute(
                             "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() "
-                            "AND pid<>pg_backend_pid()"
+                            "AND pid<>pg_backend_pid() AND application_name=%s",
+                            (application_name,),
                         ).fetchone()[0]
                         > 0
                     )

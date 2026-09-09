@@ -90,11 +90,9 @@ Network-none containers repeat this check in CI. This narrows the legacy boundar
 proof to the directly reached executor; it does not prove Redis queue consumption,
 all alternate legacy dispatch routes or every deployed executor plane.
 
-Remaining structural gaps: the orchestrator mode writer has no demonstrated shared
-distributed lease/fence across duplicate dedicated processes; lifecycle PostgreSQL
-fencing does not automatically fence this different writer. Trade readiness uses
-worker liveness rather than proven dependency bootstrap, and pressure-outbox lacks
-a served role readiness surface. Completing these safely requires explicit role
-state/ownership contracts and integration against isolated healthy dependencies;
-no mock or API proof here is relabeled as those guarantees. Production observation
-and deployment remain NOT_EXECUTED and separate from the disposable acceptance.
+Remaining structural gaps are now limited to production-equivalence coverage: this
+candidate still does not prove successful dedicated-orchestrator bootstrap against
+healthy isolated Redis/PostgreSQL dependencies, full end-to-end execution-plane
+integration under healthy dependency startup, or production/runtime observation.
+No mock or API proof here is relabeled as those guarantees; deployment remains
+NOT_EXECUTED and separate from the disposable acceptance.

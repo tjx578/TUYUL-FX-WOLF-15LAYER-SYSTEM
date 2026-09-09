@@ -46,6 +46,8 @@ class PressureOutboxWorker:
         self.poll_interval_seconds = max(0.01, float(poll_interval_seconds))
         self.batch_size = max(1, int(batch_size))
         self.lease_seconds = max(1.0, float(lease_seconds))
+        if self.poll_interval_seconds >= self.lease_seconds:
+            raise ValueError("PRESSURE_OUTBOX_POLL_SECONDS must be lower than PRESSURE_OUTBOX_LEASE_SECONDS")
         self.max_attempts = max(1, int(max_attempts))
         self.master_enabled = _env_flag("SIGNAL_PRESSURE_OUTBOX_ENABLED") if master_enabled is None else master_enabled
         self.dispatch_enabled = (

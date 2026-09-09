@@ -36,16 +36,23 @@ async def _main() -> None:
     # Track whether workers are alive so probe reports unhealthy on crash.
     _workers_alive = False
     allocation_runtime = None
+    execution_runtime = None
+    execution_enabled = False
     worker_tasks: list[asyncio.Task[object]] = []
 
     def _readiness_check() -> bool:
-        return bool(
+        baseline_ready = bool(
             _workers_alive
             and allocation_runtime is not None
             and allocation_runtime.is_ready()
             and worker_tasks
             and all(not task.done() for task in worker_tasks)
         )
+        if not baseline_ready:
+            return False
+        if not execution_enabled:
+            return True
+        return bool(execution_runtime is not None and execution_runtime.runtime_ready())
 
     from services.shared.health_probe_launcher import start_probe_as_task  # noqa: PLC0415
 
@@ -78,8 +85,10 @@ async def _main() -> None:
     worker_tasks.append(alloc_task)
 
     if execution_flags.legacy_push_execution_enabled:
+        from execution import async_worker as execution_runtime  # noqa: PLC0415
         from execution.async_worker import _main as exec_main  # noqa: PLC0415
 
+        execution_enabled = True
         worker_tasks.append(asyncio.create_task(exec_main(), name="ExecutionWorker"))
         logger.info("Trade service running allocation + execution workers")
     else:

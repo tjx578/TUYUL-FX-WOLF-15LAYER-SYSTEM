@@ -179,7 +179,10 @@ async def _main() -> None:
     finally:
         shutdown_event.set()
         supervisor.stopping = True
-        shutdown = GracefulShutdown(drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")))
+        shutdown = GracefulShutdown(
+            drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")),
+            require_quiescent=True,
+        )
         shutdown.register_cleanup("pressure outbox health probe", probe.stop)
         shutdown.register_cleanup("pressure outbox PostgreSQL pool", pg_client.close)
         await shutdown.shutdown([*tasks, *stop_tasks])

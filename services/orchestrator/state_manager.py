@@ -448,14 +448,14 @@ class StateManager:
         self._stop_requested.set()
 
     def run_forever(self, on_started: Callable[[], None] | None = None) -> None:
-        self.start_listener()
-        self.publish_state("BOOT")
-        logger.info("wolf15-orchestrator started in {}", self.snapshot().mode)
-
-        if on_started is not None:
-            on_started()
-
         try:
+            self.start_listener()
+            self.publish_state("BOOT")
+            logger.info("wolf15-orchestrator started in {}", self.snapshot().mode)
+
+            if on_started is not None:
+                on_started()
+
             while not self._stop_requested.is_set():
                 self.process_once()
                 self._stop_requested.wait(self._loop_sleep_sec)
