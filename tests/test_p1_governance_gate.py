@@ -200,7 +200,7 @@ def test_weak_environment_rejects(environment, case):
     elif case == "admin_bypass":
         environment["can_admins_bypass"] = True
     elif case == "missing_rule":
-        del environment["protection_rules"]
+        environment["protection_rules"] = []
     elif case == "empty_reviewers":
         environment["protection_rules"][0]["reviewers"] = []
     elif case == "self_review":
