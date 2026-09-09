@@ -167,6 +167,9 @@ jobs:
       - name: Qualify disposable Linux PostgreSQL and Redis runner
         run: python scripts/ci/qualify_disposable_runner.py
 
+      - name: Require supported PostgreSQL upgrade with existing data
+        run: python scripts/ci/run_supported_upgrade_acceptance.py
+
       - name: Require executed S03 PostgreSQL acceptance
         run: python scripts/ci/run_pair_activity_runtime_acceptance.py
 

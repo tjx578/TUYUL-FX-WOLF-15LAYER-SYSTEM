@@ -20,7 +20,7 @@ from tests.integration.postgres_test_guard import (  # noqa: E402
 
 
 @contextmanager
-def isolated_domain_database():
+def isolated_domain_database(*, empty: bool = False):
     """Clone only an explicitly guarded disposable CI database.
 
     Domain owner rows must not fence unrelated legacy fixtures in the baseline
@@ -29,6 +29,9 @@ def isolated_domain_database():
     """
     import psycopg
     from psycopg import sql
+
+    if type(empty) is not bool:
+        raise ValueError("EXPLICIT_TEMPLATE_MODE_REQUIRED")
 
     if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
         raise ValueError("DISPOSABLE_INTEGRATION_REQUIRED")
@@ -55,7 +58,9 @@ def isolated_domain_database():
     maintenance = urlunsplit(parsed._replace(path="/postgres"))
     with psycopg.connect(maintenance, autocommit=True, connect_timeout=3) as connection:
         connection.execute(
-            sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(sql.Identifier(child), sql.Identifier(expected))
+            sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
+                sql.Identifier(child), sql.Identifier("template0" if empty else expected)
+            )
         )
         connection.execute(
             sql.SQL("ALTER DATABASE {} SET wolf15.environment_class='DISPOSABLE_TEST'").format(sql.Identifier(child))
