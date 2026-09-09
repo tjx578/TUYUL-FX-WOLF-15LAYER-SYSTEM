@@ -1,6 +1,6 @@
 {
-  "source_commit": "f8fcbfb1b53f4cc9861a32aa1368dc3828070caa",
-  "scope": "evidence files excluding this manifest; imported inputs use input-import.json",
+  "source_commit": "1e0444f0c96e161ba41b468d5716cc9cea2077a3",
+  "scope": "evidence files excluding this manifest; each receipt keeps its own source binding",
   "files": [
     {
       "path": "g00-source.json",
@@ -91,6 +91,56 @@
       "path": "railway-source-bindings.json",
       "sha256": "2d9bb6bc9723f1ae389c63f81f319afb37c1c45c7ead14cf760f4eca8be9d4a4",
       "bytes": 5199
+    },
+    {
+      "path": "target-geometry-source.diff",
+      "sha256": "3e2f693524ee20ea94ebc4dea8df2688834b56fef501c66c06f81786a951e694",
+      "bytes": 16521
+    },
+    {
+      "path": "target-geometry-validation.json",
+      "sha256": "16b78b030bb0b2e3467a47f9cb9c1fa414c7289883139ad3b54492dc81408e7e",
+      "bytes": 11630
+    },
+    {
+      "path": "tg1-collection.log",
+      "sha256": "3cebbed4193dee3783d78cdca9691d46553d7cc340949a400e5fb52f54f1b7d0",
+      "bytes": 9222
+    },
+    {
+      "path": "tg1-pytest.log",
+      "sha256": "e1fd85af17d95c172e36395a0626cb43634775e7ca42513f150e45a40a81928b",
+      "bytes": 1055
+    },
+    {
+      "path": "tg1-receipt.json",
+      "sha256": "80bc5360113e2d57208b350b8748d9180ac28badb79ef2345741744bb4fcfde3",
+      "bytes": 15831
+    },
+    {
+      "path": "tg1.xml",
+      "sha256": "aefc4f59ee64fa89a8d78acffaeb99beb8b83f6e95e4d25bf68ad12a68ac9b43",
+      "bytes": 11637
+    },
+    {
+      "path": "tg2-collection.log",
+      "sha256": "2d6335fbb1d7a5f1c4e7fe4cfbcbb996a35bb9faa8777f9956cdae240a7c199d",
+      "bytes": 9470
+    },
+    {
+      "path": "tg2-pytest.log",
+      "sha256": "0b22d7b2503eb09bd964a097c9ae123f1459da15bc6ea6bce8eb85ccbbda9ada",
+      "bytes": 1055
+    },
+    {
+      "path": "tg2-receipt.json",
+      "sha256": "3eaf992e90bf43d378a349858c9002cccf0cf80300c8723d25cb7ca21afaf739",
+      "bytes": 16093
+    },
+    {
+      "path": "tg2.xml",
+      "sha256": "afd0a71829a9767b5849102f02ef5beb9e36e0af631e8769e1514b8a2e103661",
+      "bytes": 11963
     }
   ]
 }

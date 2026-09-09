@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "f8fcbfb1b53f4cc9861a32aa1368dc3828070caa",
+  "source_checkpoint": "1e0444f0c96e161ba41b468d5716cc9cea2077a3",
   "source_verified_at": "2026-09-09T04:12:37.856475+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K06_NET_INTERVAL_KERNEL_PARTIAL",
+  "current_slice": "K06_TARGET_TO_NET_CALLER_PARTIAL",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Complete G00/K01/K02 evidence binding; inspect normative geometry K06 and dual-admission K05 without reopening known runner/billing/DEMO questions",
+  "next_action_on_resume": "Derive legal structural targets and bind source completeness under an explicit selected policy; integrate strategy candidate/caller. Keep known runtime and publication blockers without unchanged retries.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_SOURCE_TESTS_AND_BINDING",
-  "actual_source_commit": "f8fcbfb1b53f4cc9861a32aa1368dc3828070caa",
+  "previous_goal_turn_classification": "PROGRESS_SOURCE_AND_LOCAL_ACCEPTANCE",
+  "actual_source_commit": "1e0444f0c96e161ba41b468d5716cc9cea2077a3",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -755,13 +755,13 @@
       "DONE": false
     },
     "K06": {
-      "status": "TEST_ONLY_NET_INTERVAL_KERNEL_LOCAL_PASS",
+      "status": "TARGET_SELECTION_TO_NET_GEOMETRY_TEST_ONLY_LOCAL_PASS",
       "DONE": false,
-      "evidence_ref": "evidence/net-geometry-validation.json",
+      "evidence_ref": "evidence/target-geometry-validation.json",
       "remaining": [
-        "Full legal nearest target universe",
-        "Active policy and cost attestor",
-        "V3.1 candidate/caller persistence integration"
+        "Candle-derived target evidence and completeness attestor",
+        "Active policy binding",
+        "Operational strategy caller and persistence integration"
       ]
     },
     "K07": {
@@ -795,7 +795,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "f8fcbfb1b53f4cc9861a32aa1368dc3828070caa",
+    "source_commit": "1e0444f0c96e161ba41b468d5716cc9cea2077a3",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,
