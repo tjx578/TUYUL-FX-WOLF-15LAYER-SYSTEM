@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from contracts.strategy_5scr_context_route_v31 import ContextRouteReceiptV31, context_route_receipt_hash_v31
 from contracts.strategy_5scr_net_geometry_v31 import EntryIntervalV31, GeometryContract, Price
 from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
 
@@ -69,12 +70,13 @@ class TradePlanCandidateV31(GeometryContract):
 class CandidateHandoffV31(GeometryContract):
     profile: Literal["TEST_ONLY"]
     selected_ssot_hash: Literal["sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"]
-    proof_policy_id: Literal["S3_S5_HANDOFF_TEST_V1"]
+    proof_policy_id: Literal["S3_S5_HANDOFF_TEST_V2"]
     candidate: TradePlanCandidateV31
     target_universe: TargetUniverseV31
     admission_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     thesis_structural_proof_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     context_route_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    context_route_receipt: ContextRouteReceiptV31
     price_quality_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     handoff_receipt_valid_until: datetime
 
@@ -83,4 +85,25 @@ class CandidateHandoffV31(GeometryContract):
         deadline = self.handoff_receipt_valid_until
         if deadline.tzinfo is None or deadline.utcoffset() is None or deadline <= self.candidate.decision_at:
             raise ValueError("handoff receipt must have an aware positive validity window")
+        context = self.context_route_receipt
+        candidate = self.candidate
+        if self.context_route_receipt_hash != context_route_receipt_hash_v31(context):
+            raise ValueError("HANDOFF_CONTEXT_RECEIPT_HASH_MISMATCH")
+        if (context.context_epoch_id, context.strategy_lifecycle_id, context.symbol, context.direction) != (
+            candidate.context_epoch_id,
+            candidate.strategy_lifecycle_id,
+            candidate.symbol,
+            candidate.direction,
+        ):
+            raise ValueError("HANDOFF_CONTEXT_SCOPE_MISMATCH")
+        if (
+            context.state != "ACTIVE"
+            or not context.evaluated_at <= candidate.decision_at < deadline <= context.valid_until
+        ):
+            raise ValueError("HANDOFF_CONTEXT_NOT_ACTIVE_OR_EXPIRED")
+        if (
+            context.direction not in context.material.allowed_directions
+            or context.selected_route not in context.material.allowed_routes
+        ):
+            raise ValueError("HANDOFF_CONTEXT_ROUTE_NOT_ALLOWED")
         return self

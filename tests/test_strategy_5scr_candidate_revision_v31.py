@@ -12,6 +12,7 @@ from contracts.strategy_5scr_candidate_revision_v31 import (
     candidate_revision_hash_v31,
     prepare_candidate_revision_v31,
 )
+from contracts.strategy_5scr_context_route_v31 import context_route_receipt_hash_v31, material_context_hash_v31
 from storage.strategy_5scr_activity_consumer import LifecycleOwnerFence
 from storage.strategy_5scr_candidate_revision_v31 import CandidateRevisionRepositoryV31, _stored
 from tests.test_strategy_5scr_candidate_handoff_v31 import NOW, bundle
@@ -117,7 +118,21 @@ def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
                 )
             }
         )
-    request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
+    handoff = request.handoff.model_copy(update={"candidate": candidate})
+    if fault in ("symbol", "strategy_lifecycle_id"):
+        # Keep the new context internally coherent so this case still reaches
+        # the separate immutable plan/predecessor check it was written to test.
+        context = handoff.context_route_receipt.model_copy(update={fault: getattr(candidate, fault)})
+        context = context.model_copy(
+            update={"material_context_hash": material_context_hash_v31(context.symbol, context.material)}
+        )
+        handoff = handoff.model_copy(
+            update={
+                "context_route_receipt": context,
+                "context_route_receipt_hash": context_route_receipt_hash_v31(context),
+            }
+        )
+    request = request.model_copy(update={"handoff": handoff})
     with pytest.raises(ValueError, match=reason):
         prepared(request, first)
 

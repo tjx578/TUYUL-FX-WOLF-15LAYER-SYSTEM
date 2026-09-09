@@ -8,12 +8,18 @@ from pydantic import ValidationError
 
 from analysis.strategy_5scr_target_selection_v31 import solve_target_geometry_v31, target_universe_hash_v31
 from contracts.strategy_5scr_candidate_handoff_v31 import CandidateHandoffV31, TradePlanCandidateV31
+from contracts.strategy_5scr_context_route_v31 import (
+    ContextRouteReceiptV31,
+    context_route_receipt_hash_v31,
+    material_context_hash_v31,
+)
 from contracts.strategy_5scr_net_geometry_v31 import NetGeometryContextV31, NetGeometryRequestV31
 from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
 from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31, propose_canonical_parent_v31
 from risk.strategy_5scr_capacity_v31 import CapacityRejectedError
 from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31
 from tests.test_strategy_5scr_capacity_v31 import NOW, H, request_for, seed
+from tests.test_strategy_5scr_context_route_v31 import receipt as context_fixture
 from tests.test_strategy_5scr_net_geometry_v31 import request_data
 from tests.test_strategy_5scr_target_selection_v31 import fixture as target_fixture
 
@@ -74,15 +80,17 @@ def bundle(direction="BUY"):
         evidence_hash=H,
         decision_at=NOW,
     )
+    context_receipt = context_fixture(direction)
     handoff = CandidateHandoffV31(
         profile="TEST_ONLY",
         selected_ssot_hash="sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
-        proof_policy_id="S3_S5_HANDOFF_TEST_V1",
+        proof_policy_id="S3_S5_HANDOFF_TEST_V2",
         candidate=candidate,
         target_universe=universe,
         admission_receipt_hash=H,
         thesis_structural_proof_hash=H,
-        context_route_receipt_hash=H,
+        context_route_receipt_hash=context_route_receipt_hash_v31(context_receipt),
+        context_route_receipt=context_receipt,
         price_quality_receipt_hash=H,
         handoff_receipt_valid_until=NOW + timedelta(seconds=1),
     )
@@ -113,6 +121,71 @@ def propose(ledger, handoff, request, **overrides):
     )
     kwargs.update(overrides)
     return propose_canonical_parent_v31(ledger, handoff, request, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "fault,reason",
+    [
+        ("epoch", "CONTEXT_SCOPE_MISMATCH"),
+        ("lifecycle", "CONTEXT_SCOPE_MISMATCH"),
+        ("hash", "CONTEXT_RECEIPT_HASH_MISMATCH"),
+        ("state", "CONTEXT_NOT_ACTIVE_OR_EXPIRED"),
+        ("deadline", "CONTEXT_NOT_ACTIVE_OR_EXPIRED"),
+        ("route", "CONTEXT_ROUTE_NOT_ALLOWED"),
+        ("unresolved", "CONTEXT_ROUTE_NOT_ALLOWED"),
+        ("legacy_policy", "literal_error"),
+        ("missing_body", "Field required"),
+    ],
+)
+def test_context_binding_rejected_before_risk_verifiers(fault, reason):
+    ledger, handoff, request = bundle()
+    body = handoff.model_dump()
+    context = body["context_route_receipt"]
+    if fault == "epoch":
+        context["context_epoch_id"] = UUID(int=999)
+    elif fault == "lifecycle":
+        context["strategy_lifecycle_id"] = UUID(int=999)
+    elif fault == "state":
+        context["state"] = "SUPERSEDED"
+    elif fault == "deadline":
+        body["handoff_receipt_valid_until"] = context["valid_until"] + timedelta(seconds=1)
+    elif fault == "route":
+        context["selected_route"] = "UNLISTED_ROUTE"
+    elif fault == "unresolved":
+        context["material"]["primary_direction_domain"] = "UNRESOLVED"
+        context["material"]["allowed_directions"] = ()
+        from contracts.strategy_5scr_context_route_v31 import MaterialContextV31
+
+        material = MaterialContextV31.model_validate(context["material"])
+        context["material_context_hash"] = material_context_hash_v31(context["symbol"], material)
+    elif fault == "legacy_policy":
+        body["proof_policy_id"] = "S3_S5_HANDOFF_TEST_V1"
+    elif fault == "missing_body":
+        body.pop("context_route_receipt")
+    body["context_route_receipt_hash"] = (
+        H if fault == "hash" else context_route_receipt_hash_v31(ContextRouteReceiptV31.model_validate(context))
+    )
+    body["candidate"] = handoff.candidate
+    body["target_universe"] = handoff.target_universe
+    if fault != "missing_body":
+        body["context_route_receipt"] = ContextRouteReceiptV31.model_validate(context)
+    unsafe = CandidateHandoffV31.model_construct(**body)
+    calls = []
+    with pytest.raises(ValidationError, match=reason):
+        propose_canonical_parent_v31(
+            ledger,
+            unsafe,
+            request,
+            reservation_id=UUID(int=21),
+            expires_at=NOW + timedelta(seconds=1),
+            now=NOW,
+            owner_epoch=ledger.owner_epoch,
+            expected_version=ledger.version,
+            verify_handoff=lambda *args: calls.append(args),
+            verify_universe=None,
+            verify_risk_inputs=None,
+        )
+    assert not calls and ledger.reservations == ()
 
 
 @pytest.mark.parametrize("direction", ["BUY", "SELL"])
