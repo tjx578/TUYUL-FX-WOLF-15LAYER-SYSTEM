@@ -7,6 +7,16 @@ import tokenize
 
 # Characters that have historically caused SyntaxError
 NON_ASCII_DASHES = re.compile("[\u2012\u2013\u2014\u2015]")
+STRINGLIKE_TOKEN_TYPES = {
+    tokenize.COMMENT,
+    tokenize.STRING,
+    tokenize.ENCODING,
+    *(token_type for token_type in (
+        getattr(tokenize, "FSTRING_START", None),
+        getattr(tokenize, "FSTRING_MIDDLE", None),
+        getattr(tokenize, "FSTRING_END", None),
+    ) if token_type is not None),
+}
 
 
 def _python_files():
@@ -29,7 +39,7 @@ def test_no_non_ascii_dashes_in_source():
         # Only flag dashes in executable tokens. Comments/docstrings/user-facing
         # text may legitimately contain Unicode punctuation.
         for tok in tokenize.generate_tokens(io.StringIO(source).readline):
-            if tok.type in {tokenize.COMMENT, tokenize.STRING, tokenize.ENCODING}:
+            if tok.type in STRINGLIKE_TOKEN_TYPES:
                 continue
             if NON_ASCII_DASHES.search(tok.string):
                 line = source.splitlines()[tok.start[0] - 1] if tok.start[0] > 0 else ""
