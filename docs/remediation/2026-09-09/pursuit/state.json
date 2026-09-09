@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "df768c9c1dcff61f37c167e9092c89cd5546554b",
-  "source_verified_at": "2026-09-09T07:42:23.490709+00:00",
+  "source_checkpoint": "19c105a53d9b4486f8b88e67cbf7a271fb938196",
+  "source_verified_at": "2026-09-09T07:55:05.622426+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K07_LOCKED_LATEST_CANDIDATE_CAPACITY_PREPARATION",
+  "current_slice": "K07_ACCOUNT_CAPACITY_PERSISTENCE_AND_OWNER_CAS",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Implement persistent account-capacity state and atomic Transaction A composition with locked latest candidate preparation. Preserve TEST_ONLY and the known PostgreSQL/CI/DEMO/publication blockers; use short unique local validation labels to avoid Windows artifact path overflow.",
+  "next_action_on_resume": "Compose immutable campaign/parent-leg/signal/outbox records atomically with v3.1 capacity persistence and locked latest candidate. Preserve TEST_ONLY; explicitly resolve legacy risk writer convergence before any runtime activation. Eight new capacity PostgreSQL cases remain unexecuted alongside earlier inventories.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_LOCKED_LATEST_CANDIDATE_HANDOFF_AND_LOCAL_ACCEPTANCE",
-  "actual_source_commit": "df768c9c1dcff61f37c167e9092c89cd5546554b",
+  "previous_goal_turn_classification": "PROGRESS_ACCOUNT_CAPACITY_STORE_FENCING_MIGRATION_AND_LOCAL_ACCEPTANCE",
+  "actual_source_commit": "19c105a53d9b4486f8b88e67cbf7a271fb938196",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -765,20 +765,20 @@
       ]
     },
     "K07": {
-      "status": "LOCKED_LATEST_CANDIDATE_CAPACITY_LOCAL_PASS_TRANSACTION_A_PARTIAL",
+      "status": "ACCOUNT_CAPACITY_PERSISTENCE_LOCAL_PASS_DATABASE_UNEXECUTED_PARTIAL",
       "DONE": false,
-      "evidence_ref": "evidence/k07-latest-capacity-validation.json",
+      "evidence_ref": "evidence/k07-capacity-persistence-validation.json",
       "previous_evidence_refs": [
+        "evidence/k07-latest-capacity-validation.json",
         "evidence/k07-revisions-validation.json",
         "evidence/k07-handoff-validation.json",
-        "evidence/k07-baseline-validation.json",
-        "evidence/k07-capacity-validation.json"
+        "evidence/k07-baseline-validation.json"
       ],
       "remaining": [
-        "Persistent account-capacity state and atomic reservation/campaign/leg/FinalSignal/outbox Transaction A",
-        "Actual candidate history migration/recovery/concurrency acceptance and S3-S5 verifier/consumer binding",
-        "Active risk/account/provider binding and child policy integration",
-        "Actual independent broker reconciliation, margin and natural family/compounding execution"
+        "Atomic campaign/parent-leg/FinalSignal/outbox composition with capacity and candidate locks",
+        "Real PostgreSQL migration/CAS/concurrency/recovery acceptance for capacity and candidate stores",
+        "Legacy risk writer convergence and active strategy/risk/account/provider bindings",
+        "Child eligibility, margin and actual independent broker family/compounding reconciliation"
       ]
     },
     "K08": {
@@ -820,7 +820,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "df768c9c1dcff61f37c167e9092c89cd5546554b",
+    "source_commit": "19c105a53d9b4486f8b88e67cbf7a271fb938196",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,

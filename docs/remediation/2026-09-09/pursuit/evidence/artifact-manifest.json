@@ -1,5 +1,5 @@
 {
-  "source_commit": "df768c9c1dcff61f37c167e9092c89cd5546554b",
+  "source_commit": "19c105a53d9b4486f8b88e67cbf7a271fb938196",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -553,6 +553,41 @@
       "bytes": 17375
     },
     {
+      "path": "k07-capacity-persistence-migration-heads.log",
+      "sha256": "71308f5041e74eee19bc2af51215fa9db2a34b7967f8fba9f65bd8b30c50a416",
+      "bytes": 20
+    },
+    {
+      "path": "k07-capacity-persistence-migration-sql.log",
+      "sha256": "645bbb18577a85e93975d27c2e97f2d1cededc3bab9027b1605f86acc911fdc4",
+      "bytes": 2985
+    },
+    {
+      "path": "k07-capacity-persistence-pg-collection.log",
+      "sha256": "2a9c89b9334d80d6a43bf151f29af2b2e40c8b37628d54819280a6e2038f61a7",
+      "bytes": 1791
+    },
+    {
+      "path": "k07-capacity-persistence-pg-inventory.json",
+      "sha256": "ae9e3a9d3e25bb281dafd131a1018e7813a60325cafb772fe75d70166a7266d9",
+      "bytes": 1713
+    },
+    {
+      "path": "k07-capacity-persistence-source.diff",
+      "sha256": "ac2e91ffb5db7a81e9b932faa06ae71fa0bd2aff3d573954a49d28de50ede9c3",
+      "bytes": 33899
+    },
+    {
+      "path": "k07-capacity-persistence-static.json",
+      "sha256": "b035ae916819cc1ec874ead5baa14710dec21b474c48e83f90905f378f14023d",
+      "bytes": 1883
+    },
+    {
+      "path": "k07-capacity-persistence-validation.json",
+      "sha256": "0a8bab909f31022d6181f94e3a07568f126a71163946cab283c9c2a106c78d42",
+      "bytes": 28090
+    },
+    {
       "path": "k07-capacity-source.diff",
       "sha256": "72da928bf5439b9c7d8215854eca9c508e86e1d2d1c6c78503daeea698c4b99c",
       "bytes": 35518
@@ -561,6 +596,46 @@
       "path": "k07-capacity-validation.json",
       "sha256": "9349f3b64d7e95dc7c09e1d982a7ec578a0b0b455b0a704cff072dd8d9d8ca12",
       "bytes": 17359
+    },
+    {
+      "path": "k07-cp-0909-a1-collection.log",
+      "sha256": "7e2568735f96621ab36fe5e89548ea4fe60cba8a7d492eb23925ae941be0d98c",
+      "bytes": 22527
+    },
+    {
+      "path": "k07-cp-0909-a1-pytest.log",
+      "sha256": "0b992eaf8fd24890b8eb6d85c8db7676f46c200c1b68326f4fc8960349c6a77b",
+      "bytes": 1790
+    },
+    {
+      "path": "k07-cp-0909-a1-receipt.json",
+      "sha256": "0e56521e886dce63b3dc6dfb88b159e1ae9584d596ab6566a06e11d7fb592c46",
+      "bytes": 31654
+    },
+    {
+      "path": "k07-cp-0909-a1.xml",
+      "sha256": "3029385bd97cdffdf71d54882af359d6c7e6530cdf4c9c921392440163125e21",
+      "bytes": 28641
+    },
+    {
+      "path": "k07-cp-0909-a2-collection.log",
+      "sha256": "2838639e366c5dd29d45464f1acf4a61df2c3b5133fd9d7d856e60b2d91d9d89",
+      "bytes": 22776
+    },
+    {
+      "path": "k07-cp-0909-a2-pytest.log",
+      "sha256": "d81f63cbb7ec544cad3a35460da10ae5ca57d43348e07eaaca050ad5152b3f89",
+      "bytes": 1148
+    },
+    {
+      "path": "k07-cp-0909-a2-receipt.json",
+      "sha256": "4881d317e7e364fa2dbae2ff5e0325313742e27f7e99f638613b4b52ea006227",
+      "bytes": 32193
+    },
+    {
+      "path": "k07-cp-0909-a2.xml",
+      "sha256": "5e82f80adf564ac48e42c9818ebdd1bc9d6ab42d9ec1740949879f7eadab2bc9",
+      "bytes": 28968
     },
     {
       "path": "k07-handoff-20260909-a1-collection.log",
