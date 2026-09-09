@@ -259,32 +259,37 @@ jobs:
           echo "No retired shims found."
 
       - name: "Block deprecated imports in production code"
+        shell: python
         run: |
-          echo "Scanning for deprecated dashboard imports..."
-          DEPRECATED_PATTERNS=(
-            "from dashboard.price_feed"
-            "from dashboard.trade_ledger"
-            "import dashboard.price_feed"
-            "import dashboard.trade_ledger"
-          )
-          VIOLATIONS=""
-          for PATTERN in "${DEPRECATED_PATTERNS[@]}"; do
-            HITS=$(grep -rn --include="*.py" \
-              --exclude-dir=tests \
-              --exclude-dir=__pycache__ \
-              --exclude-dir=.venv \
-              "$PATTERN" . || true)
-            if [ -n "$HITS" ]; then
-              VIOLATIONS="${VIOLATIONS}${HITS}\n"
-            fi
-          done
-          if [ -n "$VIOLATIONS" ]; then
-            echo "::error::Deprecated dashboard imports detected:"
-            echo -e "$VIOLATIONS"
-            echo "Use storage.price_feed / storage.trade_ledger instead."
-            exit 1
-          fi
-          echo "No deprecated imports found."
+          import ast
+          import pathlib
+          import subprocess
+          import sys
+
+          retired = {"dashboard.price_feed", "dashboard.trade_ledger"}
+          failed = False
+          paths = subprocess.check_output(["git", "ls-files", "-z", "*.py"]).decode().split("\0")
+          for name in filter(None, paths):
+              path = pathlib.Path(name)
+              if any(part in {"tests", "__pycache__", ".venv", "node_modules"} for part in path.parts):
+                  continue
+              try:
+                  tree = ast.parse(path.read_bytes(), filename=name)
+              except SyntaxError:
+                  print(f"::error file={name}::Python syntax error prevents import inspection")
+                  failed = True
+                  continue
+              for node in ast.walk(tree):
+                  imports = []
+                  if isinstance(node, ast.Import):
+                      imports = [alias.name for alias in node.names]
+                  elif isinstance(node, ast.ImportFrom):
+                      module = node.module or ""
+                      imports = [module, *(f"{module}.{alias.name}" for alias in node.names)]
+                  if any(module == old or module.startswith(old + ".") for module in imports for old in retired):
+                      print(f"::error file={name},line={node.lineno}::Deprecated dashboard import; use storage instead")
+                      failed = True
+          sys.exit(1 if failed else 0)
 
   # -------------------------------------------------------------------
   # Architecture drift guard — constitutional boundary spot-checks

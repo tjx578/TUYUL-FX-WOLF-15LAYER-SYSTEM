@@ -105,6 +105,18 @@ jobs:
             > "$RUNNER_TEMP/secret-scan.jsonl" 2> "$RUNNER_TEMP/secret-scan.stderr"
           scan_status=$?
           set -e
+          python3 - <<'PYEOF'
+          import json
+          import os
+          from pathlib import Path
+
+          findings = []
+          for line in (Path(os.environ["RUNNER_TEMP"]) / "secret-scan.jsonl").read_text().splitlines():
+              item = json.loads(line)
+              location = item.get("SourceMetadata", {}).get("Data", {}).get("Filesystem", {})
+              findings.append({"detector": item.get("DetectorName"), "file": location.get("file"), "line": location.get("line")})
+          print(json.dumps({"finding_count": len(findings), "locations_only": findings}, ensure_ascii=True))
+          PYEOF
           if [ "$scan_status" -ne 0 ]; then
             echo "::error::Secret scan requires review (exit $scan_status); raw findings are withheld."
             exit "$scan_status"
