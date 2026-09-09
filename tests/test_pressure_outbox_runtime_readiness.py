@@ -52,3 +52,13 @@ def test_disabled_dispatcher_cannot_report_ready(master, dispatch):
     )
     worker._last_successful_poll = time.monotonic()
     assert not worker.runtime_ready()
+
+
+def test_invalid_poll_interval_not_lower_than_lease_rejected():
+    with pytest.raises(ValueError, match="PRESSURE_OUTBOX_POLL_SECONDS"):
+        PressureOutboxWorker(
+            repository=SimpleNamespace(),
+            consumer=SimpleNamespace(),
+            poll_interval_seconds=30.0,
+            lease_seconds=30.0,
+        )

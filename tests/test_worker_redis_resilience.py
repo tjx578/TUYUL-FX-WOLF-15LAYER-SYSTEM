@@ -273,6 +273,19 @@ class TestAllocationSupervisedMain:
 
         assert run_calls == 1
 
+    @pytest.mark.asyncio
+    async def test_main_retries_constructor_failure_without_attribute_error(self) -> None:
+        from allocation import async_worker as mod
+
+        with (
+            patch.object(mod, "AsyncAllocationWorker", side_effect=RuntimeError("bootstrap failure")),
+            patch.object(mod, "_MAX_RESTARTS", 0),
+            patch.object(mod, "_RESTART_COOLDOWN", 0.0),
+            patch.object(mod, "start_http_server"),
+            pytest.raises(RuntimeError, match="^ALLOCATION_REQUIRED_WORKER_EXHAUSTED$"),
+        ):
+            await mod._main()
+
 
 class TestExecutionSupervisedMain:
     """Execution _main() must restart worker on crash."""

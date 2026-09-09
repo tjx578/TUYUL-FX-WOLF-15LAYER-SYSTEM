@@ -417,7 +417,7 @@ async def _main() -> None:
                 logger.info("[SUPERVISOR] Allocation worker cancelled")
                 raise
             except Exception as exc:
-                if any(not task.done() for task in worker._in_flight):
+                if worker is not None and any(not task.done() for task in worker._in_flight):
                     raise RuntimeError("allocation_restart_before_drain_forbidden") from exc
                 restarts += 1
                 logger.error(
