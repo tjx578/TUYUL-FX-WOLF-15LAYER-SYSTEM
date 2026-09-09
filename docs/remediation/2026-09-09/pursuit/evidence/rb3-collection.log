@@ -1,0 +1,40 @@
+tests/test_s5_campaign_risk.py::test_campaign_locks_five_percent_from_closed_balance
+tests/test_s5_campaign_risk.py::test_broker_aware_volume_rounds_down
+tests/test_s5_campaign_risk.py::test_volume_is_never_clamped_up_to_broker_minimum
+tests/test_s5_campaign_risk.py::test_negative_cost_buffer_fails_closed
+tests/test_s5_campaign_risk.py::test_unknown_entry_role_fails_closed
+tests/test_s5_campaign_risk.py::test_child_requires_open_parent
+tests/test_s5_campaign_risk.py::test_account_cap_blocks_additional_campaign
+tests/test_s5_campaign_risk.py::test_stale_snapshot_fails_closed
+tests/test_s5_campaign_risk.py::test_sizing_from_different_risk_lock_cannot_borrow_current_campaign_capacity
+tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes0]
+tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes1]
+tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes2]
+tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes3]
+tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes4]
+tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes5]
+tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[nan-committed_or_reserved_campaign_risk_usd]
+tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[nan-account_total_open_risk_usd]
+tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[inf-committed_or_reserved_campaign_risk_usd]
+tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[inf-account_total_open_risk_usd]
+tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[-1-committed_or_reserved_campaign_risk_usd]
+tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[-1-account_total_open_risk_usd]
+tests/test_s5_campaign_risk.py::test_current_lock_valid_candidate_is_still_approved
+tests/test_s5_campaign_risk.py::test_one_risk_unit_is_rechecked_even_when_campaign_cap_has_room
+tests/test_s5_campaign_risk.py::test_decimal_ledger_excess_is_not_rounded_down_at_cap[committed_or_reserved_campaign_risk_usd-RISK_CAMPAIGN_EXCEEDS_2R]
+tests/test_s5_campaign_risk.py::test_decimal_ledger_excess_is_not_rounded_down_at_cap[account_total_open_risk_usd-RISK_ACCOUNT_OPEN_RISK_EXCEEDED]
+tests/test_strategy_5scr_risk_reservation.py::test_final_signal_promotion_is_credential_free_and_does_not_mutate_candidate
+tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path0-44444444-4444-4444-8444-444444444444-does not match proof]
+tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path1-other-snapshot-does not match proof]
+tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path2-0.2-does not match proof]
+tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path3-CHFJPY.other-does not match reservation proof]
+tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path4-2.0-universal-pattern-wrong event or schema]
+tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path5-False-requires valid_for_execution=true]
+tests/test_strategy_5scr_risk_reservation.py::test_reservation_request_is_parent_only_and_ttl_is_bounded
+tests/test_strategy_5scr_risk_reservation.py::test_candidate_with_premature_execution_authority_is_rejected
+
+34 tests collected in 2.72s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

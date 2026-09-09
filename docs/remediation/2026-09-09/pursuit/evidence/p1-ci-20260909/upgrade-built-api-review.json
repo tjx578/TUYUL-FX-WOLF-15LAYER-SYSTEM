@@ -1,0 +1,332 @@
+{
+  "scope": "P1_INCREMENTAL_EVIDENCE_NOT_PROGRAM_DONE",
+  "source_commit": "22766647a10b52503a28ea8464c7bb1d96f54b3d",
+  "captured_at": "2026-09-09T11:19:54.609140+00:00",
+  "pg_receipts": [
+    {
+      "run": "34341226710",
+      "module": "tests/integration/test_transaction_a_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 9
+      },
+      "tested_merge_sha": "aa6358d3387ea4bb13b0c31d98777cbf5c5b3957",
+      "receipt": "p1-ci-20260909/34341226710/185a56fe217e46a28f88adaf1199ef96/receipt.json"
+    },
+    {
+      "run": "34341226710",
+      "module": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "aa6358d3387ea4bb13b0c31d98777cbf5c5b3957",
+      "receipt": "p1-ci-20260909/34341226710/782c89c0944a4970a5a118bdd7c5057a/receipt.json"
+    },
+    {
+      "run": "34341226710",
+      "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 45
+      },
+      "tested_merge_sha": "aa6358d3387ea4bb13b0c31d98777cbf5c5b3957",
+      "receipt": "p1-ci-20260909/34341226710/89a746801312450a96e9ba96c3180895/receipt.json"
+    },
+    {
+      "run": "34341226710",
+      "module": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "aa6358d3387ea4bb13b0c31d98777cbf5c5b3957",
+      "receipt": "p1-ci-20260909/34341226710/cf00d442a52f4f9fae6e54965a750524/receipt.json"
+    },
+    {
+      "run": "34341226710",
+      "module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "tested_merge_sha": "aa6358d3387ea4bb13b0c31d98777cbf5c5b3957",
+      "receipt": "p1-ci-20260909/34341226710/e15fdea1e52240af8ab10ae6f25c77fd/receipt.json"
+    },
+    {
+      "run": "34341226710",
+      "module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 11
+      },
+      "tested_merge_sha": "aa6358d3387ea4bb13b0c31d98777cbf5c5b3957",
+      "receipt": "p1-ci-20260909/34341226710/f287e28aa39a4b5ba3bfcdeb6fb83054/receipt.json"
+    },
+    {
+      "run": "34342279046",
+      "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 45
+      },
+      "tested_merge_sha": "864bcfaaaed2ef00b3d639fbece3e487bfaea704",
+      "receipt": "p1-ci-20260909/34342279046/1e279513fcab4ece8867dbf59763d9a6/receipt.json"
+    },
+    {
+      "run": "34342279046",
+      "module": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "864bcfaaaed2ef00b3d639fbece3e487bfaea704",
+      "receipt": "p1-ci-20260909/34342279046/4d4055321e81457fb4b3993228b3a2b1/receipt.json"
+    },
+    {
+      "run": "34342279046",
+      "module": "tests/integration/test_transaction_a_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 9
+      },
+      "tested_merge_sha": "864bcfaaaed2ef00b3d639fbece3e487bfaea704",
+      "receipt": "p1-ci-20260909/34342279046/61b8348726de4409af77ca4fd077b28b/receipt.json"
+    },
+    {
+      "run": "34342279046",
+      "module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 11
+      },
+      "tested_merge_sha": "864bcfaaaed2ef00b3d639fbece3e487bfaea704",
+      "receipt": "p1-ci-20260909/34342279046/66c659192f7e4cb798adce9fbd7a228b/receipt.json"
+    },
+    {
+      "run": "34342279046",
+      "module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "tested_merge_sha": "864bcfaaaed2ef00b3d639fbece3e487bfaea704",
+      "receipt": "p1-ci-20260909/34342279046/718c6444dd444cfe832157e731b21508/receipt.json"
+    },
+    {
+      "run": "34342279046",
+      "module": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "864bcfaaaed2ef00b3d639fbece3e487bfaea704",
+      "receipt": "p1-ci-20260909/34342279046/9bbd8672e5094eb78c841c8953b31564/receipt.json"
+    },
+    {
+      "run": "34343429530",
+      "module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "tested_merge_sha": "01b9dd2c7a748c293ecc13bdd622170e9e4d3c68",
+      "receipt": "p1-ci-20260909/34343429530/1ee393deace34327bec6ecde9d0aafae/receipt.json"
+    },
+    {
+      "run": "34343429530",
+      "module": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "01b9dd2c7a748c293ecc13bdd622170e9e4d3c68",
+      "receipt": "p1-ci-20260909/34343429530/891bbc4ac2e84896b71b187393714843/receipt.json"
+    },
+    {
+      "run": "34343429530",
+      "module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 11
+      },
+      "tested_merge_sha": "01b9dd2c7a748c293ecc13bdd622170e9e4d3c68",
+      "receipt": "p1-ci-20260909/34343429530/95522991b8504378944fa369c2128cd9/receipt.json"
+    },
+    {
+      "run": "34343429530",
+      "module": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "01b9dd2c7a748c293ecc13bdd622170e9e4d3c68",
+      "receipt": "p1-ci-20260909/34343429530/b986a97dc4d54e6f900fdefdb7e2fce8/receipt.json"
+    },
+    {
+      "run": "34343429530",
+      "module": "tests/integration/test_transaction_a_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 9
+      },
+      "tested_merge_sha": "01b9dd2c7a748c293ecc13bdd622170e9e4d3c68",
+      "receipt": "p1-ci-20260909/34343429530/d191db5f61ad44669f3864ad1c50737b/receipt.json"
+    },
+    {
+      "run": "34343429530",
+      "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 45
+      },
+      "tested_merge_sha": "01b9dd2c7a748c293ecc13bdd622170e9e4d3c68",
+      "receipt": "p1-ci-20260909/34343429530/dedde043ae50474ea35f710a523f6650/receipt.json"
+    }
+  ],
+  "pg_distinct_tests_per_run": 87,
+  "supported_upgrade": {
+    "scope": "DISPOSABLE_05_TO_HEAD_EXISTING_TEST_ONLY_CAPACITY_LEDGER",
+    "accepted": true,
+    "source_commit": "864bcfaaaed2ef00b3d639fbece3e487bfaea704",
+    "steps": [
+      {
+        "target": "20260909_05",
+        "exit_code": 0
+      },
+      {
+        "target": "head",
+        "exit_code": 0
+      }
+    ],
+    "database": "wolf15_ci_test_domain_4bd240514985",
+    "baseline_row_hash": "6c56132582955972dd943064fb209d0601dbfdcda91c56fcce9a95eda3401313",
+    "upgraded_row_hash": "6c56132582955972dd943064fb209d0601dbfdcda91c56fcce9a95eda3401313",
+    "postgres": {
+      "database": "wolf15_ci_test_domain_4bd240514985",
+      "user": "wolf_user",
+      "server_address": "172.18.0.3/32",
+      "server_port": 5432,
+      "server_version_num": 160015,
+      "postmaster_started_at": "2026-09-09 10:49:43.164714+00",
+      "database_oid": "18465",
+      "migration_heads": [
+        "20260909_06"
+      ],
+      "settings": {
+        "fsync": "on",
+        "synchronous_commit": "on",
+        "shared_buffers": "128MB",
+        "max_connections": "100",
+        "TimeZone": "UTC",
+        "default_transaction_isolation": "read committed",
+        "wolf15.environment_class": "DISPOSABLE_TEST",
+        "wolf15.destructive_tests_allowed": "true"
+      },
+      "tables": {
+        "ledgers": "pair_activity_ledgers_v31",
+        "raw": "pair_activity_raw_v31",
+        "observations": "pair_activity_observations_v31",
+        "evaluations": "pair_activity_evaluations_v31",
+        "attachments": "pair_activity_attachments_v31",
+        "snapshots": "pair_activity_snapshots_v31"
+      }
+    }
+  },
+  "built_api": {
+    "scope": "BUILT_API_BOOTSTRAP_LIFESPAN_AND_HTTP_ONLY",
+    "accepted": true,
+    "cases": [
+      {
+        "case": "full_built_registry",
+        "passed": true
+      },
+      {
+        "case": "served_dependency_failure",
+        "healthz": 200,
+        "readyz": 503,
+        "passed": true
+      },
+      {
+        "case": "graceful_shutdown",
+        "exit_code": -15,
+        "passed": true
+      },
+      {
+        "case": "mandatory_router",
+        "exit_code": 1,
+        "passed": true
+      },
+      {
+        "case": "bootstrap",
+        "exit_code": 1,
+        "passed": true
+      }
+    ]
+  },
+  "local_fix": {
+    "label": "p1-fix-a4",
+    "counts": {
+      "tests": 231,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "source_unchanged": true
+  },
+  "prior_local_attempts": {
+    "p1-fix-a1": "COLLECTION_ONLY_PROCESS_HANDLE_MISSING_NO_RESULT",
+    "p1-fix-a2": "231_PASS_SOURCE_CHANGED_BY_FORENSIC_FIXTURE_APPEND_NOT_CLOSING_EVIDENCE",
+    "p1-fix-a3": "HARNESS_SNAPSHOT_FAILED_ON_DELETED_FILE_BEFORE_TEST_EXECUTION"
+  },
+  "test_inventory_delta": {
+    "removed": "15 tests parsing connectionState.ts retired by main commit 77315095 (#422)",
+    "replacement": "2 viewerDashboard.test.tsx cases preserve observed STALE at age 0 and 7200; final frontend execution pending",
+    "postgres_ids": "unchanged 87"
+  },
+  "remaining": [
+    "C01 alternate deployment gate",
+    "C02 application role and runtime ownership",
+    "C03 full CI/coverage, security, required skips",
+    "C05 main governance",
+    "C06 mandatory worker supervision and full runtime readiness",
+    "DEMO binding and P2-P6 acceptance"
+  ],
+  "milestones_done": 0
+}

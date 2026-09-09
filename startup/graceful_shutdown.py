@@ -14,14 +14,23 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 from collections.abc import Awaitable, Callable
 
 from loguru import logger
 
-__all__ = ["GracefulShutdown"]
+__all__ = ["GracefulShutdown", "ShutdownDrainTimeoutError", "ShutdownCleanupTimeoutError"]
 
 # Default timeout for draining in-flight work before forceful cancellation.
 _DEFAULT_DRAIN_TIMEOUT_SEC = 10.0
+
+
+class ShutdownDrainTimeoutError(TimeoutError):
+    """Writers remain live; resource cleanup must not proceed."""
+
+
+class ShutdownCleanupTimeoutError(TimeoutError):
+    """An owned cleanup exceeded the existing drain bound."""
 
 
 class GracefulShutdown:
@@ -37,8 +46,12 @@ class GracefulShutdown:
         await gs.shutdown(tasks)
     """
 
-    def __init__(self, drain_timeout: float = _DEFAULT_DRAIN_TIMEOUT_SEC) -> None:
+    def __init__(self, drain_timeout: float = _DEFAULT_DRAIN_TIMEOUT_SEC, *, require_quiescent: bool = False) -> None:
+        if require_quiescent and (not math.isfinite(drain_timeout) or drain_timeout <= 0):
+            raise ValueError("SHUTDOWN_DRAIN_BOUND_INVALID")
         self._drain_timeout = drain_timeout
+        self._require_quiescent = require_quiescent
+        self._cleanup_tasks: set[asyncio.Task] = set()
         self._cleanups: list[tuple[str, Callable[[], Awaitable[None]]]] = []
 
     def register_cleanup(self, name: str, coro_fn: Callable[[], Awaitable[None]]) -> None:
@@ -74,8 +87,12 @@ class GracefulShutdown:
                 for t in pending:
                     t.cancel()
                 # Give forcefully cancelled tasks a short window to clean up
-                with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait(pending, timeout=2.0)
+                followup_done, pending = await asyncio.wait(pending, timeout=2.0)
+                done.update(followup_done)
+                if pending and self._require_quiescent:
+                    # The process owner supplies the final bounded exit. Never
+                    # close resources still reachable by these live writers.
+                    raise ShutdownDrainTimeoutError("SHUTDOWN_WRITERS_NOT_QUIESCENT")
 
             # Collect and log any unexpected exceptions from drained tasks
             for task in done:
@@ -92,12 +109,43 @@ class GracefulShutdown:
         # ── Phase 2: Run registered cleanups in order ───────────────
         for name, cleanup_fn in self._cleanups:
             try:
-                await cleanup_fn()
+                if self._require_quiescent:
+                    await self._bounded_cleanup(cleanup_fn)
+                else:
+                    await cleanup_fn()
                 logger.info("[GracefulShutdown] Cleanup '{}' completed", name)
             except Exception as exc:
+                if self._require_quiescent:
+                    raise
                 logger.error("[GracefulShutdown] Cleanup '{}' failed: {}", name, exc)
 
         logger.info("[GracefulShutdown] Shutdown sequence complete")
+
+    async def _bounded_cleanup(self, cleanup_fn):
+        # wait_for can exceed its timeout while awaiting cancellation. Keep the
+        # task owned and observable, then let the process watchdog bound exit.
+        async def invoke():
+            await cleanup_fn()
+
+        task = asyncio.create_task(invoke(), name="shutdown-cleanup")
+        self._cleanup_tasks.add(task)
+
+        def observe(completed):
+            self._cleanup_tasks.discard(completed)
+            if not completed.cancelled():
+                completed.exception()
+
+        task.add_done_callback(observe)
+        try:
+            _, pending = await asyncio.wait({task}, timeout=self._drain_timeout)
+        except BaseException:
+            task.cancel()
+            raise
+        if pending:
+            task.cancel()
+            raise ShutdownCleanupTimeoutError("SHUTDOWN_CLEANUP_TIMEOUT")
+        # Propagate failures, including cancellation, to the process owner.
+        task.result()
 
     async def drain_worker_tasks(self, in_flight: list[asyncio.Task[None]], label: str = "worker") -> None:
         """Wait for in-flight message-processing tasks to complete.
@@ -128,5 +176,10 @@ class GracefulShutdown:
             )
             for t in pending:
                 t.cancel()
-            with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait(pending, timeout=2.0)
+            if self._require_quiescent:
+                _, pending = await asyncio.wait(pending, timeout=2.0)
+                if pending:
+                    raise ShutdownDrainTimeoutError("SHUTDOWN_WRITERS_NOT_QUIESCENT")
+            else:
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait(pending, timeout=2.0)

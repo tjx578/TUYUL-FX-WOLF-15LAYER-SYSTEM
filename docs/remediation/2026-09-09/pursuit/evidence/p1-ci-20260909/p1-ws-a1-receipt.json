@@ -1,0 +1,103 @@
+{
+  "git_resource_options": {
+    "core.packedGitWindowSize": "1m",
+    "core.packedGitLimit": "32m",
+    "core.deltaBaseCacheLimit": "8m"
+  },
+  "label": "p1-ws-a1",
+  "runner": "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+  "platform": "win32",
+  "collection_command": [
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_ws_load.py",
+    "--collect-only",
+    "-q"
+  ],
+  "test_command": [
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_ws_load.py",
+    "-q",
+    "--timeout=60",
+    "--basetemp",
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s03-runtime-staging\\ci-temp\\p1-ws-a1",
+    "--junitxml",
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s03-runtime-staging\\ci-evidence\\p1-ws-a1.xml"
+  ],
+  "collection_exit": 0,
+  "expected_test_count": 5,
+  "expected_test_ids": [
+    "tests/test_ws_load.py::test_ws_load_50_connections",
+    "tests/test_ws_load.py::test_ws_channel_isolation",
+    "tests/test_ws_load.py::test_ws_rapid_connect_disconnect",
+    "tests/test_ws_load.py::test_ws_load_fixture_does_not_bypass_auth[invalid]",
+    "tests/test_ws_load.py::test_ws_load_fixture_does_not_bypass_auth[unscoped]"
+  ],
+  "pytest_exit": 1,
+  "xml_counts": {
+    "tests": 5,
+    "failures": 0,
+    "errors": 5,
+    "skipped": 0
+  },
+  "elapsed_seconds": 15.486,
+  "before": {
+    "head": "4d05476433a1b5077caddb5789cdf565e35941af",
+    "diff_sha256": "28a88b42c1570839a78e1c53c53b43a0abc9e1457b93fa54918706db6f651804",
+    "files": {
+      "tests/test_ws_load.py": "6f3fc7525096d742a40765cb53831cc2d79fedbd64551255640100c63fc37294"
+    },
+    "integration_source_files": {
+      "analysis/signal_throttle_log_analyzer.py": "95797f2e0ce9da9c73bfeb58f4a12e0f7fc1fab0f251c3484bb566a003e53680",
+      "analysis/strategy_5scr_pair_activity.py": "c0ff373cf65f619a3114eeb90c35287d913d318aebb269716d3733a394922bce",
+      "analysis/strategy_5scr_pair_activity_report.py": "44288d0eea716904c0b6a0aa945a986ba14051c003875033446a995fc6cf3af5",
+      "api/app_factory.py": "e15588e57c9bf1833ab0cd43ec8ca43a44298e69c509b2cb87a1561568762cce",
+      "api/owner_dashboard_release.py": "650d9758e76128ff9ed7d563bab3e297c3bde6cf2937d0b44e8ffa73b024ddb2",
+      "contracts/strategy_5scr_pair_activity.py": "848f0b3c486420540685cb7848ebdfdbe77151a67aebf7fe6b59aabea8d85bd1",
+      "deploy/railway/migration_runner.py": "ae33ae5299ed4a3e2612b33618f728ef60299cc91431fa221e3533097aa7dfac",
+      "pipeline/wolf_constitutional_pipeline.py": "ec5d28a178979578a8ed4ca8616c9aeb9d9781a89f3b292d35676462ad292ab7",
+      "requirements.txt": "26ccd715c557a54b41ff725d07949dc1cd2d044408ca262ff8b403ac4a45debd",
+      "tests/fixtures/ws_load_app.py": "12ac84455faf6b9d64879b0cbfbf6244181d799e2523aaaaa80ffe422a673bf0",
+      "tests/test_pair_activity_report_integration.py": "620f6adf559facae89d272e09b03dd0eb0b58bfbd04ddd3a3b353a150e54f43e",
+      "tests/test_signal_throttle_log_analyzer.py": "43032ee732235989d0fc66158b5f0b22dc44297ae8b6300523072d6f58a256d8",
+      "tests/test_strategy_5scr_pair_activity.py": "441974fbe743a0735382221e135ac8035d0145a361d4e98b9ca9bbacf432b265",
+      "tests/test_ws_load.py": "6f3fc7525096d742a40765cb53831cc2d79fedbd64551255640100c63fc37294"
+    }
+  },
+  "after": {
+    "head": "4d05476433a1b5077caddb5789cdf565e35941af",
+    "diff_sha256": "28a88b42c1570839a78e1c53c53b43a0abc9e1457b93fa54918706db6f651804",
+    "files": {
+      "tests/test_ws_load.py": "6f3fc7525096d742a40765cb53831cc2d79fedbd64551255640100c63fc37294"
+    },
+    "integration_source_files": {
+      "analysis/signal_throttle_log_analyzer.py": "95797f2e0ce9da9c73bfeb58f4a12e0f7fc1fab0f251c3484bb566a003e53680",
+      "analysis/strategy_5scr_pair_activity.py": "c0ff373cf65f619a3114eeb90c35287d913d318aebb269716d3733a394922bce",
+      "analysis/strategy_5scr_pair_activity_report.py": "44288d0eea716904c0b6a0aa945a986ba14051c003875033446a995fc6cf3af5",
+      "api/app_factory.py": "e15588e57c9bf1833ab0cd43ec8ca43a44298e69c509b2cb87a1561568762cce",
+      "api/owner_dashboard_release.py": "650d9758e76128ff9ed7d563bab3e297c3bde6cf2937d0b44e8ffa73b024ddb2",
+      "contracts/strategy_5scr_pair_activity.py": "848f0b3c486420540685cb7848ebdfdbe77151a67aebf7fe6b59aabea8d85bd1",
+      "deploy/railway/migration_runner.py": "ae33ae5299ed4a3e2612b33618f728ef60299cc91431fa221e3533097aa7dfac",
+      "pipeline/wolf_constitutional_pipeline.py": "ec5d28a178979578a8ed4ca8616c9aeb9d9781a89f3b292d35676462ad292ab7",
+      "requirements.txt": "26ccd715c557a54b41ff725d07949dc1cd2d044408ca262ff8b403ac4a45debd",
+      "tests/fixtures/ws_load_app.py": "12ac84455faf6b9d64879b0cbfbf6244181d799e2523aaaaa80ffe422a673bf0",
+      "tests/test_pair_activity_report_integration.py": "620f6adf559facae89d272e09b03dd0eb0b58bfbd04ddd3a3b353a150e54f43e",
+      "tests/test_signal_throttle_log_analyzer.py": "43032ee732235989d0fc66158b5f0b22dc44297ae8b6300523072d6f58a256d8",
+      "tests/test_strategy_5scr_pair_activity.py": "441974fbe743a0735382221e135ac8035d0145a361d4e98b9ca9bbacf432b265",
+      "tests/test_ws_load.py": "6f3fc7525096d742a40765cb53831cc2d79fedbd64551255640100c63fc37294"
+    }
+  },
+  "source_unchanged": true,
+  "scope": "LOCAL_SUBSET_ONLY_NO_PRODUCTION_DB_BROKER_OR_PROVIDER"
+}

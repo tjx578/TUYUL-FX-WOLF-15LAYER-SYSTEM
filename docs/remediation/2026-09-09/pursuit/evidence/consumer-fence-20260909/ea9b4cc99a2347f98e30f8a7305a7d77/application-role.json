@@ -1,0 +1,28 @@
+{
+  "committed_and_duplicate": true,
+  "credential_recorded": false,
+  "forbidden_privilege_cases": 8,
+  "granted_tables": [
+    "strategy_5scr_analysis_lifecycles_v2",
+    "strategy_5scr_activity_inbox_v1",
+    "strategy_5scr_activity_conflicts_v1",
+    "strategy_5scr_activity_consumer_cursors_v1",
+    "strategy_5scr_activity_mappings_v1",
+    "strategy_5scr_activity_emissions_v1"
+  ],
+  "identity": {
+    "effective_user": "s03_app_659b08effde64f80",
+    "login_user": "s03_app_659b08effde64f80",
+    "rolbypassrls": false,
+    "rolcreatedb": false,
+    "rolcreaterole": false,
+    "rolreplication": false,
+    "rolsuper": false
+  },
+  "legacy_unfenced_write_rejected": true,
+  "owner_table_privileges": "NONE",
+  "run_id": "ea9b4cc99a2347f98e30f8a7305a7d77",
+  "scope": "DISPOSABLE_LOGIN_ROLE_ONLY_NOT_PRODUCTION_GRANTS",
+  "stale_or_forged_direct_guc_cases": 2,
+  "stale_owner_rejected": true
+}

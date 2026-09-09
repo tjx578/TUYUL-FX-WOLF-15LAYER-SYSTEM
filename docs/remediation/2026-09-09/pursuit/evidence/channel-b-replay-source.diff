@@ -1,0 +1,284 @@
+commit 52a9cb9460e6c66392f85032f22993d14eb7e7a1
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 13:51:08 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 13:51:08 2026 +0800
+
+    Verify retained Channel B reports against bound inputs account window and age
+
+diff --git a/ops/mt5_mcp/reconcile.py b/ops/mt5_mcp/reconcile.py
+index 723f4407..01979b21 100644
+--- a/ops/mt5_mcp/reconcile.py
++++ b/ops/mt5_mcp/reconcile.py
+@@ -444,9 +444,9 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) ->
+         if isinstance(row, Mapping)
+         and str(row.get("executor_id")) in active_ids
+         and row.get("status") == "ONLINE"
+-        and isinstance(row.get("heartbeat_age_seconds"), int)
++        and type(row.get("heartbeat_age_seconds")) is int
+         and -5 <= row["heartbeat_age_seconds"] <= MAX_RUNTIME_AGE_SECONDS
+-        and isinstance(row.get("snapshot_age_seconds"), int)
++        and type(row.get("snapshot_age_seconds")) is int
+         and -5 <= row["snapshot_age_seconds"] <= MAX_RUNTIME_AGE_SECONDS
+         and row.get("latest_snapshot_id") is not None
+     }
+@@ -468,7 +468,7 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) ->
+             "outbox_v2_binding_mismatch_count",
+         )
+         internal_holds = row.get("latest_snapshot_account_matches") is True and all(
+-            int(row.get(field) or 0) == 0 for field in mismatch_fields
++            type(row.get(field)) is int and row[field] == 0 for field in mismatch_fields
+         )
+     evidence: dict[str, Any] = {
+         **direct_evidence,
+diff --git a/ops/mt5_mcp/replay_report.py b/ops/mt5_mcp/replay_report.py
+new file mode 100644
+index 00000000..60f5bbc1
+--- /dev/null
++++ b/ops/mt5_mcp/replay_report.py
+@@ -0,0 +1,89 @@
++"""Read-only replay validation; consistency is separate from reader attestation."""
++
++from __future__ import annotations
++
++from datetime import datetime, timedelta
++from typing import Any
++
++from ops.mt5_mcp import account_binding, reconcile
++from ops.mt5_mcp.report_integrity import evidence_digest, verify_report_integrity
++
++
++def verify_reconciliation_replay(
++    report: dict[str, Any],
++    *,
++    database: dict[str, Any],
++    broker: dict[str, Any],
++    expected_receipt_digest: str,
++    expected_account_identifier: str,
++    expected_sources: dict[str, str],
++    window_from: datetime,
++    window_to: datetime,
++    as_of: datetime,
++    maximum_age: timedelta,
++) -> dict[str, Any]:
++    """Replay retained inputs under caller-bound scope; never authorizes execution.
++
++    Expected digest, account, sources, clock and age limit must be supplied by
++    the verifier's caller, not copied from untrusted report fields.
++    """
++
++    def result(reason: str) -> dict[str, Any]:
++        return {
++            "schema_version": "wolf15.channel-b-replay.v1",
++            "input_replay_consistent": reason == "CONSISTENT_REPLAY",
++            "reason": reason,
++            "independent_reader_attestation": "NOT_VERIFIED",
++            "execution_authority": False,
++            "production_ready": False,
++        }
++
++    try:
++        if (
++            any(
++                not isinstance(t, datetime) or t.tzinfo is None or t.utcoffset() is None
++                for t in (window_from, window_to, as_of)
++            )
++            or not isinstance(maximum_age, timedelta)
++            or maximum_age <= timedelta(0)
++            or not window_from < window_to <= as_of
++        ):
++            return result("INVALID_VERIFIER_SCOPE")
++        if not verify_report_integrity(report, expected_receipt_digest=expected_receipt_digest):
++            return result("REPORT_INTEGRITY_MISMATCH")
++        receipt = report["integrity"]
++        if not expected_sources or receipt["orchestrator_sources"] != expected_sources:
++            return result("SOURCE_BINDING_MISMATCH")
++        if receipt["database_snapshot_digest"] != evidence_digest(database) or receipt[
++            "broker_snapshot_digest"
++        ] != evidence_digest(broker):
++            return result("INPUT_DIGEST_MISMATCH")
++        if report.get("window") != {"from_utc": reconcile._iso(window_from), "to_utc": reconcile._iso(window_to)}:
++            return result("WINDOW_MISMATCH")
++        interval = broker.get("collection_interval", {})
++        started = reconcile._evidence_time(interval.get("started_at_utc"))
++        finished = reconcile._evidence_time(interval.get("finished_at_utc"))
++        if started is None or finished is None or not window_to <= started <= finished <= as_of:
++            return result("COLLECTION_CLOCK_MISMATCH")
++        # Age is measured from collection start, so a long collection cannot
++        # make an old observation fresh merely by finishing recently.
++        if as_of - started > maximum_age:
++            return result("REPORT_TOO_OLD")
++        identity_state, _, identity = reconcile._direct_identity(broker)
++        if (
++            identity_state != "MEASURED"
++            or identity is None
++            or not account_binding.identifiers_match(identity["identifier"], expected_account_identifier)
++        ):
++            return result("ACCOUNT_SCOPE_MISMATCH")
++        replayed = reconcile.reconcile_snapshots(
++            database=database, broker=broker, window_from=window_from, window_to=window_to
++        )
++        body = {key: value for key, value in report.items() if key != "integrity"}
++        if evidence_digest(replayed) != evidence_digest(body):
++            return result("EVALUATION_REPLAY_MISMATCH")
++        if replayed["B-B16"] != "EXECUTED_PASS":
++            return result("RECONCILIATION_GATE_NOT_PASS")
++        return result("CONSISTENT_REPLAY")
++    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
++        return result("MALFORMED_REPLAY_EVIDENCE")
+diff --git a/tests/test_channel_b_reconciliation.py b/tests/test_channel_b_reconciliation.py
+index 6dc4902a..ae6dfc4c 100644
+--- a/tests/test_channel_b_reconciliation.py
++++ b/tests/test_channel_b_reconciliation.py
+@@ -943,3 +943,151 @@ def test_broker_snapshot_records_parent_bounds_over_child_claim(monkeypatch, tmp
+     started = datetime.fromisoformat(interval["started_at_utc"])
+     finished = datetime.fromisoformat(interval["finished_at_utc"])
+     assert before <= started <= finished <= after
++
++
++@pytest.mark.parametrize(
++    "field",
++    [
++        "command_account_mismatch_count",
++        "reservation_v1_account_mismatch_count",
++        "reservation_v2_binding_mismatch_count",
++        "outbox_v1_account_mismatch_count",
++        "outbox_v2_binding_mismatch_count",
++    ],
++)
++def test_missing_account_mismatch_count_is_not_zero(field):
++    database = _database(
++        account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
++    )
++    del database["account_binding"][0][field]
++    report = reconcile.reconcile_snapshots(
++        database=database, broker=_broker(), window_from=WINDOW_FROM, window_to=WINDOW_TO
++    )
++    assert report["B-B16"] != "EXECUTED_PASS"
++    assert report["account_binding_evidence"]["database_internal_binding_holds"] is False
++
++
++def _replay_bundle():
++    from ops.mt5_mcp.report_integrity import seal_report
++
++    database = _database(
++        account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
++    )
++    broker = _broker()
++    sources = {"fixture.py": "sha256:" + "1" * 64}
++    report = seal_report(
++        reconcile.reconcile_snapshots(database=database, broker=broker, window_from=WINDOW_FROM, window_to=WINDOW_TO),
++        database=database,
++        broker=broker,
++        sources_before=sources,
++        sources_after=sources,
++    )
++    return {
++        "report": report,
++        "database": database,
++        "broker": broker,
++        "expected_receipt_digest": report["integrity"]["receipt_digest"],
++        "expected_account_identifier": DIRECT_IDENTIFIER,
++        "expected_sources": sources,
++        "window_from": WINDOW_FROM,
++        "window_to": WINDOW_TO,
++        "as_of": WINDOW_TO + timedelta(seconds=10),
++        "maximum_age": timedelta(seconds=10),
++    }
++
++
++def test_replay_bound_inputs_pass_without_execution_authority():
++    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
++
++    result = verify_reconciliation_replay(**_replay_bundle())
++    assert result["input_replay_consistent"] is True
++    assert result["independent_reader_attestation"] == "NOT_VERIFIED"
++    assert result["execution_authority"] is False
++    assert result["production_ready"] is False
++
++
++@pytest.mark.parametrize(
++    "change,reason",
++    [
++        ("digest", "REPORT_INTEGRITY_MISMATCH"),
++        ("account", "ACCOUNT_SCOPE_MISMATCH"),
++        ("source", "SOURCE_BINDING_MISMATCH"),
++        ("input", "INPUT_DIGEST_MISMATCH"),
++        ("window", "WINDOW_MISMATCH"),
++        ("age", "REPORT_TOO_OLD"),
++        ("clock", "COLLECTION_CLOCK_MISMATCH"),
++        ("naive", "INVALID_VERIFIER_SCOPE"),
++        ("no_age", "INVALID_VERIFIER_SCOPE"),
++    ],
++)
++def test_replay_rejects_mismatched_verifier_scope(change, reason):
++    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
++
++    bundle = _replay_bundle()
++    if change == "digest":
++        bundle["expected_receipt_digest"] = "sha256:" + "0" * 64
++    elif change == "account":
++        bundle["expected_account_identifier"] = account_binding.identifier(
++            secret_key=TEST_KEY, key_id=TEST_KEY_ID, login=99999999, server="Broker-Demo"
++        )
++    elif change == "source":
++        bundle["expected_sources"] = {"different.py": "sha256:" + "1" * 64}
++    elif change == "input":
++        bundle["database"]["mutation_evidence"]["changed_tuples"] = 1
++    elif change == "window":
++        bundle["window_from"] -= timedelta(seconds=1)
++    elif change == "age":
++        bundle["as_of"] += timedelta(microseconds=1)
++    elif change == "clock":
++        bundle["as_of"] = WINDOW_TO
++    elif change == "naive":
++        bundle["as_of"] = bundle["as_of"].replace(tzinfo=None)
++    elif change == "no_age":
++        bundle["maximum_age"] = timedelta(0)
++    result = verify_reconciliation_replay(**bundle)
++    assert result["reason"] == reason
++    assert result["input_replay_consistent"] is False
++    assert result["execution_authority"] is False
++
++
++def test_consistently_resealed_false_result_is_rejected_by_reexecution():
++    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
++    from ops.mt5_mcp.report_integrity import seal_report
++
++    bundle = _replay_bundle()
++    body = {k: v for k, v in bundle["report"].items() if k != "integrity"}
++    body["ACCOUNT_BINDING_STATE"] = "fabricated"
++    changed = seal_report(
++        body,
++        database=bundle["database"],
++        broker=bundle["broker"],
++        sources_before=bundle["expected_sources"],
++        sources_after=bundle["expected_sources"],
++    )
++    bundle["report"] = changed
++    bundle["expected_receipt_digest"] = changed["integrity"]["receipt_digest"]
++    assert verify_reconciliation_replay(**bundle)["reason"] == "EVALUATION_REPLAY_MISMATCH"
++
++
++def test_consistent_replay_of_blocked_gate_is_not_accepted():
++    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
++    from ops.mt5_mcp.report_integrity import seal_report
++
++    bundle = _replay_bundle()
++    bundle["database"]["account_binding"][0]["command_account_mismatch_count"] = 1
++    evaluated = reconcile.reconcile_snapshots(
++        database=bundle["database"], broker=bundle["broker"], window_from=WINDOW_FROM, window_to=WINDOW_TO
++    )
++    assert evaluated["B-B16"] == "EXECUTED_BLOCKED"
++    report = seal_report(
++        evaluated,
++        database=bundle["database"],
++        broker=bundle["broker"],
++        sources_before=bundle["expected_sources"],
++        sources_after=bundle["expected_sources"],
++    )
++    bundle["report"] = report
++    bundle["expected_receipt_digest"] = report["integrity"]["receipt_digest"]
++    result = verify_reconciliation_replay(**bundle)
++    assert result["reason"] == "RECONCILIATION_GATE_NOT_PASS"
++    assert result["input_replay_consistent"] is False

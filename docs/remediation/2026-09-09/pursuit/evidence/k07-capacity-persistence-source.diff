@@ -1,0 +1,762 @@
+commit 19c105a53d9b4486f8b88e67cbf7a271fb938196
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 15:53:22 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 15:53:22 2026 +0800
+
+    feat(storage): persist test-only capacity with account owner fencing and CAS
+
+diff --git a/contracts/strategy_5scr_capacity_owner_v31.py b/contracts/strategy_5scr_capacity_owner_v31.py
+new file mode 100644
+index 00000000..f17e54d9
+--- /dev/null
++++ b/contracts/strategy_5scr_capacity_owner_v31.py
+@@ -0,0 +1,17 @@
++"""Explicit TEST_ONLY account writer identity, distinct from strategy ownership."""
++
++from typing import Literal
++from uuid import UUID
++
++from pydantic import Field
++
++from contracts.strategy_5scr_net_geometry_v31 import GeometryContract
++
++
++class CapacityOwnerFenceV31(GeometryContract):
++    profile: Literal["TEST_ONLY"]
++    account_id: str = Field(min_length=1, max_length=100)
++    executor_id: UUID
++    owner_id: str = Field(min_length=1, max_length=200)
++    owner_epoch: int = Field(ge=1, strict=True)
++    token: UUID
+diff --git a/storage/migrations/versions/20260909_05_capacity_ledger_v31.py b/storage/migrations/versions/20260909_05_capacity_ledger_v31.py
+new file mode 100644
+index 00000000..631381a2
+--- /dev/null
++++ b/storage/migrations/versions/20260909_05_capacity_ledger_v31.py
+@@ -0,0 +1,51 @@
++"""Fenced account capacity state for explicit TEST_ONLY transactions."""
++
++from alembic import op
++
++revision = "20260909_05"
++down_revision = "20260909_04"
++branch_labels = None
++depends_on = None
++
++
++def upgrade():
++    op.execute("""CREATE TABLE public.strategy_5scr_capacity_ledgers_v31 (
++        account_id text PRIMARY KEY, executor_id uuid NOT NULL, owner_id text NOT NULL,
++        owner_epoch bigint NOT NULL CHECK(owner_epoch>0), token uuid NOT NULL UNIQUE,
++        version bigint NOT NULL CHECK(version>=0), initial_hash text NOT NULL,
++        ledger_hash text NOT NULL CHECK(ledger_hash ~ '^sha256:[0-9a-f]{64}$'), payload text NOT NULL,
++        CHECK ((payload::jsonb->>'profile'='TEST_ONLY') IS TRUE),
++        CHECK ((payload::jsonb->>'account_id'=account_id) IS TRUE),
++        CHECK ((payload::jsonb->>'executor_id'=executor_id::text) IS TRUE),
++        CHECK (((payload::jsonb->>'version')::bigint=version) IS TRUE),
++        CHECK (((payload::jsonb->>'owner_epoch')::bigint=owner_epoch) IS TRUE)
++    )""")
++    op.execute("""CREATE FUNCTION public.guard_5scr_capacity_ledger_v31() RETURNS trigger LANGUAGE plpgsql AS $$
++    DECLARE expected_token uuid;
++    BEGIN
++        IF TG_OP='DELETE' THEN RAISE EXCEPTION 'CAPACITY_LEDGER_DELETE_PROHIBITED'; END IF;
++        IF TG_OP='INSERT' THEN
++            expected_token:=NEW.token;
++            IF NEW.version<>0 OR NEW.owner_epoch<>1 THEN RAISE EXCEPTION 'CAPACITY_INITIAL_VERSION_INVALID'; END IF;
++        ELSE
++            expected_token:=OLD.token;
++            IF NEW.account_id<>OLD.account_id OR NEW.executor_id<>OLD.executor_id OR NEW.initial_hash<>OLD.initial_hash
++               OR NEW.version<>OLD.version+1 THEN RAISE EXCEPTION 'CAPACITY_STATE_VERSION_INVALID'; END IF;
++            IF NEW.owner_epoch=OLD.owner_epoch THEN
++                IF NEW.token<>OLD.token OR NEW.owner_id<>OLD.owner_id THEN RAISE EXCEPTION 'CAPACITY_OWNER_INVALID'; END IF;
++            ELSIF NEW.owner_epoch=OLD.owner_epoch+1 THEN
++                IF NEW.token=OLD.token OR (NEW.payload::jsonb-'owner_epoch'-'version') IS DISTINCT FROM
++                    (OLD.payload::jsonb-'owner_epoch'-'version') THEN RAISE EXCEPTION 'CAPACITY_HANDOVER_STATE_CHANGED'; END IF;
++            ELSE RAISE EXCEPTION 'CAPACITY_OWNER_EPOCH_INVALID'; END IF;
++        END IF;
++        IF expected_token::text IS DISTINCT FROM current_setting('wolf15.capacity_owner_token',true)
++        THEN RAISE EXCEPTION 'CAPACITY_OWNER_FENCED'; END IF;
++        RETURN NEW;
++    END; $$""")
++    op.execute("""CREATE TRIGGER guard_5scr_capacity_ledger_v31 BEFORE INSERT OR UPDATE OR DELETE
++        ON public.strategy_5scr_capacity_ledgers_v31 FOR EACH ROW EXECUTE FUNCTION public.guard_5scr_capacity_ledger_v31()""")
++
++
++def downgrade():
++    op.execute("DROP TABLE public.strategy_5scr_capacity_ledgers_v31")
++    op.execute("DROP FUNCTION public.guard_5scr_capacity_ledger_v31()")
+diff --git a/storage/strategy_5scr_capacity_v31.py b/storage/strategy_5scr_capacity_v31.py
+new file mode 100644
+index 00000000..288e1d78
+--- /dev/null
++++ b/storage/strategy_5scr_capacity_v31.py
+@@ -0,0 +1,174 @@
++"""Caller-owned TEST_ONLY capacity persistence; no automatic bootstrap or DSN.
++
++Acquire this account lock before candidate/symbol locks. Transaction A must add
++campaign/leg/signal/outbox records on this same connection before commit. The
++methods here return tentative state and do not authorize a command or broker.
++"""
++
++from uuid import uuid4
++
++from contracts.strategy_5scr_capacity_owner_v31 import CapacityOwnerFenceV31
++from contracts.strategy_5scr_capacity_v31 import CapacityLedgerV31
++from risk.strategy_5scr_capacity_v31 import (
++    capacity_ledger_hash_v31,
++    refresh_capacity_baseline_v31,
++    transition_capacity_v31,
++)
++
++TABLE = "public.strategy_5scr_capacity_ledgers_v31"
++
++
++def _ledger(row):
++    value = CapacityLedgerV31.model_validate_json(row["payload"])
++    if (value.account_id, str(value.executor_id), value.version, value.owner_epoch) != (
++        row["account_id"],
++        str(row["executor_id"]),
++        row["version"],
++        row["owner_epoch"],
++    ) or capacity_ledger_hash_v31(value) != row["ledger_hash"]:
++        raise ValueError("CAPACITY_PERSISTED_STATE_MISMATCH")
++    return value
++
++
++class CapacityRepositoryV31:
++    def __init__(self, *, fence: CapacityOwnerFenceV31):
++        self.fence = CapacityOwnerFenceV31.model_validate(fence.model_dump())
++
++    async def _account_lock(self, connection):
++        if not connection.is_in_transaction():
++            raise ValueError("CAPACITY_CALLER_TRANSACTION_REQUIRED")
++        await connection.execute(
++            "SELECT pg_advisory_xact_lock(hashtextextended('5scr-capacity-v31:' || $1::text,0))",
++            self.fence.account_id,
++        )
++
++    async def lock_current(self, connection):
++        await self._account_lock(connection)
++        row = await connection.fetchrow(f"SELECT * FROM {TABLE} WHERE account_id=$1 FOR UPDATE", self.fence.account_id)
++        if row is None:
++            raise ValueError("CAPACITY_PERSISTENCE_UNINITIALIZED")
++        if any(
++            str(row[key]) != str(getattr(self.fence, key))
++            for key in ("executor_id", "owner_id", "owner_epoch", "token")
++        ):
++            raise ValueError("CAPACITY_PERSISTENCE_OWNER_FENCED")
++        await connection.execute("SELECT set_config('wolf15.capacity_owner_token',$1,true)", str(self.fence.token))
++        return _ledger(row)
++
++    async def initialize_in_transaction(self, connection, ledger, *, verify_initial):
++        """Explicit initialization with a verified initial baseline; never reset."""
++        ledger = CapacityLedgerV31.model_validate(ledger.model_dump())
++        if (
++            (ledger.account_id, ledger.executor_id, ledger.owner_epoch)
++            != (self.fence.account_id, self.fence.executor_id, self.fence.owner_epoch)
++            or self.fence.owner_epoch != 1
++            or ledger.version != 0
++            or ledger.reservations
++            or ledger.baseline_refreshes
++        ):
++            raise ValueError("CAPACITY_INITIAL_STATE_INVALID")
++        digest = capacity_ledger_hash_v31(ledger)
++        if verify_initial is None or verify_initial(ledger, digest) is not True:
++            raise ValueError("CAPACITY_INITIAL_VERIFICATION_REJECTED")
++        if capacity_ledger_hash_v31(ledger) != digest:
++            raise ValueError("CAPACITY_INITIAL_EVIDENCE_CHANGED")
++        await self._account_lock(connection)
++        row = await connection.fetchrow(f"SELECT * FROM {TABLE} WHERE account_id=$1 FOR UPDATE", self.fence.account_id)
++        if row is not None:
++            current = await self.lock_current(connection)
++            if row["initial_hash"] != digest:
++                raise ValueError("CAPACITY_INITIALIZATION_CONFLICT")
++            return current
++        await connection.execute("SELECT set_config('wolf15.capacity_owner_token',$1,true)", str(self.fence.token))
++        await connection.execute(
++            f"INSERT INTO {TABLE}(account_id,executor_id,owner_id,owner_epoch,token,version,initial_hash,ledger_hash,payload) "
++            "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
++            ledger.account_id,
++            ledger.executor_id,
++            self.fence.owner_id,
++            ledger.owner_epoch,
++            self.fence.token,
++            ledger.version,
++            digest,
++            digest,
++            ledger.model_dump_json(),
++        )
++        return ledger
++
++    async def _save(self, connection, before, after, *, next_fence=None):
++        after = CapacityLedgerV31.model_validate(after.model_dump())
++        if after == before:
++            return after
++        target = next_fence or self.fence
++        if (after.account_id, after.executor_id, after.version, after.owner_epoch) != (
++            before.account_id,
++            before.executor_id,
++            before.version + 1,
++            target.owner_epoch,
++        ):
++            raise ValueError("CAPACITY_PERSISTENCE_TRANSITION_INVALID")
++        row = await connection.fetchrow(
++            f"UPDATE {TABLE} SET owner_id=$1,owner_epoch=$2,token=$3,version=$4,ledger_hash=$5,payload=$6 "
++            "WHERE account_id=$7 AND executor_id=$8 AND owner_id=$9 AND owner_epoch=$10 AND token=$11 "
++            "AND version=$12 AND ledger_hash=$13 RETURNING account_id",
++            target.owner_id,
++            target.owner_epoch,
++            target.token,
++            after.version,
++            capacity_ledger_hash_v31(after),
++            after.model_dump_json(),
++            self.fence.account_id,
++            self.fence.executor_id,
++            self.fence.owner_id,
++            self.fence.owner_epoch,
++            self.fence.token,
++            before.version,
++            capacity_ledger_hash_v31(before),
++        )
++        if row is None:
++            raise ValueError("CAPACITY_PERSISTENCE_CAS_CONFLICT")
++        return after
++
++    async def transfer_owner_in_transaction(self, connection, *, next_owner_id, expected_version):
++        before = await self.lock_current(connection)
++        if type(expected_version) is not int or before.version != expected_version:
++            raise ValueError("CAPACITY_PERSISTENCE_VERSION_CONFLICT")
++        next_fence = CapacityOwnerFenceV31.model_validate(
++            {
++                **self.fence.model_dump(),
++                "owner_id": next_owner_id,
++                "owner_epoch": before.owner_epoch + 1,
++                "token": uuid4(),
++            }
++        )
++        after = before.model_copy(update={"owner_epoch": next_fence.owner_epoch, "version": before.version + 1})
++        await self._save(connection, before, after, next_fence=next_fence)
++        return next_fence
++
++    async def prepare_parent_in_transaction(self, connection, *, candidate_repository, **kwargs):
++        """Persist tentative capacity only; complete Transaction A remains caller-owned."""
++        before = await self.lock_current(connection)
++        prepared = await candidate_repository.prepare_parent_in_transaction(
++            connection,
++            ledger=before,
++            capacity_owner_epoch=self.fence.owner_epoch,
++            **kwargs,
++        )
++        await self._save(connection, before, prepared.capacity.ledger)
++        return prepared
++
++    async def transition_in_transaction(self, connection, *, expected_version, **kwargs):
++        before = await self.lock_current(connection)
++        proposal = transition_capacity_v31(
++            before, owner_epoch=self.fence.owner_epoch, expected_version=expected_version, **kwargs
++        )
++        await self._save(connection, before, proposal.ledger)
++        return proposal
++
++    async def refresh_in_transaction(self, connection, request, *, expected_version, **kwargs):
++        before = await self.lock_current(connection)
++        proposal = refresh_capacity_baseline_v31(
++            before, request, owner_epoch=self.fence.owner_epoch, expected_version=expected_version, **kwargs
++        )
++        await self._save(connection, before, proposal.ledger)
++        return proposal
+diff --git a/tests/integration/test_capacity_persistence_v31_postgres.py b/tests/integration/test_capacity_persistence_v31_postgres.py
+new file mode 100644
+index 00000000..3d27400f
+--- /dev/null
++++ b/tests/integration/test_capacity_persistence_v31_postgres.py
+@@ -0,0 +1,171 @@
++"""Account capacity PostgreSQL acceptance, separate from earlier inventories."""
++
++import asyncio
++from datetime import timedelta
++from uuid import uuid4
++
++import asyncpg
++import pytest
++
++from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
++from contracts.strategy_5scr_capacity_owner_v31 import CapacityOwnerFenceV31
++from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31
++from risk.strategy_5scr_capacity_v31 import capacity_content_hash_v31, capacity_ledger_hash_v31
++from storage.strategy_5scr_activity_consumer import transfer_owner
++from storage.strategy_5scr_candidate_revision_v31 import CandidateRevisionRepositoryV31
++from storage.strategy_5scr_capacity_v31 import TABLE, CapacityRepositoryV31
++from tests.integration.test_candidate_revision_v31_postgres import DB
++from tests.integration.test_pair_activity_runtime_postgres import pg_dsn
++from tests.test_strategy_5scr_candidate_handoff_v31 import bundle
++from tests.test_strategy_5scr_candidate_revision_v31 import NOW, revision
++
++__all__ = ["pg_dsn"]
++
++
++@pytest.mark.parametrize(
++    "scenario",
++    [
++        "initialize_restart",
++        "initialize_concurrent",
++        "initialization_rollback",
++        "owner_handover",
++        "raw_write_fenced",
++        "parent_restart_duplicate",
++        "parent_concurrent_duplicate",
++        "parent_rollback",
++    ],
++)
++def test_capacity_persistence_postgres_acceptance(pg_dsn, scenario):
++    async def run():
++        db = DB(pg_dsn)
++        ledger, _, request = bundle()
++        account = "capacity-fixture-" + str(uuid4())
++        snapshot = request.snapshot.model_copy(update={"account_id": account})
++        ledger = ledger.model_copy(
++            update={"account_id": account, "account_snapshot_hash": capacity_content_hash_v31(snapshot)}
++        )
++        fence = CapacityOwnerFenceV31(
++            profile="TEST_ONLY",
++            account_id=account,
++            executor_id=ledger.executor_id,
++            owner_id="fixture-account-owner",
++            owner_epoch=1,
++            token=uuid4(),
++        )
++        repo = CapacityRepositoryV31(fence=fence)
++        async with db.transaction() as c:
++            assert await c.fetchval("SELECT to_regclass($1)", TABLE), "explicit migration 20260909_05 required"
++
++        async def initialize():
++            async with db.transaction() as c:
++                result = await repo.initialize_in_transaction(c, ledger, verify_initial=lambda *_: True)
++                if scenario == "initialization_rollback":
++                    raise RuntimeError("injected initialization rollback")
++                return result
++
++        if scenario == "initialization_rollback":
++            with pytest.raises(RuntimeError, match="initialization rollback"):
++                await initialize()
++            async with db.transaction() as c:
++                assert await c.fetchval(f"SELECT count(*) FROM {TABLE} WHERE account_id=$1", account) == 0
++            return
++        if scenario == "initialize_concurrent":
++            assert await asyncio.gather(initialize(), initialize()) == [ledger, ledger]
++        else:
++            await initialize()
++        if scenario == "owner_handover":
++            async with db.transaction() as c:
++                next_fence = await repo.transfer_owner_in_transaction(c, next_owner_id="successor", expected_version=0)
++            with pytest.raises(ValueError, match="OWNER_FENCED"):
++                async with db.transaction() as c:
++                    await repo.lock_current(c)
++            async with db.transaction() as c:
++                recovered = await CapacityRepositoryV31(fence=next_fence).lock_current(c)
++                assert recovered.model_dump(exclude={"version", "owner_epoch"}) == ledger.model_dump(
++                    exclude={"version", "owner_epoch"}
++                )
++            return
++        if scenario == "raw_write_fenced":
++            with pytest.raises(asyncpg.RaiseError, match="OWNER_FENCED"):
++                async with db.transaction() as c:
++                    await c.execute(
++                        f"UPDATE {TABLE} SET version=version+1,payload=jsonb_set(payload::jsonb,'{{version}}',to_jsonb(version+1))::text WHERE account_id=$1",
++                        account,
++                    )
++            with pytest.raises(asyncpg.RaiseError, match="DELETE_PROHIBITED"):
++                async with db.transaction() as c:
++                    await c.execute(f"DELETE FROM {TABLE} WHERE account_id=$1", account)
++        if scenario.startswith("parent_"):
++            scope = ActivityConsumerScopeV1(
++                consumer_scope_id="capacity-test-candidate",
++                producer_binding_hash="sha256:" + "a" * 64,
++                lifecycle_owner_id="fixture-strategy-owner",
++                lifecycle_policy_hash="sha256:" + "b" * 64,
++                environment_class="DISPOSABLE_TEST",
++            )
++            async with db.transaction() as c:
++                old = await c.fetchrow(
++                    "SELECT generation FROM public.strategy_5scr_owner_fences_v1 WHERE symbol='EURUSD'"
++                )
++                strategy_fence = await transfer_owner(
++                    c, symbol="EURUSD", scope=scope, expected_generation=old["generation"] if old else 0
++                )
++            candidates = CandidateRevisionRepositoryV31(
++                pg=db, fence=strategy_fence, verify_reevaluation=lambda *_: True
++            )
++            append = revision()
++            plan = uuid4()
++            append = append.model_copy(
++                update={
++                    "reevaluation_id": uuid4(),
++                    "handoff": append.handoff.model_copy(
++                        update={"candidate": append.handoff.candidate.model_copy(update={"tradeplan_id": plan})}
++                    ),
++                }
++            )
++            stored = await candidates.append(append, now=NOW)
++            request = request.model_copy(
++                update={
++                    "tradeplan_id": str(plan),
++                    "expected_account_id": account,
++                    "snapshot": snapshot,
++                    "risk_state_evidence_hash": capacity_ledger_hash_v31(ledger),
++                    "strategy_candidate_receipt_hash": candidate_handoff_hash_v31(stored.request.handoff),
++                }
++            )
++            reservation = uuid4()
++
++            async def parent():
++                async with db.transaction() as c:
++                    result = await repo.prepare_parent_in_transaction(
++                        c,
++                        candidate_repository=candidates,
++                        expected_candidate_revision_hash=stored.request_hash,
++                        request=request,
++                        reservation_id=reservation,
++                        expires_at=NOW + timedelta(seconds=1),
++                        now=NOW,
++                        expected_capacity_version=0,
++                        verify_handoff=lambda *_: True,
++                        verify_universe=lambda *_: True,
++                        verify_risk_inputs=lambda *_: True,
++                    )
++                    if scenario == "parent_rollback":
++                        raise RuntimeError("injected parent rollback")
++                    return result
++
++            if scenario == "parent_rollback":
++                with pytest.raises(RuntimeError, match="parent rollback"):
++                    await parent()
++            elif scenario == "parent_concurrent_duplicate":
++                results = await asyncio.gather(parent(), parent())
++                assert {x.capacity.status for x in results} == {"APPLIED_TEST_ONLY", "DUPLICATE_TEST_ONLY"}
++            else:
++                await parent()
++                assert (await parent()).capacity.status == "DUPLICATE_TEST_ONLY"
++        async with DB(pg_dsn).transaction() as c:
++            recovered = await CapacityRepositoryV31(fence=fence).lock_current(c)
++        expected = 1 if scenario in {"parent_restart_duplicate", "parent_concurrent_duplicate"} else 0
++        assert recovered.version == expected and len(recovered.reservations) == expected
++
++    asyncio.run(run())
+diff --git a/tests/test_pair_activity_ci_receipt.py b/tests/test_pair_activity_ci_receipt.py
+index 1038262e..1a2a919d 100644
+--- a/tests/test_pair_activity_ci_receipt.py
++++ b/tests/test_pair_activity_ci_receipt.py
+@@ -219,7 +219,8 @@ def test_migration_graph_records_structure_without_claiming_execution():
+     from scripts.ci.pair_activity_run_evidence import migration_graph
+ 
+     graph = migration_graph(Path(__file__).resolve().parents[1])
+-    assert graph["repository_heads"] == ["20260909_04"]
++    assert graph["repository_heads"] == ["20260909_05"]
++    assert graph["revision_parents"]["20260909_05"] == "20260909_04"
+     assert graph["revision_parents"]["20260909_04"] == "20260909_03"
+     assert graph["revision_parents"]["20260909_01"] == "20260822_01"
+     assert graph["migration_upgrade_execution"] == "NOT_BOUND"
+diff --git a/tests/test_strategy_5scr_capacity_persistence_v31.py b/tests/test_strategy_5scr_capacity_persistence_v31.py
+new file mode 100644
+index 00000000..fe0a7bfa
+--- /dev/null
++++ b/tests/test_strategy_5scr_capacity_persistence_v31.py
+@@ -0,0 +1,297 @@
++import asyncio
++from contextlib import asynccontextmanager
++from copy import deepcopy
++from datetime import timedelta
++from decimal import Decimal
++from uuid import UUID
++
++import pytest
++
++from contracts.strategy_5scr_capacity_owner_v31 import CapacityOwnerFenceV31
++from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
++from storage.strategy_5scr_capacity_v31 import CapacityRepositoryV31, _ledger
++from tests.test_strategy_5scr_candidate_revision_v31 import FakeDB
++from tests.test_strategy_5scr_capacity_baseline_v31 import evidence_for
++from tests.test_strategy_5scr_capacity_v31 import NOW, seed
++from tests.test_strategy_5scr_latest_candidate_capacity_v31 import fixture as candidate_fixture
++
++
++class CapacityDB(FakeDB):
++    """Protocol fake, explicitly not a PostgreSQL durability/concurrency test."""
++
++    def __init__(self):
++        super().__init__()
++        self.capacity = {}
++        self.calls = []
++        self.force_cas_miss = False
++
++    @asynccontextmanager
++    async def transaction(self):
++        before = deepcopy(self.capacity)
++        try:
++            async with super().transaction():
++                yield self
++        except BaseException:
++            self.capacity = before
++            raise
++
++    async def execute(self, sql, *args):
++        self.calls.append(sql)
++        if "INSERT INTO public.strategy_5scr_capacity_ledgers" in sql:
++            row = dict(
++                zip(
++                    (
++                        "account_id",
++                        "executor_id",
++                        "owner_id",
++                        "owner_epoch",
++                        "token",
++                        "version",
++                        "initial_hash",
++                        "ledger_hash",
++                        "payload",
++                    ),
++                    args,
++                    strict=True,
++                )
++            )
++            self.capacity[row["account_id"]] = row
++            return
++        return await super().execute(sql, *args)
++
++    async def fetchrow(self, sql, *args):
++        self.calls.append(sql)
++        if "UPDATE public.strategy_5scr_capacity_ledgers" in sql:
++            row = self.capacity.get(args[6])
++            if (
++                self.force_cas_miss
++                or row is None
++                or tuple(
++                    row[k]
++                    for k in ("account_id", "executor_id", "owner_id", "owner_epoch", "token", "version", "ledger_hash")
++                )
++                != args[6:]
++            ):
++                return None
++            row.update(
++                dict(
++                    zip(
++                        ("owner_id", "owner_epoch", "token", "version", "ledger_hash", "payload"), args[:6], strict=True
++                    )
++                )
++            )
++            return {"account_id": row["account_id"]}
++        if "FROM public.strategy_5scr_capacity_ledgers" in sql:
++            return self.capacity.get(args[0])
++        return await super().fetchrow(sql, *args)
++
++
++def owner(ledger=None):
++    ledger = ledger or seed()
++    return CapacityOwnerFenceV31(
++        profile="TEST_ONLY",
++        account_id=ledger.account_id,
++        executor_id=ledger.executor_id,
++        owner_id="fixture-capacity-owner",
++        owner_epoch=1,
++        token=UUID(int=800),
++    )
++
++
++async def initialized():
++    db = CapacityDB()
++    ledger = seed()
++    repo = CapacityRepositoryV31(fence=owner(ledger))
++    async with db.transaction():
++        await repo.initialize_in_transaction(
++            db, ledger, verify_initial=lambda _, digest: digest == capacity_ledger_hash_v31(ledger)
++        )
++    return db, repo, ledger
++
++
++async def parent_fixture():
++    db, repo, ledger = await initialized()
++    candidate_db, candidate, _, kwargs = await candidate_fixture()
++    db.rows = deepcopy(candidate_db.rows)
++    del kwargs["ledger"]
++    del kwargs["capacity_owner_epoch"]
++    return db, repo, ledger, candidate, kwargs
++
++
++def test_initialization_is_explicit_verified_and_never_resets_progress():
++    async def run():
++        db, repo, initial = await initialized()
++        async with db.transaction():
++            changed = await repo.refresh_in_transaction(
++                db,
++                evidence_for(initial),
++                expected_version=0,
++                now=NOW + timedelta(seconds=2),
++                verify_refresh=lambda *_: True,
++            )
++        async with db.transaction():
++            replay = await repo.initialize_in_transaction(db, initial, verify_initial=lambda *_: True)
++            assert replay == changed.ledger and replay.version == 1
++        conflict = initial.model_copy(update={"closed_balance_usd": Decimal("999")})
++        with pytest.raises(ValueError, match="INITIALIZATION_CONFLICT"):
++            async with db.transaction():
++                await repo.initialize_in_transaction(db, conflict, verify_initial=lambda *_: True)
++
++    asyncio.run(run())
++
++
++@pytest.mark.parametrize(
++    "fault,reason",
++    [
++        ("uninitialized", "UNINITIALIZED"),
++        ("transaction", "CALLER_TRANSACTION_REQUIRED"),
++        ("owner", "OWNER_FENCED"),
++        ("hash", "PERSISTED_STATE_MISMATCH"),
++        ("row_version", "PERSISTED_STATE_MISMATCH"),
++    ],
++)
++def test_locked_state_requires_bound_owner_transaction_and_content(fault, reason):
++    async def run():
++        db, repo, initial = await initialized()
++        if fault == "uninitialized":
++            db.capacity = {}
++        elif fault == "owner":
++            db.capacity[initial.account_id]["token"] = UUID(int=900)
++        elif fault == "hash":
++            db.capacity[initial.account_id]["ledger_hash"] = "sha256:" + "f" * 64
++        elif fault == "row_version":
++            db.capacity[initial.account_id]["version"] = 42
++        with pytest.raises(ValueError, match=reason):
++            if fault == "transaction":
++                await repo.lock_current(db)
++            else:
++                async with db.transaction():
++                    await repo.lock_current(db)
++
++    asyncio.run(run())
++
++
++@pytest.mark.parametrize("fault", ["verifier", "mutation", "nonzero_version", "epoch"])
++def test_initialization_rejects_unverified_or_noninitial_state(fault):
++    async def run():
++        db = CapacityDB()
++        initial = seed()
++        repo = CapacityRepositoryV31(fence=owner(initial))
++
++        def verifier(*_):
++            return True
++
++        if fault == "verifier":
++            verifier = None
++        elif fault == "mutation":
++
++            def verifier(value, digest):
++                object.__setattr__(value, "version", 8)
++                return True
++        elif fault == "nonzero_version":
++            initial = initial.model_copy(update={"version": 8})
++        else:
++            initial = initial.model_copy(update={"owner_epoch": 2})
++        with pytest.raises(ValueError):
++            async with db.transaction():
++                await repo.initialize_in_transaction(db, initial, verify_initial=verifier)
++        assert not db.capacity
++
++    asyncio.run(run())
++
++
++def test_account_then_candidate_preparation_persists_one_capacity_state_and_replays():
++    async def run():
++        db, repo, _, candidate, kwargs = await parent_fixture()
++        db.calls = []
++        async with db.transaction():
++            result = await repo.prepare_parent_in_transaction(db, candidate_repository=candidate, **kwargs)
++        assert "5scr-capacity-v31:" in db.calls[0]
++        assert next(i for i, s in enumerate(db.calls) if "5scr-owner:" in s) > 0
++        assert result.durable_commit is False and result.capacity.execution_authority is False
++        restarted = CapacityRepositoryV31(fence=repo.fence)
++        async with db.transaction():
++            persisted = await restarted.lock_current(db)
++            duplicate = await restarted.prepare_parent_in_transaction(db, candidate_repository=candidate, **kwargs)
++        assert persisted == result.capacity.ledger
++        assert duplicate.capacity.status == "DUPLICATE_TEST_ONLY"
++        assert _ledger(db.capacity[repo.fence.account_id]).version == 1
++
++    asyncio.run(run())
++
++
++@pytest.mark.parametrize("failure", ["after_write", "commit", "cas"])
++def test_failed_parent_transaction_leaves_no_capacity_effect(failure):
++    async def run():
++        db, repo, initial, candidate, kwargs = await parent_fixture()
++        db.fail_commit = failure == "commit"
++        db.force_cas_miss = failure == "cas"
++        with pytest.raises((RuntimeError, ValueError)):
++            async with db.transaction():
++                await repo.prepare_parent_in_transaction(db, candidate_repository=candidate, **kwargs)
++                if failure == "after_write":
++                    raise RuntimeError("fault after capacity write")
++        assert _ledger(db.capacity[initial.account_id]) == initial
++
++    asyncio.run(run())
++
++
++def test_owner_handover_preserves_risk_state_and_fences_old_writer():
++    async def run():
++        db, repo, _, candidate, kwargs = await parent_fixture()
++        async with db.transaction():
++            result = await repo.prepare_parent_in_transaction(db, candidate_repository=candidate, **kwargs)
++        before = result.capacity.ledger
++        async with db.transaction():
++            new_fence = await repo.transfer_owner_in_transaction(db, next_owner_id="successor", expected_version=1)
++        with pytest.raises(ValueError, match="OWNER_FENCED"):
++            async with db.transaction():
++                await repo.lock_current(db)
++        new_repo = CapacityRepositoryV31(fence=new_fence)
++        async with db.transaction():
++            recovered = await new_repo.lock_current(db)
++        assert recovered.model_dump(exclude={"owner_epoch", "version"}) == before.model_dump(
++            exclude={"owner_epoch", "version"}
++        )
++        assert recovered.owner_epoch == 2 and recovered.version == 2
++
++    asyncio.run(run())
++
++
++@pytest.mark.parametrize("failure", ["stale_version", "rollback"])
++def test_failed_owner_handover_preserves_old_owner_and_state(failure):
++    async def run():
++        db, repo, initial = await initialized()
++        with pytest.raises((ValueError, RuntimeError)):
++            async with db.transaction():
++                await repo.transfer_owner_in_transaction(
++                    db, next_owner_id="successor", expected_version=5 if failure == "stale_version" else 0
++                )
++                raise RuntimeError("rollback after handover")
++        async with db.transaction():
++            assert await repo.lock_current(db) == initial
++
++    asyncio.run(run())
++
++
++def test_expiry_transition_persists_without_freeing_pending_broker_risk():
++    async def run():
++        db, repo, _, candidate, kwargs = await parent_fixture()
++        async with db.transaction():
++            await repo.prepare_parent_in_transaction(db, candidate_repository=candidate, **kwargs)
++        async with db.transaction():
++            pending = await repo.transition_in_transaction(
++                db, expected_version=1, reservation_id=kwargs["reservation_id"], action="MARK_DISPATCHED", now=NOW
++            )
++        with pytest.raises(ValueError):
++            async with db.transaction():
++                await repo.transition_in_transaction(
++                    db,
++                    expected_version=2,
++                    reservation_id=kwargs["reservation_id"],
++                    action="EXPIRE_UNISSUED",
++                    now=NOW + timedelta(seconds=2),
++                )
++        assert _ledger(db.capacity[repo.fence.account_id]) == pending.ledger
++
++    asyncio.run(run())

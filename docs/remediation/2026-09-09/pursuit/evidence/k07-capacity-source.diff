@@ -1,0 +1,803 @@
+commit bea7cd05c7bbb1feced445534c5d990a7f9f00b1
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 14:47:49 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 14:47:49 2026 +0800
+
+    feat(risk): add versioned test-only capacity reducer and release guards
+
+diff --git a/contracts/strategy_5scr_capacity_v31.py b/contracts/strategy_5scr_capacity_v31.py
+new file mode 100644
+index 00000000..5b7b1ccc
+--- /dev/null
++++ b/contracts/strategy_5scr_capacity_v31.py
+@@ -0,0 +1,102 @@
++"""TEST_ONLY versioned capacity proposals; persistence owns the actual commit."""
++
++from datetime import datetime
++from typing import Literal
++from uuid import UUID
++
++from pydantic import Field, model_validator
++
++from contracts.strategy_5scr_net_geometry_v31 import GeometryContract
++from contracts.strategy_5scr_risk_adapter_v31 import ExactAmountV31, ParentSizingResultV31
++
++
++class CapacityReservationV31(GeometryContract):
++    reservation_id: UUID
++    envelope_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    tradeplan_id: str
++    tradeplan_revision: int = Field(ge=1, strict=True)
++    campaign_id: str
++    thesis_id: str
++    sizing: ParentSizingResultV31
++    reserved_at: datetime
++    expires_at: datetime
++    changed_at: datetime
++    state: Literal["HELD_UNISSUED", "PENDING_RECONCILIATION", "EXPIRED_UNISSUED", "RELEASED"]
++    release_evidence_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
++
++    @model_validator(mode="after")
++    def coherent(self):
++        times = (self.reserved_at, self.expires_at, self.changed_at)
++        if any(t.tzinfo is None or t.utcoffset() is None for t in times):
++            raise ValueError("reservation clocks must be aware")
++        if not self.reserved_at < self.expires_at or self.changed_at < self.reserved_at:
++            raise ValueError("reservation clocks are unordered")
++        if self.sizing.status != "SIZED_TEST_ONLY" or self.sizing.planned_loss_usd is None:
++            raise ValueError("capacity record requires successful sizing")
++        if self.sizing.planned_loss_usd.numerator <= 0:
++            raise ValueError("capacity amount must be positive")
++        if self.state == "HELD_UNISSUED" and self.changed_at != self.reserved_at:
++            raise ValueError("unissued record must retain its reservation clock")
++        if self.state == "PENDING_RECONCILIATION" and self.changed_at >= self.expires_at:
++            raise ValueError("dispatch must precede reservation expiry")
++        if (self.state == "RELEASED") != (self.release_evidence_hash is not None):
++            raise ValueError("release requires reconciliation evidence identity")
++        if self.state == "EXPIRED_UNISSUED" and self.changed_at < self.expires_at:
++            raise ValueError("unissued reservation cannot expire early")
++        return self
++
++
++class CapacityLedgerV31(GeometryContract):
++    profile: Literal["TEST_ONLY"]
++    parent_slot_policy: Literal["ONE_PARENT_PER_THESIS_TEST_V1"]
++    account_id: str = Field(min_length=1, max_length=100)
++    executor_id: UUID
++    account_snapshot_id: str
++    risk_policy_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    owner_epoch: int = Field(ge=1, strict=True)
++    version: int = Field(ge=0, strict=True)
++    as_of: datetime
++    baseline_captured_at: datetime
++    baseline_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    # Verified exposure OUTSIDE records in this ledger. The source must exclude
++    # these reservations/positions even after dispatch, preventing double count.
++    baseline_external_risk_usd: ExactAmountV31
++    reservation_ttl_seconds: int = Field(gt=0, strict=True)
++    release_evidence_max_age_seconds: int = Field(gt=0, strict=True)
++    reservations: tuple[CapacityReservationV31, ...] = Field(max_length=10000)
++
++    @model_validator(mode="after")
++    def coherent(self):
++        if any(t.tzinfo is None or t.utcoffset() is None for t in (self.as_of, self.baseline_captured_at)):
++            raise ValueError("ledger clocks must be aware")
++        if self.baseline_captured_at > self.as_of or any(r.changed_at > self.as_of for r in self.reservations):
++            raise ValueError("ledger clock precedes evidence")
++        for values in (
++            [r.reservation_id for r in self.reservations],
++            [(r.tradeplan_id, r.tradeplan_revision) for r in self.reservations],
++            [r.campaign_id for r in self.reservations],
++            [r.thesis_id for r in self.reservations],
++        ):
++            if len(values) != len(set(values)):
++                raise ValueError("duplicate parent identity or tombstone")
++        return self
++
++
++class CapacityReleaseEvidenceV31(GeometryContract):
++    account_id: str
++    reservation_id: UUID
++    reservation_envelope_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    ledger_before_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    source_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    delivery_terminal_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    delivery_disposition: Literal["NEVER_ISSUED", "CANCELLED_FENCED", "BROKER_TERMINAL"]
++    observed_at: datetime
++    outcome: Literal["NO_BROKER_EFFECT_CONFIRMED", "BROKER_TERMINAL_RECONCILED"]
++
++
++class CapacityProposalV31(GeometryContract):
++    status: Literal["APPLIED_TEST_ONLY", "DUPLICATE_TEST_ONLY"]
++    ledger: CapacityLedgerV31
++    reservation: CapacityReservationV31
++    capital_reservation_authority: Literal[False] = False
++    execution_authority: Literal[False] = False
+diff --git a/contracts/strategy_5scr_risk_adapter_v31.py b/contracts/strategy_5scr_risk_adapter_v31.py
+index e8194cd7..13276fe9 100644
+--- a/contracts/strategy_5scr_risk_adapter_v31.py
++++ b/contracts/strategy_5scr_risk_adapter_v31.py
+@@ -2,6 +2,7 @@
+ 
+ from datetime import datetime
+ from decimal import Decimal
++from fractions import Fraction
+ from typing import Annotated, Literal
+ from uuid import UUID
+ 
+@@ -33,6 +34,17 @@ class ParentSizingPolicyV31(GeometryContract):
+         return self
+ 
+ 
++class ExactAmountV31(GeometryContract):
++    numerator: int = Field(ge=0, strict=True)
++    denominator: int = Field(gt=0, strict=True)
++
++
++def risk_amount_fraction_v31(value: Decimal | ExactAmountV31) -> Fraction:
++    if isinstance(value, ExactAmountV31):
++        return Fraction(value.numerator, value.denominator)
++    return Fraction(value)
++
++
+ class ParentSizingRequestV31(GeometryContract):
+     profile: Literal["TEST_ONLY"]
+     entry_role: Literal["PARENT"]
+@@ -53,8 +65,8 @@ class ParentSizingRequestV31(GeometryContract):
+     policy: ParentSizingPolicyV31
+     # Held reservations and broker exposure must both be included by the
+     # independent risk-state provider. Zero is explicit, never inferred.
+-    account_committed_and_reserved_risk_usd: Amount
+-    campaign_committed_and_reserved_risk_usd: Amount
++    account_committed_and_reserved_risk_usd: Amount | ExactAmountV31
++    campaign_committed_and_reserved_risk_usd: Amount | ExactAmountV31
+     risk_state_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+     risk_state_captured_at: datetime
+ 
+@@ -65,11 +77,6 @@ class ParentSizingRequestV31(GeometryContract):
+         return self
+ 
+ 
+-class ExactAmountV31(GeometryContract):
+-    numerator: int = Field(strict=True)
+-    denominator: int = Field(gt=0, strict=True)
+-
+-
+ class ParentSizingResultV31(GeometryContract):
+     profile: Literal["TEST_ONLY"] = "TEST_ONLY"
+     status: Literal["SIZED_TEST_ONLY", "WAIT", "REJECTED"]
+diff --git a/risk/strategy_5scr_capacity_v31.py b/risk/strategy_5scr_capacity_v31.py
+new file mode 100644
+index 00000000..88cd7b34
+--- /dev/null
++++ b/risk/strategy_5scr_capacity_v31.py
+@@ -0,0 +1,237 @@
++"""Pure TEST_ONLY capacity transitions with replay, version and epoch checks.
++
++Persistence must compare-and-swap version AND owner epoch while atomically
++writing the proposal and the authority/outbox records. These functions do not
++provide database isolation, a lease, a final signal or execution permission.
++"""
++
++import hashlib
++import json
++from collections.abc import Callable
++from datetime import datetime, timedelta
++from fractions import Fraction
++from uuid import UUID
++
++from contracts.strategy_5scr_capacity_v31 import (
++    CapacityLedgerV31,
++    CapacityProposalV31,
++    CapacityReleaseEvidenceV31,
++    CapacityReservationV31,
++)
++from contracts.strategy_5scr_risk_adapter_v31 import ParentSizingRequestV31, risk_amount_fraction_v31
++from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31, size_parent_v31
++
++
++class CapacityRejectedError(ValueError):
++    pass
++
++
++def _hash(payload):
++    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
++    return "sha256:" + hashlib.sha256(encoded).hexdigest()
++
++
++def capacity_ledger_hash_v31(ledger: CapacityLedgerV31) -> str:
++    return _hash(ledger.model_dump(mode="json"))
++
++
++def capacity_used_v31(ledger: CapacityLedgerV31) -> Fraction:
++    return risk_amount_fraction_v31(ledger.baseline_external_risk_usd) + sum(
++        (
++            risk_amount_fraction_v31(r.sizing.planned_loss_usd)
++            for r in ledger.reservations
++            if r.state in {"HELD_UNISSUED", "PENDING_RECONCILIATION"}
++        ),
++        Fraction(0),
++    )
++
++
++def _control(ledger, owner_epoch, now):
++    if type(owner_epoch) is not int or owner_epoch != ledger.owner_epoch:
++        raise CapacityRejectedError("CAPACITY_OWNER_FENCED")
++    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None or now < ledger.as_of:
++        raise CapacityRejectedError("CAPACITY_CLOCK_INVALID")
++
++
++def _version(ledger, expected_version):
++    if type(expected_version) is not int or expected_version != ledger.version:
++        raise CapacityRejectedError("CAPACITY_VERSION_CONFLICT")
++
++
++def _proposal(ledger, record, now, *, duplicate=False):
++    if duplicate:
++        return CapacityProposalV31(status="DUPLICATE_TEST_ONLY", ledger=ledger, reservation=record)
++    records = [r for r in ledger.reservations if r.reservation_id != record.reservation_id] + [record]
++    updated = CapacityLedgerV31.model_validate(
++        {**ledger.model_dump(), "version": ledger.version + 1, "as_of": now, "reservations": records}
++    )
++    return CapacityProposalV31(status="APPLIED_TEST_ONLY", ledger=updated, reservation=record)
++
++
++def reserve_parent_capacity_v31(
++    ledger: CapacityLedgerV31,
++    request: ParentSizingRequestV31,
++    *,
++    reservation_id: UUID,
++    expires_at: datetime,
++    now: datetime,
++    owner_epoch: int,
++    expected_version: int,
++    verify_inputs: Callable[[ParentSizingRequestV31, str], bool] | None,
++) -> CapacityProposalV31:
++    ledger = CapacityLedgerV31.model_validate(ledger.model_dump())
++    request = ParentSizingRequestV31.model_validate(request.model_dump())
++    _control(ledger, owner_epoch, now)
++    if (
++        not isinstance(reservation_id, UUID)
++        or not isinstance(expires_at, datetime)
++        or expires_at.tzinfo is None
++        or expires_at.utcoffset() is None
++    ):
++        raise CapacityRejectedError("CAPACITY_RESERVATION_ID_OR_CLOCK_INVALID")
++    envelope_hash = _hash(
++        {
++            "request_hash": parent_sizing_request_hash_v31(request),
++            "reservation_id": str(reservation_id),
++            "expires_at": expires_at.isoformat(),
++        }
++    )
++    existing = next((r for r in ledger.reservations if r.reservation_id == reservation_id), None)
++    if existing is not None:
++        if existing.envelope_hash != envelope_hash:
++            raise CapacityRejectedError("CAPACITY_REPLAY_PAYLOAD_CONFLICT")
++        # Acknowledging a committed historical record never resurrects it or
++        # grants delivery authority; its terminal/current state is returned.
++        return _proposal(ledger, existing, now, duplicate=True)
++    _version(ledger, expected_version)
++    if any(
++        r.campaign_id == request.campaign_id
++        or r.thesis_id == request.thesis_id
++        or (r.tradeplan_id, r.tradeplan_revision) == (request.tradeplan_id, request.tradeplan_revision)
++        for r in ledger.reservations
++    ):
++        raise CapacityRejectedError("CAPACITY_PARENT_IDENTITY_ALREADY_USED")
++    if (ledger.account_id, ledger.executor_id, ledger.account_snapshot_id, ledger.risk_policy_hash) != (
++        request.expected_account_id,
++        request.expected_executor_id,
++        request.snapshot.snapshot_id,
++        request.policy.policy_hash,
++    ):
++        raise CapacityRejectedError("CAPACITY_ACCOUNT_SNAPSHOT_POLICY_MISMATCH")
++    if request.risk_state_evidence_hash != capacity_ledger_hash_v31(ledger):
++        raise CapacityRejectedError("CAPACITY_STATE_RECEIPT_MISMATCH")
++    if request.risk_state_captured_at != ledger.baseline_captured_at:
++        raise CapacityRejectedError("CAPACITY_BASELINE_CLOCK_MISMATCH")
++    if risk_amount_fraction_v31(request.account_committed_and_reserved_risk_usd) != capacity_used_v31(ledger):
++        raise CapacityRejectedError("CAPACITY_TOTAL_MISMATCH")
++    if not request.evaluated_at == now or not now < expires_at <= now + timedelta(
++        seconds=ledger.reservation_ttl_seconds
++    ):
++        raise CapacityRejectedError("CAPACITY_RESERVATION_WINDOW_INVALID")
++    if request.geometry.costs is not None and expires_at > request.geometry.costs.valid_until:
++        raise CapacityRejectedError("CAPACITY_COST_EXPIRY_EXCEEDED")
++    sizing = size_parent_v31(request, verify_inputs=verify_inputs)
++    if sizing.status != "SIZED_TEST_ONLY":
++        raise CapacityRejectedError("CAPACITY_SIZING_REJECTED:" + sizing.reason)
++    record = CapacityReservationV31(
++        reservation_id=reservation_id,
++        envelope_hash=envelope_hash,
++        tradeplan_id=request.tradeplan_id,
++        tradeplan_revision=request.tradeplan_revision,
++        campaign_id=request.campaign_id,
++        thesis_id=request.thesis_id,
++        sizing=sizing,
++        reserved_at=now,
++        expires_at=expires_at,
++        changed_at=now,
++        state="HELD_UNISSUED",
++    )
++    return _proposal(ledger, record, now)
++
++
++def transition_capacity_v31(
++    ledger: CapacityLedgerV31,
++    *,
++    reservation_id: UUID,
++    action: str,
++    now: datetime,
++    owner_epoch: int,
++    expected_version: int,
++    release_evidence: CapacityReleaseEvidenceV31 | None = None,
++    verify_release: Callable[[CapacityReleaseEvidenceV31, str], bool] | None = None,
++) -> CapacityProposalV31:
++    ledger = CapacityLedgerV31.model_validate(ledger.model_dump())
++    _control(ledger, owner_epoch, now)
++    record = next((r for r in ledger.reservations if r.reservation_id == reservation_id), None)
++    if record is None:
++        raise CapacityRejectedError("CAPACITY_RESERVATION_MISSING")
++    release_hash = None
++    if action == "RELEASE_RECONCILED":
++        if release_evidence is None:
++            raise CapacityRejectedError("CAPACITY_RELEASE_EVIDENCE_UNBOUND")
++        release_evidence = CapacityReleaseEvidenceV31.model_validate(release_evidence.model_dump())
++        release_hash = _hash(release_evidence.model_dump(mode="json"))
++    duplicate = (
++        (action == "MARK_DISPATCHED" and record.state == "PENDING_RECONCILIATION")
++        or (action == "EXPIRE_UNISSUED" and record.state == "EXPIRED_UNISSUED")
++        or (
++            action == "RELEASE_RECONCILED"
++            and record.state == "RELEASED"
++            and release_hash == record.release_evidence_hash
++        )
++    )
++    if duplicate:
++        return _proposal(ledger, record, now, duplicate=True)
++    _version(ledger, expected_version)
++    if record.state in {"RELEASED", "EXPIRED_UNISSUED"}:
++        raise CapacityRejectedError("CAPACITY_TERMINAL_RESERVATION")
++    if action == "MARK_DISPATCHED":
++        if now >= record.expires_at:
++            raise CapacityRejectedError("CAPACITY_RESERVATION_EXPIRED")
++        state = "PENDING_RECONCILIATION"
++    elif action == "EXPIRE_UNISSUED":
++        if record.state != "HELD_UNISSUED":
++            raise CapacityRejectedError("CAPACITY_BROKER_RECONCILIATION_REQUIRED")
++        if now < record.expires_at:
++            raise CapacityRejectedError("CAPACITY_RESERVATION_NOT_EXPIRED")
++        state = "EXPIRED_UNISSUED"
++    elif action == "RELEASE_RECONCILED":
++        assert release_evidence is not None
++        evidence = release_evidence
++        if (
++            evidence.account_id,
++            evidence.reservation_id,
++            evidence.reservation_envelope_hash,
++            evidence.ledger_before_hash,
++        ) != (ledger.account_id, record.reservation_id, record.envelope_hash, capacity_ledger_hash_v31(ledger)):
++            raise CapacityRejectedError("CAPACITY_RELEASE_SCOPE_MISMATCH")
++        if evidence.observed_at.tzinfo is None or evidence.observed_at.utcoffset() is None:
++            raise CapacityRejectedError("CAPACITY_RELEASE_CLOCK_INVALID")
++        if (
++            not record.changed_at <= evidence.observed_at <= now
++            or (now - evidence.observed_at).total_seconds() > ledger.release_evidence_max_age_seconds
++        ):
++            raise CapacityRejectedError("CAPACITY_RELEASE_STALE_OR_FUTURE")
++        allowed = (
++            {("NO_BROKER_EFFECT_CONFIRMED", "NEVER_ISSUED")}
++            if record.state == "HELD_UNISSUED"
++            else {("NO_BROKER_EFFECT_CONFIRMED", "CANCELLED_FENCED"), ("BROKER_TERMINAL_RECONCILED", "BROKER_TERMINAL")}
++        )
++        if (evidence.outcome, evidence.delivery_disposition) not in allowed:
++            raise CapacityRejectedError("CAPACITY_DELIVERY_NOT_TERMINALLY_BOUND")
++        if verify_release is None or verify_release(evidence, release_hash) is not True:
++            raise CapacityRejectedError("CAPACITY_RELEASE_VERIFICATION_REJECTED")
++        if _hash(evidence.model_dump(mode="json")) != release_hash:
++            raise CapacityRejectedError("CAPACITY_RELEASE_EVIDENCE_CHANGED")
++        state = "RELEASED"
++    else:
++        raise CapacityRejectedError("CAPACITY_ACTION_INVALID")
++    changed = CapacityReservationV31.model_validate(
++        {
++            **record.model_dump(),
++            "state": state,
++            "changed_at": now,
++            "release_evidence_hash": release_hash,
++        }
++    )
++    return _proposal(ledger, changed, now)
+diff --git a/risk/strategy_5scr_risk_adapter_v31.py b/risk/strategy_5scr_risk_adapter_v31.py
+index 7889b65c..badc98e3 100644
+--- a/risk/strategy_5scr_risk_adapter_v31.py
++++ b/risk/strategy_5scr_risk_adapter_v31.py
+@@ -11,7 +11,12 @@ from decimal import Decimal
+ from fractions import Fraction
+ 
+ from analysis.strategy_5scr_net_geometry_v31 import solve_net_geometry_v31
+-from contracts.strategy_5scr_risk_adapter_v31 import ExactAmountV31, ParentSizingRequestV31, ParentSizingResultV31
++from contracts.strategy_5scr_risk_adapter_v31 import (
++    ExactAmountV31,
++    ParentSizingRequestV31,
++    ParentSizingResultV31,
++    risk_amount_fraction_v31,
++)
+ 
+ 
+ def parent_sizing_request_hash_v31(request: ParentSizingRequestV31) -> str:
+@@ -86,7 +91,7 @@ def size_parent_v31(
+     point, tick, tick_profit, tick_loss, minimum, maximum, step = map(Fraction, values)
+     if (spec.digits, point, tick) != (geometry.digits, Fraction(geometry.point), Fraction(geometry.tick_size)):
+         return reject("RISK_GEOMETRY_SPEC_MISMATCH")
+-    if request.campaign_committed_and_reserved_risk_usd != 0:
++    if risk_amount_fraction_v31(request.campaign_committed_and_reserved_risk_usd) != 0:
+         return reject("RISK_PARENT_CAMPAIGN_ALREADY_HAS_EXPOSURE", "REJECTED")
+     solved = solve_net_geometry_v31(geometry)
+     if solved.status != "FEASIBLE_TEST_ONLY":
+@@ -114,7 +119,7 @@ def size_parent_v31(
+     if volume > maximum:
+         return reject("RISK_VOLUME_ABOVE_MAXIMUM", "REJECTED")
+     planned = volume * loss_per_lot
+-    account_risk = Fraction(request.account_committed_and_reserved_risk_usd)
++    account_risk = risk_amount_fraction_v31(request.account_committed_and_reserved_risk_usd)
+     if account_risk + planned > balance * Fraction(policy.maximum_account_open_risk_fraction):
+         return reject("RISK_ACCOUNT_CAPACITY_EXCEEDED", "REJECTED")
+     return ParentSizingResultV31(
+diff --git a/tests/test_strategy_5scr_capacity_v31.py b/tests/test_strategy_5scr_capacity_v31.py
+new file mode 100644
+index 00000000..5d777a02
+--- /dev/null
++++ b/tests/test_strategy_5scr_capacity_v31.py
+@@ -0,0 +1,349 @@
++from datetime import timedelta
++from fractions import Fraction
++from uuid import UUID
++
++import pytest
++from pydantic import ValidationError
++
++from contracts.strategy_5scr_capacity_v31 import CapacityLedgerV31, CapacityReleaseEvidenceV31
++from contracts.strategy_5scr_risk_adapter_v31 import ExactAmountV31, ParentSizingRequestV31
++from risk.strategy_5scr_capacity_v31 import (
++    CapacityRejectedError,
++    capacity_ledger_hash_v31,
++    capacity_used_v31,
++    reserve_parent_capacity_v31,
++    transition_capacity_v31,
++)
++from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31
++from tests.test_strategy_5scr_risk_adapter_v31 import NOW, data
++
++H = "sha256:" + "5" * 64
++
++
++def exact(value):
++    value = Fraction(value)
++    return ExactAmountV31(numerator=value.numerator, denominator=value.denominator)
++
++
++def seed():
++    payload = data()
++    return CapacityLedgerV31(
++        profile="TEST_ONLY",
++        parent_slot_policy="ONE_PARENT_PER_THESIS_TEST_V1",
++        account_id=payload["expected_account_id"],
++        executor_id=payload["expected_executor_id"],
++        account_snapshot_id=payload["snapshot"]["snapshot_id"],
++        risk_policy_hash=payload["policy"]["policy_hash"],
++        owner_epoch=1,
++        version=0,
++        as_of=NOW,
++        baseline_captured_at=NOW,
++        baseline_evidence_hash=H,
++        baseline_external_risk_usd=exact(0),
++        reservation_ttl_seconds=10,
++        release_evidence_max_age_seconds=5,
++        reservations=(),
++    )
++
++
++def request_for(ledger, n=1, now=NOW):
++    payload = data()
++    payload.update(
++        tradeplan_id=f"fixture-plan-{n}",
++        thesis_id=f"fixture-thesis-{n}",
++        campaign_id=f"fixture-campaign-{n}",
++        evaluated_at=now,
++        risk_state_evidence_hash=capacity_ledger_hash_v31(ledger),
++        risk_state_captured_at=ledger.baseline_captured_at,
++        account_committed_and_reserved_risk_usd=exact(capacity_used_v31(ledger)),
++        campaign_committed_and_reserved_risk_usd=exact(0),
++    )
++    payload["geometry"]["decision_at"] = now
++    payload["geometry"]["costs"]["valid_until"] = now + timedelta(seconds=1)
++    return ParentSizingRequestV31.model_validate(payload)
++
++
++def reserve(ledger, request=None, *, n=1, now=NOW, **overrides):
++    request = request or request_for(ledger, n, now)
++    pinned = parent_sizing_request_hash_v31(request)
++    args = dict(
++        reservation_id=UUID(int=n),
++        expires_at=now + timedelta(seconds=1),
++        now=now,
++        owner_epoch=ledger.owner_epoch,
++        expected_version=ledger.version,
++        verify_inputs=lambda _, digest: digest == pinned,
++    )
++    args.update(overrides)
++    return reserve_parent_capacity_v31(ledger, request, **args)
++
++
++def transition(ledger, action, *, now=NOW, **overrides):
++    args = dict(
++        reservation_id=UUID(int=1),
++        action=action,
++        now=now,
++        owner_epoch=ledger.owner_epoch,
++        expected_version=ledger.version,
++    )
++    args.update(overrides)
++    return transition_capacity_v31(ledger, **args)
++
++
++def release_proof(ledger, now):
++    record = ledger.reservations[0]
++    return CapacityReleaseEvidenceV31(
++        account_id=ledger.account_id,
++        reservation_id=record.reservation_id,
++        reservation_envelope_hash=record.envelope_hash,
++        ledger_before_hash=capacity_ledger_hash_v31(ledger),
++        source_receipt_hash=H,
++        delivery_terminal_receipt_hash=H,
++        delivery_disposition="BROKER_TERMINAL",
++        observed_at=now,
++        outcome="BROKER_TERMINAL_RECONCILED",
++    )
++
++
++def test_sizing_reserve_restart_lost_ack_and_duplicate_are_one_record():
++    ledger = seed()
++    request = request_for(ledger)
++    original = ledger.model_dump_json()
++    result = reserve(ledger, request)
++    restored = CapacityLedgerV31.model_validate_json(result.ledger.model_dump_json())
++    replay = reserve(restored, request, expected_version=0)
++    assert replay.status == "DUPLICATE_TEST_ONLY"
++    assert replay.ledger == result.ledger
++    assert replay.reservation == result.reservation
++    assert len(restored.reservations) == restored.version == 1
++    assert capacity_used_v31(restored) == Fraction(
++        result.reservation.sizing.planned_loss_usd.numerator, result.reservation.sizing.planned_loss_usd.denominator
++    )
++    assert ledger.model_dump_json() == original
++    assert result.execution_authority is result.capital_reservation_authority is False
++
++
++def test_changed_payload_with_same_reservation_id_is_conflict():
++    initial = seed()
++    request = request_for(initial)
++    committed = reserve(initial, request).ledger
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_REPLAY_PAYLOAD_CONFLICT"):
++        reserve(committed, request.model_copy(update={"tradeplan_revision": 2}))
++
++
++def test_stale_version_competitor_must_reload_instead_of_overwrite():
++    original = seed()
++    stale_request = request_for(original, n=2)
++    committed = reserve(original).ledger
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_VERSION_CONFLICT"):
++        reserve(committed, stale_request, n=2, expected_version=0)
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_STATE_RECEIPT_MISMATCH"):
++        reserve(committed, stale_request, n=2)
++    second = reserve(committed, n=2)
++    assert second.ledger.version == 2 and len(second.ledger.reservations) == 2
++    with pytest.raises(CapacityRejectedError, match="RISK_ACCOUNT_CAPACITY_EXCEEDED"):
++        reserve(second.ledger, n=3)
++
++
++def test_new_epoch_fences_previous_owner_even_for_duplicate():
++    initial = seed()
++    request = request_for(initial)
++    committed = reserve(initial, request).ledger
++    # Storage/election owns this epoch change; this test supplies its result.
++    new_owner = CapacityLedgerV31.model_validate({**committed.model_dump(), "owner_epoch": 2})
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_OWNER_FENCED"):
++        reserve(new_owner, request, owner_epoch=1)
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_OWNER_FENCED"):
++        transition(new_owner, "MARK_DISPATCHED", owner_epoch=1)
++    assert reserve(new_owner, request).status == "DUPLICATE_TEST_ONLY"
++
++
++def test_expiry_releases_only_unissued_and_retains_parent_tombstone():
++    initial = seed()
++    request = request_for(initial)
++    held = reserve(initial, request).ledger
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_RESERVATION_NOT_EXPIRED"):
++        transition(held, "EXPIRE_UNISSUED")
++    now = NOW + timedelta(seconds=1)
++    expired = transition(held, "EXPIRE_UNISSUED", now=now)
++    assert capacity_used_v31(expired.ledger) == 0
++    assert expired.reservation.state == "EXPIRED_UNISSUED"
++    # Retry original bytes after expiry must return terminal record, not recreate.
++    replay = reserve(expired.ledger, request, now=now, expires_at=now, expected_version=0)
++    assert replay.status == "DUPLICATE_TEST_ONLY" and replay.reservation.state == "EXPIRED_UNISSUED"
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_PARENT_IDENTITY_ALREADY_USED"):
++        reserve(expired.ledger, request_for(expired.ledger, now=now), n=2, now=now)
++
++
++def test_dispatch_timeout_keeps_capacity_until_bound_terminal_reconciliation():
++    held = reserve(seed()).ledger
++    pending = transition(held, "MARK_DISPATCHED").ledger
++    used = capacity_used_v31(pending)
++    now = NOW + timedelta(seconds=2)
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_BROKER_RECONCILIATION_REQUIRED"):
++        transition(pending, "EXPIRE_UNISSUED", now=now)
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_RELEASE_EVIDENCE_UNBOUND"):
++        transition(pending, "RELEASE_RECONCILED", now=now)
++    assert capacity_used_v31(pending) == used > 0
++    proof = release_proof(pending, now)
++    released = transition(
++        pending, "RELEASE_RECONCILED", now=now, release_evidence=proof, verify_release=lambda *_: True
++    )
++    assert capacity_used_v31(released.ledger) == 0 and released.reservation.state == "RELEASED"
++    duplicate = transition(released.ledger, "RELEASE_RECONCILED", now=now, expected_version=0, release_evidence=proof)
++    assert duplicate.status == "DUPLICATE_TEST_ONLY" and duplicate.ledger == released.ledger
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_TERMINAL_RESERVATION"):
++        transition(released.ledger, "MARK_DISPATCHED", now=now)
++
++
++@pytest.mark.parametrize(
++    "change,reason",
++    [
++        ("account", "CAPACITY_RELEASE_SCOPE_MISMATCH"),
++        ("state", "CAPACITY_RELEASE_SCOPE_MISMATCH"),
++        ("future", "CAPACITY_RELEASE_STALE_OR_FUTURE"),
++        ("stale", "CAPACITY_RELEASE_STALE_OR_FUTURE"),
++        ("unfenced", "CAPACITY_DELIVERY_NOT_TERMINALLY_BOUND"),
++        ("verifier", "CAPACITY_RELEASE_VERIFICATION_REJECTED"),
++    ],
++)
++def test_release_cannot_free_capacity_on_incomplete_evidence(change, reason):
++    pending = transition(reserve(seed()).ledger, "MARK_DISPATCHED").ledger
++    now = NOW + timedelta(seconds=10)
++    evidence = release_proof(pending, now).model_dump()
++
++    def verifier(*_):
++        return 1 if change == "verifier" else True
++
++    if change == "account":
++        evidence["account_id"] = "other"
++    elif change == "state":
++        evidence["ledger_before_hash"] = H
++    elif change == "future":
++        evidence["observed_at"] = now + timedelta(seconds=1)
++    elif change == "stale":
++        evidence["observed_at"] = NOW
++    elif change == "unfenced":
++        evidence.update(outcome="NO_BROKER_EFFECT_CONFIRMED", delivery_disposition="NEVER_ISSUED")
++    before = pending.model_dump_json()
++    with pytest.raises(CapacityRejectedError, match=reason):
++        transition(
++            pending,
++            "RELEASE_RECONCILED",
++            now=now,
++            release_evidence=CapacityReleaseEvidenceV31(**evidence),
++            verify_release=verifier,
++        )
++    assert pending.model_dump_json() == before
++
++
++def test_rational_baseline_is_not_rounded_between_ledger_and_sizing():
++    ledger = seed().model_copy(update={"baseline_external_risk_usd": exact(Fraction(1, 3))})
++    result = reserve(ledger)
++    used = Fraction(
++        result.reservation.sizing.planned_loss_usd.numerator, result.reservation.sizing.planned_loss_usd.denominator
++    )
++    assert capacity_used_v31(result.ledger) == used + Fraction(1, 3)
++    second = reserve(result.ledger, n=2)
++    assert capacity_used_v31(second.ledger) > capacity_used_v31(result.ledger)
++
++
++@pytest.mark.parametrize("control", ["owner", "version"])
++def test_boolean_control_token_is_not_integer_revision(control):
++    kwargs = {"owner_epoch": True} if control == "owner" else {"expected_version": False}
++    with pytest.raises(CapacityRejectedError):
++        reserve(seed(), **kwargs)
++
++
++def test_schema_rejects_duplicate_tombstones_and_negative_exact_exposure():
++    held = reserve(seed()).ledger
++    with pytest.raises(ValidationError):
++        CapacityLedgerV31.model_validate({**held.model_dump(), "reservations": held.reservations * 2})
++    with pytest.raises(ValidationError):
++        ExactAmountV31(numerator=-1, denominator=3)
++
++
++def test_stale_capacity_number_or_clock_does_not_consume_state():
++    ledger = seed()
++    for update, reason in [
++        ({"account_committed_and_reserved_risk_usd": exact(1)}, "CAPACITY_TOTAL_MISMATCH"),
++        ({"risk_state_captured_at": NOW - timedelta(seconds=1)}, "CAPACITY_BASELINE_CLOCK_MISMATCH"),
++    ]:
++        with pytest.raises(CapacityRejectedError, match=reason):
++            reserve(ledger, request_for(ledger).model_copy(update=update))
++    assert ledger.version == 0 and ledger.reservations == ()
++
++
++def test_sizing_verifier_exception_leaves_no_partial_proposal():
++    ledger = seed()
++    before = ledger.model_dump_json()
++
++    def fail(*_):
++        raise RuntimeError("fixture-verifier-failure")
++
++    with pytest.raises(RuntimeError, match="fixture-verifier-failure"):
++        reserve(ledger, verify_inputs=fail)
++    assert ledger.model_dump_json() == before
++
++
++def test_dispatch_at_expiry_is_rejected_and_duplicate_dispatch_keeps_risk():
++    held = reserve(seed()).ledger
++    with pytest.raises(CapacityRejectedError, match="CAPACITY_RESERVATION_EXPIRED"):
++        transition(held, "MARK_DISPATCHED", now=NOW + timedelta(seconds=1))
++    pending = transition(held, "MARK_DISPATCHED").ledger
++    duplicate = transition(pending, "MARK_DISPATCHED", now=NOW + timedelta(seconds=2), expected_version=0)
++    assert duplicate.status == "DUPLICATE_TEST_ONLY"
++    assert duplicate.ledger == pending and capacity_used_v31(duplicate.ledger) > 0
++
++
++def test_no_effect_release_requires_cancelled_fenced_delivery_after_dispatch():
++    pending = transition(reserve(seed()).ledger, "MARK_DISPATCHED").ledger
++    now = NOW + timedelta(seconds=2)
++    proof = release_proof(pending, now).model_copy(
++        update={"outcome": "NO_BROKER_EFFECT_CONFIRMED", "delivery_disposition": "CANCELLED_FENCED"}
++    )
++    released = transition(
++        pending, "RELEASE_RECONCILED", now=now, release_evidence=proof, verify_release=lambda *_: True
++    )
++    assert released.reservation.state == "RELEASED" and capacity_used_v31(released.ledger) == 0
++
++
++@pytest.mark.parametrize(
++    "control,reason",
++    [
++        ("expiry", "CAPACITY_COST_EXPIRY_EXCEEDED"),
++        ("ttl", "CAPACITY_RESERVATION_WINDOW_INVALID"),
++        ("policy", "CAPACITY_ACCOUNT_SNAPSHOT_POLICY_MISMATCH"),
++    ],
++)
++def test_reservation_is_bound_to_cost_expiry_ttl_and_policy(control, reason):
++    ledger = seed()
++    kwargs = {}
++    request = request_for(ledger)
++    if control == "expiry":
++        kwargs["expires_at"] = NOW + timedelta(seconds=2)
++    elif control == "ttl":
++        kwargs["expires_at"] = NOW + timedelta(seconds=11)
++    elif control == "policy":
++        request = request.model_copy(update={"policy": request.policy.model_copy(update={"policy_hash": H})})
++    with pytest.raises(CapacityRejectedError, match=reason):
++        reserve(ledger, request, **kwargs)
++
++
++def test_new_campaign_after_release_uses_available_capacity_without_reusing_tombstone():
++    pending = transition(reserve(seed()).ledger, "MARK_DISPATCHED").ledger
++    now = NOW + timedelta(seconds=2)
++    released = transition(
++        pending,
++        "RELEASE_RECONCILED",
++        now=now,
++        release_evidence=release_proof(pending, now),
++        verify_release=lambda *_: True,
++    ).ledger
++    next_campaign = reserve(released, n=2, now=now)
++    assert len(next_campaign.ledger.reservations) == 2
++    assert next_campaign.ledger.reservations[0].state == "RELEASED"
++    assert capacity_used_v31(next_campaign.ledger) == Fraction(
++        next_campaign.reservation.sizing.planned_loss_usd.numerator,
++        next_campaign.reservation.sizing.planned_loss_usd.denominator,
++    )

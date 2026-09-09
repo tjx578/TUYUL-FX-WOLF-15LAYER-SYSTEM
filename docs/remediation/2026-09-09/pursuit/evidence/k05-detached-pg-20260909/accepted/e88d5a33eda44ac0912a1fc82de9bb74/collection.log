@@ -1,0 +1,3 @@
+tests/integration/test_activity_consumer_role_postgres.py::test_consumer_login_role_cannot_bypass_lifecycle_fence
+
+1 test collected in 0.87s

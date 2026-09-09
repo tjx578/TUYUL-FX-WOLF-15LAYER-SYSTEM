@@ -130,10 +130,7 @@ class TestCachedRiskSingletons:
         _reset_cached_singletons_if_available(mod)
 
         mock_cb = MagicMock()
-        get_circuit_breaker = getattr(mod, "get_circuit_breaker", None)
-
-        if get_circuit_breaker is None:
-            pytest.skip("get_circuit_breaker not available in module")
+        get_circuit_breaker = mod._get_circuit_breaker
 
         # Directly set the cached value through a small workaround:
         # We patch the module to simulate caching behavior

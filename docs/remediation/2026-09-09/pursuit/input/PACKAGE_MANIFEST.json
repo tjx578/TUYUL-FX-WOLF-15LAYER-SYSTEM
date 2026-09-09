@@ -1,0 +1,112 @@
+{
+  "schema_version": "wolf15/pursuit-package-manifest-v1",
+  "created_at": "2026-09-09T03:58:32.164378+00:00",
+  "scope": "Planning documents, machine-readable goal model, templates, source references and validators; no runtime certification.",
+  "excluded_from_member_hashes": [
+    "PACKAGE_MANIFEST.json",
+    "review/package-validation.json"
+  ],
+  "source_checkpoint_authority": "USER_REPORTED; fresh remote binding belongs to Desktop G00",
+  "files": [
+    {
+      "path": "START_CODEX_DESKTOP.md",
+      "bytes": 6177,
+      "sha256": "958bb5820904b0bafc1471ce49d4ee7c02854b8efcf27961e6e008a1439b2ed4"
+    },
+    {
+      "path": "WOLF15_ACTION_MAP.md",
+      "bytes": 4167,
+      "sha256": "6cbecfea774d036058d5ee76ac238d5fc7f2fd8965cc968396b3e432ffd23240"
+    },
+    {
+      "path": "WOLF15_BINDING_INPUTS.template.json",
+      "bytes": 4535,
+      "sha256": "21818d79487afe09dbda412505a6b86260d99be566bc5a13f488cbb2ac5ad7cf"
+    },
+    {
+      "path": "WOLF15_FAILURE_PLAYBOOK.json",
+      "bytes": 38921,
+      "sha256": "3f61472c340ddc9dc7308f9d0a0608f8a7ad44e63d65e527bc33c932a9b5965f"
+    },
+    {
+      "path": "WOLF15_FAILURE_PLAYBOOK.md",
+      "bytes": 26479,
+      "sha256": "05c0f4237cfa4aca66e7c7abc61d0ef5ace953541d9497716e00cc324c4494bd"
+    },
+    {
+      "path": "WOLF15_GATE_RECEIPT.template.json",
+      "bytes": 2743,
+      "sha256": "bb084e80c2590780ea428763070d59299a2d6721b73a7c876e8cbfc2aa38ad30"
+    },
+    {
+      "path": "WOLF15_PURSUIT_GOAL.md",
+      "bytes": 75824,
+      "sha256": "323befc5281ae0eb1f014a75f8990dba748b0332e4f810cadf7910937c1faff6"
+    },
+    {
+      "path": "WOLF15_PURSUIT_PLAN.json",
+      "bytes": 155866,
+      "sha256": "9986dd171febdcd13cad94e58c892a4cfcd8b0c5b4e3f204ab5e72ef8645cad9"
+    },
+    {
+      "path": "WOLF15_PURSUIT_STATE.template.json",
+      "bytes": 9960,
+      "sha256": "ee12daddf263f32368899cff38aa9296bc5d9d84d73ef4eb82b706f483b0056e"
+    },
+    {
+      "path": "review/authority-envelope.json",
+      "bytes": 4027,
+      "sha256": "a313510b280f8ec21ed8c70f501582c6d1c334d7f934daa92cd6ae654a0ee9c8"
+    },
+    {
+      "path": "review/authority-review.md",
+      "bytes": 3030,
+      "sha256": "d9c7d8214c38e6ffa8fe3a0232e07c06d3428d6f74093a1db6832efe3be77c03"
+    },
+    {
+      "path": "review/authority-validation.json",
+      "bytes": 404,
+      "sha256": "3c18cb197c43bb38a15bcec9057c21c2e28f58828aeb21d10cbbecf42f47ca77"
+    },
+    {
+      "path": "review/coordination-and-review.md",
+      "bytes": 2757,
+      "sha256": "48f575ee3b87f02f190d5c97bfb5aa87e3bc448abd731f459e480d5be2db6deb"
+    },
+    {
+      "path": "review/goap-validation.json",
+      "bytes": 802,
+      "sha256": "f8663d80cb312cb2929b604ea348a07742dbbecf914b8daf23b6004093ea345f"
+    },
+    {
+      "path": "review/validation-environment.json",
+      "bytes": 797,
+      "sha256": "0f0e741d8f680ba6a71d1d71e1aad1426b790dcaf9deb5e08bce9a3391556b1b"
+    },
+    {
+      "path": "sources/canonical-backlog-41.csv",
+      "bytes": 32683,
+      "sha256": "9672d5bf6e07b3d6db5f6d6cd92f903ce53fec12369df744c88aaab7ce1c8490"
+    },
+    {
+      "path": "sources/definition-of-done-baseline.md",
+      "bytes": 19433,
+      "sha256": "0b2ed9e0bf3758509ad065babbaf59b3f1e24a1d0e469b96a6adb7e37276a705"
+    },
+    {
+      "path": "sources/latest-reported-checkpoint.json",
+      "bytes": 3226,
+      "sha256": "6cfcd900694cf1cdeff2247aa950567bdc1591b95659f77fa9144613a8866bec"
+    },
+    {
+      "path": "sources/ssot-v31-historical-reference.md",
+      "bytes": 85414,
+      "sha256": "2cd41d01fdd3661af59284c78df669f7b312a7b7e4870f1620cfcfbe1aedb624"
+    },
+    {
+      "path": "tools/validate_pursuit_package.py",
+      "bytes": 9379,
+      "sha256": "2623227b03299f85e11cc67838c826aa7ccf72dcdb466ab952b1082ab5e4d7d8"
+    }
+  ]
+}
