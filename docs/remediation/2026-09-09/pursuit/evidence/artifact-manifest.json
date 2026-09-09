@@ -1,7 +1,32 @@
 {
-  "source_commit": "a5eccc98ebb05cd45216af9bc0ed47ea504d6e03",
+  "source_commit": "48a7d95d4ba47c161afd7c1e3f068151de749a2d",
   "scope": "Evidence files; individual receipts retain historical source bindings",
   "files": [
+    {
+      "path": "bridge-integration-audit.json",
+      "sha256": "e6a4aabca708486f939acc689c63a5ba685af0286b56d97b8ba753f3837590dd",
+      "bytes": 7422
+    },
+    {
+      "path": "bt1-collection.log",
+      "sha256": "d3dbaec22d6bb57248a55efa43b7eabd240dfc84fac09b4462a1c99ee5e0ed40",
+      "bytes": 5723
+    },
+    {
+      "path": "bt1-pytest.log",
+      "sha256": "5a937bc2f48f48824ed041c182771dfed9b0a822067abbae2cb10e0074ef94d4",
+      "bytes": 1673
+    },
+    {
+      "path": "bt1-receipt.json",
+      "sha256": "a3669462715d3d5610230d5afa3c16a656543a5be2f1d1f461cdbae5d6b04d7d",
+      "bytes": 10215
+    },
+    {
+      "path": "bt1.xml",
+      "sha256": "89f75148522c88aaf6e436ea917d38fbe1fef0be8d00098c06576df80f6ab228",
+      "bytes": 6073
+    },
     {
       "path": "candle-target-source.diff",
       "sha256": "cf71aef10ec5bfeef8b0c12b1a2db27f4672a10ea445c010ca3365b2cd9dbae7",

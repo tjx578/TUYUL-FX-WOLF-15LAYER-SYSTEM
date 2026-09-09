@@ -6,7 +6,7 @@
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K11_INTENT_ROW_CONFIRMATION",
+  "current_slice": "K08_K11_ACTUAL_BRIDGE_INTEGRATION_AUDIT",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Implement authoritative conflict recovery and assess unavailable-database behavior; state-only predicates do not close versioned concurrency acceptance.",
+  "next_action_on_resume": "Implement explicit default-off executor bridge binding through application factory with real-factory auth/containment tests; then independent-reader attestation interface. Keep isolated intent recovery work secondary.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,7 +718,7 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_EXISTING_SOURCE_AND_LOCAL_ACCEPTANCE",
+  "previous_goal_turn_classification": "PROGRESS_SOURCE_TRACE_CHANGES_FRONTIER",
   "actual_source_commit": "a5eccc98ebb05cd45216af9bc0ed47ea504d6e03",
   "slice_state": {
     "G00": {
@@ -824,5 +824,25 @@
       "condition_to_retry": "Read-only authoritative branch trigger binding for frontend service b9cd6d24-beae-4211-b475-9b3bfe78b392",
       "question_asked": false
     }
+  },
+  "integration_frontier_audit": {
+    "evidence_ref": "evidence/bridge-integration-audit.json",
+    "findings": [
+      {
+        "id": "K11-INTENT-CALLER",
+        "finding": "ExecutionIntentRepository is referenced by ExecutionReconciler; no non-test service caller of ExecutionReconciler found in tracked Python source. Prior intent tests prove isolated component behavior.",
+        "next": "Do not prioritize more intent micro-fixes as natural DEMO integration."
+      },
+      {
+        "id": "K08-BRIDGE-ROUTER",
+        "finding": "Executor bridge router exists and calls MT5CommandRepository; application router registry omits that module. API tests mount the router directly on a fixture application.",
+        "next": "Design explicit default-off application factory binding and prove registration/auth/gates through the actual factory before any runtime activation."
+      },
+      {
+        "id": "K11-INDEPENDENT-READER",
+        "finding": "AccountSnapshotV1.broker_ledger_reconciled is a boolean supplied by executor heartbeat; record_heartbeat persists snapshot payload. C2 shadow code consumes that boolean. This is not independently attested broker truth.",
+        "next": "Bind independent reader identity, account/window/report digest and verification interface; no active attestor or broker authority can be inferred from this flag."
+      }
+    ]
   }
 }
