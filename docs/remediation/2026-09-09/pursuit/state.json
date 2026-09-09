@@ -1,8 +1,8 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "22766647a10b52503a28ea8464c7bb1d96f54b3d",
-  "source_verified_at": "2026-09-09T11:19:54.609140+00:00",
+  "source_checkpoint": "2e80441413cca767eec5c6d8baf4c643407d1159",
+  "source_verified_at": "2026-09-09T12:11:08.096258+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
@@ -49,12 +49,14 @@
         "evidence/release-audit.json",
         "validation.json",
         "pursuit/evidence/p1-ci-20260909/validation.json",
-        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json"
+        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
+        "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
+        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json"
       ]
     },
     "C03": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "LINUX_CI_EXECUTED_FAILED_FIXES_UNDER_VERIFICATION",
+      "execution_stage": "CURRENT_LINUX_CI_SECURITY_ZERO_SKIP_PASS_C01_DEPENDENCY_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -72,7 +74,9 @@
         "followup-delivery-contract/README.md",
         "followup-delivery-contract/validation.json",
         "pursuit/evidence/p1-ci-20260909/validation.json",
-        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json"
+        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
+        "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
+        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json"
       ]
     },
     "C04": {
@@ -113,7 +117,7 @@
     },
     "C06": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "BUILT_API_BOOTSTRAP_HTTP_SHUTDOWN_PASS_FULL_RUNTIME_OPEN",
+      "execution_stage": "BUILT_API_REQUIRED_TASK_FAULT_503_EXIT_AND_DRAIN_PASS_OTHER_ROLES_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -123,7 +127,9 @@
         "evidence/release-audit.json",
         "validation.json",
         "pursuit/evidence/p1-ci-20260909/validation.json",
-        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json"
+        "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
+        "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
+        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json"
       ]
     },
     "S01": {
@@ -735,7 +741,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Inspect live CI 34344760831 on 22766647; complete C03 full-suite/security and C06 worker supervision. Preserve C04 closure and separate DEMO binding.",
+  "next_action_on_resume": "Continue C01 alternate canary release binding, C02/C06 other required roles and resistant-shutdown fault, and K05 external attestor under account lock. Preserve C04 closure, source-bound CI and separate DEMO binding.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -749,7 +755,7 @@
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
   "previous_goal_turn_classification": "PROGRESS_REAL_PG_87_C04_CLOSED_REQUIRED_CI_REMEDIATION",
-  "actual_source_commit": "22766647a10b52503a28ea8464c7bb1d96f54b3d",
+  "actual_source_commit": "2e80441413cca767eec5c6d8baf4c643407d1159",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -859,19 +865,19 @@
     }
   },
   "next_frontier": [
-    "P1_CURRENT_CANDIDATE_CI_RESULTS",
-    "C04_RUNNER_QUALIFICATION_RECEIPT",
-    "SUPPORTED_MIGRATION_UPGRADE",
-    "C02_APPLICATION_ROLE_C06_BUILT_RUNTIME",
+    "C01_ALTERNATE_CANARY_EQUIVALENT_GATE",
+    "C02_RUNTIME_OWNER_AND_LEGACY_ZERO_SUBMIT",
+    "C06_OTHER_REQUIRED_ROLE_SUPERVISION",
+    "C06_RESISTANT_SHUTDOWN_FAULT",
     "K05_POST_PROOF_VALIDITY"
   ],
   "publication": {
-    "source_commit": "22766647a10b52503a28ea8464c7bb1d96f54b3d",
-    "remote_checkpoint": "c7e9762993349fcf9e4f222133d8188d0d7425fa",
+    "source_commit": "2e80441413cca767eec5c6d8baf4c643407d1159",
+    "remote_checkpoint": "2e80441413cca767eec5c6d8baf4c643407d1159",
     "pr": 428,
     "draft": true,
-    "push": "DRAFT_PR428_PUBLISHED_22766647_CI_PENDING",
-    "reason": "Verified Draft publication; CI ongoing; merge/deployment HOLD",
+    "push": "DRAFT_PR428_PUBLISHED_2E804414",
+    "reason": "CI and security passed on 2e804414; C01/C02/C05/C06 remaining scope keeps merge and deployment HOLD",
     "no_main_merge": true,
     "no_deployment": true,
     "merge": "HOLD"
