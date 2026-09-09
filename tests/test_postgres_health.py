@@ -1,9 +1,7 @@
 """Isolated PostgreSQL health projections; lifespan has dedicated acceptance."""
 
 from fastapi.testclient import TestClient
-from pytest import MonkeyPatch
 
-import api.app_factory as app_factory_module
 from api.middleware.auth import verify_token
 from api_server import app
 from storage.postgres_client import PostgresClient, pg_client

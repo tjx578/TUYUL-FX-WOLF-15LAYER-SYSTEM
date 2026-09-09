@@ -125,46 +125,31 @@ def test_allowed_quorum_uses_symbol_market_context_price_not_execution_fallback(
 def test_allowed_quorum_labels_stale_live_tick_reference_price(warmed_up: bool) -> None:
     pipeline = _pipeline()
     tick_ts = datetime(2026, 7, 3, 2, 13, 15, tzinfo=UTC).timestamp()
+    tick_at = datetime.fromtimestamp(tick_ts, tz=UTC)
+    detector = FrozenQuoteDetector()
     if warmed_up:
         # Establish two earlier, changing quotes; the tested quote is the
         # third observation. A cold detector must retain its warmup block.
-        pipeline._frozen_quote_detector = FrozenQuoteDetector()
         for seconds, price in ((60, 1.1497), (30, 1.1499)):
-            pipeline._frozen_quote_detector.observe(
+            detector.observe(
                 symbol="EURUSD",
                 price=price,
-                observed_at=datetime.fromtimestamp(tick_ts, tz=UTC) - timedelta(seconds=seconds),
+                observed_at=tick_at - timedelta(seconds=seconds),
                 source="LIVE_TICK_MID",
             )
+        ready = detector.observe(
+            symbol="EURUSD",
+            price=1.1500,
+            observed_at=tick_at - timedelta(seconds=1),
+            source="LIVE_TICK_MID",
+            market_open=True,
+        )
+        assert ready.status == "LIVE"
     pipeline._context_bus = _FakeContextBus(
         status="STALE_PRESERVED",
         age_seconds=382.125,
         timestamp=tick_ts,
     )
-    detector = FrozenQuoteDetector()
-    first = detector.observe(
-        symbol="EURUSD",
-        price=1.1498,
-        observed_at=tick_at - timedelta(seconds=60),
-        source="LIVE_TICK_MID",
-        market_open=True,
-    )
-    detector.observe(
-        symbol="EURUSD",
-        price=1.1499,
-        observed_at=tick_at - timedelta(seconds=30),
-        source="LIVE_TICK_MID",
-        market_open=True,
-    )
-    ready = detector.observe(
-        symbol="EURUSD",
-        price=1.1500,
-        observed_at=tick_at - timedelta(seconds=1),
-        source="LIVE_TICK_MID",
-        market_open=True,
-    )
-    assert first.status == "PRICE_QUALITY_WARMING_UP"
-    assert ready.status == "LIVE"
     pipeline._frozen_quote_detector = detector
     market_context = MarketContext(
         symbol="EURUSD",

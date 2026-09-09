@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
-
-from deploy.railway import migration_runner
 
 
 def _read_text(rel_path: str) -> str:
