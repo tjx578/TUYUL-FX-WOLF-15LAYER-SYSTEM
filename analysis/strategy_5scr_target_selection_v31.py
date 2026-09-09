@@ -58,6 +58,8 @@ def solve_target_geometry_v31(
         return wait("TARGET_ATTESTOR_UNBOUND")
     if verify_universe(universe, digest) is not True:
         return wait("TARGET_ATTESTATION_REJECTED")
+    if target_universe_hash_v31(universe) != digest:
+        return wait("TARGET_EVIDENCE_CHANGED_DURING_VERIFICATION")
     legal = [
         t
         for t in universe.targets

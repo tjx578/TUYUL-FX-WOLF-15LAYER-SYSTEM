@@ -52,6 +52,7 @@ class ParentSizingRequestV31(GeometryContract):
     # hashes, transport events or timestamps by this adapter.
     tradeplan_id: str = Field(min_length=3, max_length=200)
     tradeplan_revision: int = Field(ge=1, strict=True)
+    strategy_candidate_receipt_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     thesis_id: str = Field(min_length=3, max_length=200)
     campaign_id: str = Field(min_length=3, max_length=200)
     expected_account_id: str = Field(min_length=1, max_length=100)

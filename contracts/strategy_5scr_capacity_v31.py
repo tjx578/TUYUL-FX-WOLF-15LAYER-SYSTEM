@@ -19,6 +19,7 @@ class CapacityReservationV31(GeometryContract):
     envelope_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     tradeplan_id: str
     tradeplan_revision: int = Field(ge=1, strict=True)
+    strategy_candidate_receipt_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     campaign_id: str
     thesis_id: str
     sizing: ParentSizingResultV31

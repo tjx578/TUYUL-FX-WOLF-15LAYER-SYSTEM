@@ -151,6 +151,7 @@ def reserve_parent_capacity_v31(
         envelope_hash=envelope_hash,
         tradeplan_id=request.tradeplan_id,
         tradeplan_revision=request.tradeplan_revision,
+        strategy_candidate_receipt_hash=request.strategy_candidate_receipt_hash,
         campaign_id=request.campaign_id,
         thesis_id=request.thesis_id,
         sizing=sizing,
