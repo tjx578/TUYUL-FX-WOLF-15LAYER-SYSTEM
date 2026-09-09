@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from ops.mt5_mcp import account_binding
+from ops.mt5_mcp.report_integrity import orchestrator_sources, seal_report
 
 MEASURED_STATES: Final = frozenset({"MEASURED", "MEASURED_EMPTY"})
 ENTITY_TYPES: Final = ("POSITION", "ORDER", "DEAL")
@@ -700,6 +701,7 @@ async def _broker_snapshot(
 
 
 async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path) -> dict[str, Any]:
+    sources_before = orchestrator_sources()
     window_to = datetime.now(UTC)
     window_from = window_to - timedelta(days=HISTORY_DAYS)
     broker = await _broker_snapshot(
@@ -709,11 +711,18 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path) ->
         cwd=repo_root,
     )
     database = await _database_snapshot(dsn, window_from=window_from, window_to=window_to)
-    return reconcile_snapshots(
+    report = reconcile_snapshots(
         database=database,
         broker=broker,
         window_from=window_from,
         window_to=window_to,
+    )
+    return seal_report(
+        report,
+        database=database,
+        broker=broker,
+        sources_before=sources_before,
+        sources_after=orchestrator_sources(),
     )
 
 
