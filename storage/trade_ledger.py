@@ -1,6 +1,6 @@
 """Read-oriented trade ledger for API and WS consumers.
 
-Canonical location — moved from dashboard/trade_ledger.py (PR-003).
+Canonical location — promoted out of the dashboard shims in PR-003.
 """
 
 from __future__ import annotations

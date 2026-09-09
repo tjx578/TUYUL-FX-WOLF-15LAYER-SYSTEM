@@ -191,6 +191,8 @@ jobs:
         run: npm test
 
       - name: Build
+        env:
+          INTERNAL_API_URL: https://localhost:8000
         run: npm run build
 
   # MCP2 and the API intentionally use separate dependency environments.

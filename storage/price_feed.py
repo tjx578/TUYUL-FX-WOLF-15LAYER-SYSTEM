@@ -1,6 +1,6 @@
 """Latest-price read model over Redis PRICE:* hashes.
 
-Canonical location — moved from dashboard/price_feed.py (PR-003).
+Canonical location — promoted out of the dashboard shims in PR-003.
 """
 
 from __future__ import annotations
