@@ -248,23 +248,12 @@ jobs:
       - name: "Block deprecated imports in production code"
         run: |
           echo "Scanning for deprecated dashboard imports..."
-          DEPRECATED_PATTERNS=(
-            "from dashboard.price_feed"
-            "from dashboard.trade_ledger"
-            "import dashboard.price_feed"
-            "import dashboard.trade_ledger"
-          )
-          VIOLATIONS=""
-          for PATTERN in "${DEPRECATED_PATTERNS[@]}"; do
-            HITS=$(grep -rn --include="*.py" \
-              --exclude-dir=tests \
-              --exclude-dir=__pycache__ \
-              --exclude-dir=.venv \
-              "$PATTERN" . || true)
-            if [ -n "$HITS" ]; then
-              VIOLATIONS="${VIOLATIONS}${HITS}\n"
-            fi
-          done
+          IMPORT_REGEX='^[[:space:]]*(from[[:space:]]+dashboard\.(price_feed|trade_ledger)[[:space:]]+import|import[[:space:]]+dashboard\.(price_feed|trade_ledger)\b)'
+          VIOLATIONS=$(grep -rEn --include="*.py" \
+            --exclude-dir=tests \
+            --exclude-dir=__pycache__ \
+            --exclude-dir=.venv \
+            "$IMPORT_REGEX" . || true)
           if [ -n "$VIOLATIONS" ]; then
             echo "::error::Deprecated dashboard imports detected:"
             echo -e "$VIOLATIONS"

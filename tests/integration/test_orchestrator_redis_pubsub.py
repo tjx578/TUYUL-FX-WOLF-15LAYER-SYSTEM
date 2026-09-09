@@ -86,6 +86,7 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
     monkeypatch.setenv("ORCHESTRATOR_TRADE_RISK_KEY", risk_key)
 
     manager = StateManager(redis_client=_RedisAdapter(redis_client))  # type: ignore[arg-type]
+    manager.configure_intervals(compliance_interval_sec=60.0, heartbeat_interval_sec=300.0)
     manager.start_listener()
 
     try:
@@ -95,7 +96,7 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
         )
 
         _wait_until(
-            lambda: manager.process_once() or manager.snapshot().mode == ExecutionMode.SAFE,
+            lambda: manager.process_once(now=0.5) or manager.snapshot().mode == ExecutionMode.SAFE,
             timeout=2.0,
             interval=0.02,
         )
