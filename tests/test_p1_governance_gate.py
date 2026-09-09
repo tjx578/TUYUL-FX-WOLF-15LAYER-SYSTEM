@@ -106,21 +106,14 @@ def test_active_protection_and_environment_pass(protection, environment):
     gate.validate_environment(environment)
 
 
-def test_owner_operated_policy_keeps_checks_without_second_account(protection, environment):
+def test_owner_operated_policy_without_independent_review_rejects(protection, environment):
     protection["required_pull_request_reviews"]["required_approving_review_count"] = 0
     protection["required_pull_request_reviews"]["require_last_push_approval"] = False
     environment["protection_rules"] = [{"type": "branch_policy"}]
-    gate.validate_branch_protection(protection)
-    gate.validate_environment(environment)
-    protection["required_status_checks"]["checks"].pop()
     with pytest.raises(gate.GovernanceGateError):
         gate.validate_branch_protection(protection)
-
-
-def test_owner_operated_policy_rejects_implicit_last_push_approval(protection):
-    protection["required_pull_request_reviews"]["required_approving_review_count"] = 0
     with pytest.raises(gate.GovernanceGateError):
-        gate.validate_branch_protection(protection)
+        gate.validate_environment(environment)
 
 
 @pytest.mark.parametrize(
@@ -207,7 +200,7 @@ def test_weak_environment_rejects(environment, case):
     elif case == "admin_bypass":
         environment["can_admins_bypass"] = True
     elif case == "missing_rule":
-        del environment["protection_rules"]
+        environment["protection_rules"] = []
     elif case == "empty_reviewers":
         environment["protection_rules"][0]["reviewers"] = []
     elif case == "self_review":

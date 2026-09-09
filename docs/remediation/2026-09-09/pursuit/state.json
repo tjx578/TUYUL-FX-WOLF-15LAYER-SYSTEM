@@ -2,7 +2,7 @@
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
   "source_checkpoint": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
-  "source_verified_at": "2026-09-09T14:38:39.851456+00:00",
+  "source_verified_at": "2026-09-09T22:38:39.851456+08:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
@@ -711,7 +711,7 @@
   "decision_log": [
     {
       "id": "AUTH-ENGINEERING-20260909",
-      "at": "2026-09-09T04:12:37.856475+00:00",
+      "at": "2026-09-09T12:12:37.856475+08:00",
       "decision": "User adopted START_CODEX_DESKTOP: source/test/migration-file engineering and scoped Draft branch publication; no README edits",
       "preserved": [
         "existing inputs and dirty original checkout",
@@ -937,7 +937,7 @@
   },
   "host_capacity_blocker": {
     "key": "B-HOST-MEMORY",
-    "observed_at": "2026-09-09T05:58:10.952036+00:00",
+    "observed_at": "2026-09-09T13:58:10.952036+08:00",
     "evidence": "evidence/collector-provenance-validation.json",
     "scope": [
       "Final source snapshot/test attempt",
@@ -961,7 +961,7 @@
     "pg_collected": 94,
     "pg_current_source": "94_PASS_NO_FAILURE_ERROR_SKIP_SOURCE_VERIFIED",
     "ref": "pursuit/evidence/k05-detached-pg-20260909/review.json",
-    "observed_at_utc": "2026-09-09T14:22:52.013110+00:00"
+    "observed_at_utc": "2026-09-09T22:22:52.01311+08:00"
   },
   "publication_history": [
     {
@@ -977,8 +977,8 @@
     }
   ],
   "reconciliation_checkpoint": {
-    "status": "LINUX_CI_FAILED_BUILT_ENGINE_TIMEOUT_C03_RECONCILIATION_IN_PROGRESS",
-    "observed_at_utc": "2026-09-09T16:02:45.866941+00:00",
+    "status": "FOLLOWUP_CANDIDATE_LOCAL_PASS_LINUX_PENDING_PROVIDER_POLICY_CONFLICT",
+    "observed_at_utc": "2026-09-10T00:02:45.866941+08:00",
     "parents": [
       "09f1075eeab48c86409c0a99bc631c648e24db78",
       "1966c55eb06069a7b77660d35b2fc828293378ae"
@@ -1004,6 +1004,8 @@
     "database_execution_source": "5d109e2d64e4b653b1a9a916736e3d2b75ac42c1",
     "database_evidence_ref": "pursuit/reconciliation/5d109e2d/postgres-verified-summary.json",
     "runtime_execution": "ORCHESTRATOR_AND_ACTUAL_ENGINE_TRADE_PASS; BUILT_ENGINE_TIMEOUT; FOLLOWUP_PENDING",
-    "latest_review_ref": "pursuit/reconciliation/5d109e2d/review.json"
+    "latest_review_ref": "pursuit/reconciliation/5d109e2d/review.json",
+    "followup_branch": "codex/p1-c03-runtime-closure-20260910",
+    "remote_reconciliation_ref": "pursuit/reconciliation/REMOTE_RECONCILIATION_20260910.md"
   }
 }
