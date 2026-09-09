@@ -63,3 +63,38 @@ C02 and C06 remain open until their complete canonical matrix has evidence.
 Local Docker discovery did not return; the bounded discovery command was
 cancelled without daemon restart. Built-image and PostgreSQL results must come
 from the parent candidate CI receipt, not local static/unit results.
+
+
+## Follow-up after initial built-runtime acceptance passed
+
+Additional source defects were corrected: orchestrator clears its readiness event
+on a late fatal exception and rethrows after its configured bounded diagnostic
+hold, causing nonzero exit. Pressure-outbox enabled workers are now explicit
+required tasks; a failed/abnormally completed worker propagates, sibling workers
+are cancelled and drained before the PostgreSQL pool closes. Intentionally disabled
+optional workers remain unstarted. The final three local service regressions passed in 16.70s
+(`service-tests.xml`), including signal-created stop-task drain before pool close;
+they are controlled component tests, not database proof.
+
+The built-image harness now also runs the actual dedicated orchestrator shell
+entrypoint with unavailable loopback Redis, checking served readiness503 and a
+nonzero exit after an 8-second diagnostic hold. This is a configured test bound,
+not a new production timeout or an availability guarantee. It still does not
+prove successful orchestrator bootstrap against a healthy disposable Redis.
+
+Direct legacy BrokerExecutor acceptance now supplies all four synthetic actions
+(PLACE/CANCEL/CLOSE/MODIFY) to the real disabled executor, with a live loopback HTTP
+recording sink. A harmless GET proves the sink is available; zero dispatch requests
+are asserted and each result is execution_disabled/sent=false. This passed locally.
+Network-none containers repeat this check in CI. This narrows the legacy boundary
+proof to the directly reached executor; it does not prove Redis queue consumption,
+all alternate legacy dispatch routes or every deployed executor plane.
+
+Remaining structural gaps: the orchestrator mode writer has no demonstrated shared
+distributed lease/fence across duplicate dedicated processes; lifecycle PostgreSQL
+fencing does not automatically fence this different writer. Trade readiness uses
+worker liveness rather than proven dependency bootstrap, and pressure-outbox lacks
+a served role readiness surface. Completing these safely requires explicit role
+state/ownership contracts and integration against isolated healthy dependencies;
+no mock or API proof here is relabeled as those guarantees. Production observation
+and deployment remain NOT_EXECUTED and separate from the disposable acceptance.

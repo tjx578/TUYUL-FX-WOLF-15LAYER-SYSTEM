@@ -153,7 +153,10 @@ def main() -> int:
             and latest_run.get("conclusion") == "success",
             "CI was rerun or changed during verification",
         )
-        from p1_governance_gate import GovernanceGateError, validate_live_governance
+        if __package__:
+            from .p1_governance_gate import GovernanceGateError, validate_live_governance
+        else:
+            from p1_governance_gate import GovernanceGateError, validate_live_governance
 
         try:
             validate_live_governance(repository, release_sha, ci_run_id)

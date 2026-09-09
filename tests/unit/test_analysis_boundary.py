@@ -3,9 +3,57 @@ Tests for analysis modules (L1-L11).
 Constitutional boundary: analysis must have NO execution side-effects.
 """
 
+import ast
 from pathlib import Path
 
 import pytest
+
+
+def _forbidden_imports(source: str, roots: set[str]) -> list[tuple[int, str]]:
+    violations = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module] if node.module else [alias.name for alias in node.names]
+        else:
+            continue
+        for name in names:
+            if name.split(".", 1)[0] in roots:
+                violations.append((node.lineno, name))
+    return violations
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import execution",
+        "import execution.orders as orders",
+        "import os, execution",
+        "from execution import orders",
+        "from execution.orders import place_order",
+        "from ..execution import orders",
+        "from .. import execution",
+        "if False:\n    import execution",
+        "def deferred():\n    from execution import orders",
+    ],
+)
+def test_import_guard_rejects_actual_execution_imports(source):
+    assert _forbidden_imports(source, {"execution"})
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '"""Block an invalid target from execution."""',
+        "# from execution import orders",
+        'message = "import execution"',
+        "import execution_metrics",
+        "from analysis import signal_execution_gates",
+    ],
+)
+def test_import_guard_ignores_prose_and_unrelated_modules(source):
+    assert _forbidden_imports(source, {"execution"}) == []
 
 
 class TestAnalysisBoundary:
@@ -13,18 +61,17 @@ class TestAnalysisBoundary:
 
     def _get_analysis_modules(self):
         analysis_dir = Path(__file__).parents[2] / "analysis"
-        if not analysis_dir.exists():
-            pytest.skip("analysis/ directory not found")
-        return list(analysis_dir.glob("*.py"))
+        assert analysis_dir.is_dir(), "required analysis/ directory missing"
+        modules = list(analysis_dir.rglob("*.py"))
+        assert modules, "required analysis source is empty"
+        return modules
 
     def test_no_execution_imports_in_analysis(self):
         """Analysis modules must not import from execution/."""
         for py_file in self._get_analysis_modules():
-            if py_file.name.startswith("__"):
-                continue
-            content = py_file.read_text(encoding="utf-8", errors="ignore")
-            for forbidden in ["from execution", "import execution"]:
-                assert forbidden not in content, f"{py_file.name} imports execution -- boundary violation"
+            content = py_file.read_text(encoding="utf-8")
+            violations = _forbidden_imports(content, {"execution"})
+            assert not violations, f"{py_file}: execution import boundary violations {violations}"
 
     def test_no_order_placement_in_analysis(self):
         """Analysis must never place orders."""
@@ -137,8 +184,6 @@ class TestSignalValidatorBoundary:
     def test_signal_validator_source_has_no_execution_imports(self):
         """schemas/validator.py must not import from execution/ or dashboard/."""
         validator_file = Path(__file__).parents[2] / "schemas" / "validator.py"
-        if not validator_file.exists():
-            pytest.skip("schemas/validator.py not found")
-        content = validator_file.read_text(encoding="utf-8", errors="ignore")
-        for forbidden in ["from execution", "import execution", "from dashboard", "import dashboard"]:
-            assert forbidden not in content, f"schemas/validator.py imports '{forbidden}' -- boundary violation"
+        content = validator_file.read_text(encoding="utf-8")
+        violations = _forbidden_imports(content, {"execution", "dashboard"})
+        assert not violations, f"schemas/validator.py import boundary violations {violations}"

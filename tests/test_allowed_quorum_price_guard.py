@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+import pytest
+
+from analysis.frozen_quote_detector import FrozenQuoteDetector
 from analysis.market_context_validator import MarketContext
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
@@ -118,9 +121,21 @@ def test_allowed_quorum_uses_symbol_market_context_price_not_execution_fallback(
     assert payload["reference_price_status"] == "AVAILABLE"
 
 
-def test_allowed_quorum_labels_stale_live_tick_reference_price() -> None:
+@pytest.mark.parametrize("warmed_up", [False, True])
+def test_allowed_quorum_labels_stale_live_tick_reference_price(warmed_up: bool) -> None:
     pipeline = _pipeline()
     tick_ts = datetime(2026, 7, 3, 2, 13, 15, tzinfo=UTC).timestamp()
+    if warmed_up:
+        # Establish two earlier, changing quotes; the tested quote is the
+        # third observation. A cold detector must retain its warmup block.
+        pipeline._frozen_quote_detector = FrozenQuoteDetector()
+        for seconds, price in ((60, 1.1497), (30, 1.1499)):
+            pipeline._frozen_quote_detector.observe(
+                symbol="EURUSD",
+                price=price,
+                observed_at=datetime.fromtimestamp(tick_ts, tz=UTC) - timedelta(seconds=seconds),
+                source="LIVE_TICK_MID",
+            )
     pipeline._context_bus = _FakeContextBus(
         status="STALE_PRESERVED",
         age_seconds=382.125,
@@ -150,13 +165,14 @@ def test_allowed_quorum_labels_stale_live_tick_reference_price() -> None:
     assert payload["price_source"] == "LIVE_TICK_MID"
     assert payload["price_snapshot_time_utc"] == "2026-07-03T02:13:15+00:00"
     assert payload["price_age_seconds"] == 382.125
-    assert payload["price_freshness_status"] == "STALE_PRESERVED"
+    expected_status = "STALE" if warmed_up else "PRICE_QUALITY_WARMING_UP"
+    assert payload["price_freshness_status"] == ("STALE_PRESERVED" if warmed_up else expected_status)
     assert payload["reference_price_is_live"] is False
     assert payload["valid_for_execution"] is False
     assert payload["observed_price"] == 1.1501
-    assert payload["observed_price_status"] == "STALE"
+    assert payload["observed_price_status"] == expected_status
     assert payload["reference_price"] == 1.1501
-    assert payload["reference_price_status"] == "STALE"
+    assert payload["reference_price_status"] == expected_status
     assert payload["price_lineage_version"] == 2
 
 

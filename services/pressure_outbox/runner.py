@@ -25,6 +25,8 @@ from services.pressure_outbox.shadow_evidence_v2_worker import (
     ShadowEvidenceV2RuntimeConfig,
     build_shadow_evidence_v2_worker,
 )
+from startup.graceful_shutdown import GracefulShutdown
+from startup.task_supervisor import supervised_task
 from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_outbox_worker import PressureOutboxWorker
@@ -78,12 +80,28 @@ async def _main() -> None:
         if shadow_evidence_v2_worker is not None:
             await shadow_evidence_v2_worker.stop()
 
+    shutdown_event = asyncio.Event()
+    stop_tasks: list[asyncio.Task] = []
+
+    def request_stop() -> None:
+        shutdown_event.set()
+        stop_tasks.append(asyncio.create_task(_stop_workers(), name="pressure-outbox-stop"))
+
     loop = asyncio.get_running_loop()
     for signal_name in (signal.SIGINT, signal.SIGTERM):
         with contextlib.suppress(NotImplementedError, RuntimeError):
-            loop.add_signal_handler(signal_name, lambda: asyncio.create_task(_stop_workers()))
+            loop.add_signal_handler(signal_name, request_stop)
+    tasks: list[asyncio.Task] = []
+
+    def start_worker(name, instance):
+        tasks.append(
+            asyncio.create_task(
+                supervised_task(name, instance.run, shutdown_event, max_restarts=0, required=True), name=name
+            )
+        )
+
     try:
-        tasks = [worker.run()]
+        start_worker("pressure-outbox", worker)
         if evidence_worker is not None:
             logger.info(
                 "Starting Strategy 5S-CR evidence worker mode={} provider={} execution_enabled={}",
@@ -91,13 +109,13 @@ async def _main() -> None:
                 evidence_config.provider,
                 evidence_config.execution_enabled,
             )
-            tasks.append(evidence_worker.run())
+            start_worker("evidence_worker", evidence_worker)
         if outcome_worker is not None:
             logger.info(
                 "Starting Strategy 5S-CR M1 outcome worker horizon_minutes={}",
                 outcome_config.horizon_minutes,
             )
-            tasks.append(outcome_worker.run())
+            start_worker("outcome_worker", outcome_worker)
         if lifecycle_v2_worker is not None:
             logger.info(
                 "Starting Strategy 5S-CR lifecycle V2 shadow worker shadow_only={} dual_write={} continuity_gap={}s",
@@ -105,16 +123,19 @@ async def _main() -> None:
                 lifecycle_v2_config.dual_write_enabled,
                 lifecycle_v2_config.max_continuity_gap_seconds,
             )
-            tasks.append(lifecycle_v2_worker.run())
+            start_worker("lifecycle_v2_worker", lifecycle_v2_worker)
         if shadow_evidence_v2_worker is not None:
             logger.info(
                 "Starting Strategy 5S-CR Lifecycle V2 evidence owner shadow_only={}",
                 shadow_evidence_v2_config.shadow_only,
             )
-            tasks.append(shadow_evidence_v2_worker.run())
+            start_worker("shadow_evidence_v2_worker", shadow_evidence_v2_worker)
         await asyncio.gather(*tasks)
     finally:
-        await pg_client.close()
+        shutdown_event.set()
+        shutdown = GracefulShutdown(drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")))
+        shutdown.register_cleanup("pressure outbox PostgreSQL pool", pg_client.close)
+        await shutdown.shutdown([*tasks, *stop_tasks])
 
 
 def run() -> None:

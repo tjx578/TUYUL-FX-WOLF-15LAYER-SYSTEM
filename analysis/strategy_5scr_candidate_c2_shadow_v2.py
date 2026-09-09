@@ -319,6 +319,7 @@ def evaluate_candidate_c2_shadow_v2(
             S5RiskReason.SNAPSHOT_INCONSISTENT: "C2_ACCOUNT_SNAPSHOT_INCONSISTENT",
             S5RiskReason.TRADE_DISABLED: "C2_ACCOUNT_TRADE_DISABLED",
             S5RiskReason.SNAPSHOT_STALE: "C2_ACCOUNT_SNAPSHOT_STALE",
+            S5RiskReason.ACCOUNT_CURRENCY_UNSUPPORTED: "C2_ACCOUNT_CURRENCY_UNSUPPORTED",
         }
         resolved_reason = mapping[reason] if reason is not None and reason in mapping else "C2_ACCOUNT_SNAPSHOT_INVALID"
         return _rejected(evidence, evaluation_sequence, resolved_reason)

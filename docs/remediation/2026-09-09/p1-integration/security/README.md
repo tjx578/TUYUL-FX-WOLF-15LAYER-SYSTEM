@@ -37,9 +37,9 @@ Authoritative references checked on 2026-09-09:
 ## Secret candidate triage
 
 The prior 15 occurrences were reproduced by exact-value comparison locally.
-Eighteen further occurrences in pursuit receipts are copies of pytest rejected
-database-target parameter IDs. All 33 observations are accounted for individually
-in `secret-triage.json`; 31 distinct path/detector/value tuples are recorded in
+Twenty-six further occurrences in pursuit receipts are copies of pytest rejected
+database-target parameter IDs. All 41 observations are accounted for individually
+in `secret-triage.json`; 39 distinct path/detector/value tuples are recorded in
 `secret-reviewed-fingerprints.json` (two redaction occurrences share a value/path).
 No value was used to authenticate. No raw scanner output is committed or printed.
 
@@ -71,3 +71,5 @@ every production credential. Provider verification stays NOT_EXECUTED by design.
 The clean dependency environment and remote candidate test receipts are tracked
 by the parent integration report. Full security PASS must come from the final
 candidate's complete audit/scan jobs, not these static classifications alone.
+
+A completed Linux scan in job `102436841739` reported eight additional occurrences in four pursuit receipt/XML files. Exact local scanner output (targeted exit 183) matches the previously reviewed synthetic values and negative-test node IDs. The manifest now binds these eight additional file/value tuples. A new full candidate scan must validate the updated manifest; no broad exclusion was introduced.

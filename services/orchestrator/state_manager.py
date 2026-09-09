@@ -482,10 +482,12 @@ def run() -> None:
     try:
         StateManager().run_forever(on_started=_ORCHESTRATOR_READY.set)
     except Exception:
+        _ORCHESTRATOR_READY.clear()
         logger.exception("Orchestrator fatal error — holding alive for health probe diagnostics")
         from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
 
         hold_alive_sync(service_name="Orchestrator")
+        raise
 
 
 if __name__ == "__main__":

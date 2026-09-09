@@ -78,6 +78,79 @@ def child(mode: str) -> None:
     asyncio.run(run())
 
 
+def legacy_recording_sink() -> None:
+    """Send synthetic requests through the real disabled executor, never a broker."""
+    import threading
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
+
+    calls = []
+
+    class Sink(BaseHTTPRequestHandler):
+        def do_GET(self):
+            calls.append(("GET", self.path))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def do_POST(self):
+            calls.append(("POST", self.path))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    os.environ["EXECUTION_ENABLED"] = "false"
+    os.environ["LEGACY_PUSH_EXECUTION_ENABLED"] = "false"
+    sink = HTTPServer(("127.0.0.1", 0), Sink)
+    thread = threading.Thread(target=sink.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{sink.server_port}"
+    try:
+        with urllib.request.urlopen(base + "/recording-sink-control", timeout=2) as response:
+            assert response.status == 200
+        executor = BrokerExecutor(ea_url=base)
+        outcomes = []
+        for action in OrderAction:
+            request = ExecutionRequest(
+                action=action,
+                account_id="disposable-recording-fixture",
+                symbol="EURUSD",
+                lot_size=0.01,
+                order_type="BUY_LIMIT",
+                entry_price=1.0,
+                stop_loss=0.99,
+                take_profit=1.01,
+                request_id="offline-" + action.value,
+            )
+            result = executor.execute(request)
+            assert result.success is False and result.raw["sent"] is False
+            assert result.error_msg == "execution_disabled"
+            outcomes.append(action.value)
+        assert calls == [("GET", "/recording-sink-control")]
+        print(
+            "WOLF15_LEGACY_SINK_RECEIPT "
+            + json.dumps(
+                {
+                    "actual_executor_inputs": outcomes,
+                    "control_requests": 1,
+                    "dispatch_requests": 0,
+                    "execution_enabled": False,
+                    "scope": "direct-legacy-executor-disabled-plane",
+                }
+            ),
+            flush=True,
+        )
+    finally:
+        sink.shutdown()
+        sink.server_close()
+        thread.join(timeout=2)
+
+
 def docker(*args: str, timeout: int = 180) -> str:
     result = subprocess.run(["docker", *args], text=True, capture_output=True, timeout=timeout)
     if result.returncode:
@@ -181,6 +254,8 @@ print(json.dumps({'status':status,'body':json.loads(s.read())}))
                     "startup/task_supervisor.py",
                     "main.py",
                     "core/health_probe.py",
+                    "services/orchestrator/state_manager.py",
+                    "services/pressure_outbox/runner.py",
                     "startup/graceful_shutdown.py",
                     __file__,
                 ],
@@ -243,6 +318,28 @@ print(json.dumps({'status':status,'body':json.loads(s.read())}))
                 assert response["body"]["reasons"] in [["router_boot_failed"], ["api_bootstrap_failed"]]
                 receipt["checks"]["required_router_diagnostic_readiness"] = response
                 docker("stop", "--time", "35", failed_router, timeout=45)
+        orchestrator = launch(
+            ["bash", "deploy/railway/start_orchestrator.sh"],
+            {
+                "DEGRADED_HOLD_TIMEOUT_SEC": "8",
+                "REDIS_RETRY_ATTEMPTS": "0",
+            },
+        )
+        response = until(lambda: request(orchestrator, 8000, "/readyz"))
+        assert response["status"] == 503 and response["body"]["status"] == "not_ready"
+        until(lambda: exited(orchestrator), seconds=45)
+        assert json.loads(docker("inspect", orchestrator))[0]["State"]["ExitCode"] != 0
+        receipt["checks"]["orchestrator_actual_entrypoint_dependency_failure"] = response
+        legacy = launch(["python", "scripts/ci/p1_runtime_acceptance.py", "--child", "legacy-sink"])
+        until(lambda: exited(legacy), seconds=30)
+        assert json.loads(docker("inspect", legacy))[0]["State"]["ExitCode"] == 0
+        sink_receipts = [
+            json.loads(line.split("WOLF15_LEGACY_SINK_RECEIPT ")[1])
+            for line in docker("logs", legacy).splitlines()
+            if "WOLF15_LEGACY_SINK_RECEIPT " in line
+        ]
+        assert len(sink_receipts) == 1 and sink_receipts[0]["dispatch_requests"] == 0
+        receipt["checks"]["direct_legacy_executor_disabled_sink"] = sink_receipts[0]
         for mode in ["fault", "graceful"]:
             cid = launch(["python", "scripts/ci/p1_runtime_acceptance.py", "--child", mode])
             until(lambda cid=cid: request(cid, 8111, "/readyz")["status"] == 200)
@@ -272,11 +369,13 @@ print(json.dumps({'status':status,'body':json.loads(s.read())}))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--child", choices=["fault", "graceful"])
+    parser.add_argument("--child", choices=["fault", "graceful", "legacy-sink"])
     parser.add_argument("--image")
     parser.add_argument("--output", type=Path, default=Path("artifacts/p1-runtime.json"))
     args = parser.parse_args()
-    if args.child:
+    if args.child == "legacy-sink":
+        legacy_recording_sink()
+    elif args.child:
         child(args.child)
     elif args.image:
         main(args.image, args.output)
