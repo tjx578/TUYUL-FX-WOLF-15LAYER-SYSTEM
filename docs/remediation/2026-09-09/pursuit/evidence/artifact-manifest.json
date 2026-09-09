@@ -1,5 +1,5 @@
 {
-  "source_commit": "ae2abc5694e8dae478b9ebc90af3e66b4b17e48f",
+  "source_commit": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -231,6 +231,266 @@
       "path": "collector-source.diff",
       "sha256": "932a632dc1e39a1ce3b5eefdf2ba9f12b6d62d04c07dd4e0e43db13f5933fb7b",
       "bytes": 9051
+    },
+    {
+      "path": "consumer-fence-20260909/7d7b9e65de5d4d60866ec0c2801e377f/collection.log",
+      "sha256": "959c00cb8e1943c3683b964f09966c9398be912526c9a0bf1630f3bc63ba8292",
+      "bytes": 6412
+    },
+    {
+      "path": "consumer-fence-20260909/7d7b9e65de5d4d60866ec0c2801e377f/postgres-after.json",
+      "sha256": "a1d94af3b2ef49f10c92570675c652dc81fc30a10add041068d8c3ae42aff140",
+      "bytes": 1088
+    },
+    {
+      "path": "consumer-fence-20260909/7d7b9e65de5d4d60866ec0c2801e377f/postgres-before.json",
+      "sha256": "668ce181950de0b3c52a40d8408e143f94f13ff42a92a5a524f669d3128e4d76",
+      "bytes": 1089
+    },
+    {
+      "path": "consumer-fence-20260909/7d7b9e65de5d4d60866ec0c2801e377f/pytest.log",
+      "sha256": "cf5b1ffe2aec6e16f685e7383b3d965e34fcc014138816231e297e0ebe9db49a",
+      "bytes": 99
+    },
+    {
+      "path": "consumer-fence-20260909/7d7b9e65de5d4d60866ec0c2801e377f/receipt.json",
+      "sha256": "242358276995a416b4eb601c53c6308f5362224a560809c92b9dc7e29c27d4e6",
+      "bytes": 62366
+    },
+    {
+      "path": "consumer-fence-20260909/7d7b9e65de5d4d60866ec0c2801e377f/runtime-fixtures.jsonl",
+      "sha256": "2cc665548779fefb4440273b2bdc85f5e4d17d2074c82f7efca51a51c7353f83",
+      "bytes": 70871
+    },
+    {
+      "path": "consumer-fence-20260909/7d7b9e65de5d4d60866ec0c2801e377f/tests.xml",
+      "sha256": "22c77b6562585700d73f406a7043f7fbe99136ed9c6216e83a6879417d7c5ba0",
+      "bytes": 8433
+    },
+    {
+      "path": "consumer-fence-20260909/8d6c32f9576b47d5896f88f43aa3c374/collection.log",
+      "sha256": "1fcb6cbbf65e39743529d3ff0b850a9209e3e153a3277ab7944b99d4a874f4d5",
+      "bytes": 851
+    },
+    {
+      "path": "consumer-fence-20260909/8d6c32f9576b47d5896f88f43aa3c374/postgres-after.json",
+      "sha256": "893a135b5223bbb363a1173062036007f7d9581f27f624dd6279f0a172464040",
+      "bytes": 1088
+    },
+    {
+      "path": "consumer-fence-20260909/8d6c32f9576b47d5896f88f43aa3c374/postgres-before.json",
+      "sha256": "58b16d7a03a4140693ee74e169cb2995bf4c6114fd639d22ba502a4681cd13a6",
+      "bytes": 1089
+    },
+    {
+      "path": "consumer-fence-20260909/8d6c32f9576b47d5896f88f43aa3c374/pytest.log",
+      "sha256": "da6214a23269bf3705d1aa3094fde4074300d19f505c921adf87241543a28f6b",
+      "bytes": 98
+    },
+    {
+      "path": "consumer-fence-20260909/8d6c32f9576b47d5896f88f43aa3c374/receipt.json",
+      "sha256": "91019d0038d3c3f50bf705f54c93d33478a445421f3d5b2b005276a5ef751cbb",
+      "bytes": 56541
+    },
+    {
+      "path": "consumer-fence-20260909/8d6c32f9576b47d5896f88f43aa3c374/runtime-fixtures.jsonl",
+      "sha256": "a33e2e08b34eb4c72f6e20c87f2bc5e4c118c24c1645a6ff3cf01c160027e44f",
+      "bytes": 9860
+    },
+    {
+      "path": "consumer-fence-20260909/8d6c32f9576b47d5896f88f43aa3c374/tests.xml",
+      "sha256": "a3765774f7904e02971666131744425932cbdb0f1960018e0d7d4ebb2af59682",
+      "bytes": 1352
+    },
+    {
+      "path": "consumer-fence-20260909/capacity-overlay-pytest.log",
+      "sha256": "56d1c998e71f74e27815165b43dae43208ec7ef0ddd564a351576bbd8ff51981",
+      "bytes": 926
+    },
+    {
+      "path": "consumer-fence-20260909/capacity-overlay-tests.xml",
+      "sha256": "bb709b911ca08f09300e5dfd188607ad9950e6e31b317b2b57649c3409fc7a12",
+      "bytes": 3292
+    },
+    {
+      "path": "consumer-fence-20260909/cd1c35116ae94cf0bde3fedb38ac9aa1/collection.log",
+      "sha256": "da4f8e6d4a8ee911491e0563be095321f67d623a3ac8d11d752b88ae5f775de6",
+      "bytes": 1269
+    },
+    {
+      "path": "consumer-fence-20260909/cd1c35116ae94cf0bde3fedb38ac9aa1/postgres-after.json",
+      "sha256": "a4b268fc92f01ba2bad7c8b651b257e53b5c95583d9b26b35bfaa254a23a7cca",
+      "bytes": 1088
+    },
+    {
+      "path": "consumer-fence-20260909/cd1c35116ae94cf0bde3fedb38ac9aa1/postgres-before.json",
+      "sha256": "3d97879062baf53f947f68726fe0e571c5129863258e9fbbb279586d63f5fd64",
+      "bytes": 1089
+    },
+    {
+      "path": "consumer-fence-20260909/cd1c35116ae94cf0bde3fedb38ac9aa1/pytest.log",
+      "sha256": "0c4c0480dbe704d0b1c536c964e1eeb73a74eb227294a5d3e946cb5a219ec71b",
+      "bytes": 1069
+    },
+    {
+      "path": "consumer-fence-20260909/cd1c35116ae94cf0bde3fedb38ac9aa1/receipt.json",
+      "sha256": "f2732169b1baeade6300f5fa8c8ec356da1f882e51c24f362625eff17ed5dc23",
+      "bytes": 56990
+    },
+    {
+      "path": "consumer-fence-20260909/cd1c35116ae94cf0bde3fedb38ac9aa1/runtime-fixtures.jsonl",
+      "sha256": "a9cf1346ce7cbde87a524f7b73de56656f5ef1f0f1bea80d57f3cd3d21388054",
+      "bytes": 15672
+    },
+    {
+      "path": "consumer-fence-20260909/cd1c35116ae94cf0bde3fedb38ac9aa1/tests.xml",
+      "sha256": "92ed0fdbe86f53853559ee0c3b419673069cf126733b355f6b5ea731ad4439c3",
+      "bytes": 1930
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-docs-gate-a1-collection.log",
+      "sha256": "09662ee8767e1f931fd16569d956874509e8225101819798e721bc084dc9446a",
+      "bytes": 9278
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-docs-gate-a1-pytest.log",
+      "sha256": "4ed2f6c064a12fbce651c89012eb412c2304fb97c055341092da063a67bd66aa",
+      "bytes": 992
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-docs-gate-a1-receipt.json",
+      "sha256": "2a2d64759dfef539778cbd10b1db13d9b4ed49edbe940c5bac670a23fa94f148",
+      "bytes": 15221
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-docs-gate-a1.xml",
+      "sha256": "ff64d8023f542c2bb94f2aa61e1ddb43a63babf1fec05c43309b5e8af80d23ec",
+      "bytes": 11525
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-fence-role-a1-collection.log",
+      "sha256": "74e6223c75de918f774207fd7027740de0b51fe142b52519556c404c1285463d",
+      "bytes": 6874
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-fence-role-a1-pytest.log",
+      "sha256": "229c776017a4d76098bc9b67042e32a13a992cee7bda47686501dbcd8f637571",
+      "bytes": 7222
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-fence-role-a1-receipt.json",
+      "sha256": "469c8eb12af5e88ff2c7db57e223143a9b05249d363a4b87a9560a547ae397ab",
+      "bytes": 14224
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-fence-role-a1.xml",
+      "sha256": "6d9a316af5c99ee75ca32117637102940ba0b03030678da49709941a2b6250fe",
+      "bytes": 12356
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-fence-role-a2-collection.log",
+      "sha256": "9163b7420fc6e3e3b1498eb6b87fb505f642643b05e9afaed6e192281d75b8bb",
+      "bytes": 18041
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-fence-role-a2-pytest.log",
+      "sha256": "20eec9bca3e12704aec0dfe7e6486981508ed211e33274edcef1fa4a524fed03",
+      "bytes": 2211
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-fence-role-a2-receipt.json",
+      "sha256": "5e90a2ee653d1a93a3c0f41f1add171aea7c5ab3904a7aa64a6430d2603e8abb",
+      "bytes": 26575
+    },
+    {
+      "path": "consumer-fence-20260909/consumer-fence-role-a2.xml",
+      "sha256": "b42b949794eb4bba4e0598cc6524de42e403a46bd90febad969f540218614817",
+      "bytes": 22441
+    },
+    {
+      "path": "consumer-fence-20260909/ea9b4cc99a2347f98e30f8a7305a7d77/application-role.json",
+      "sha256": "eab9285143d08a2e3d3ad1f4dc8bdce020883653ea7076b3024969bf28f63de8",
+      "bytes": 902
+    },
+    {
+      "path": "consumer-fence-20260909/ea9b4cc99a2347f98e30f8a7305a7d77/collection.log",
+      "sha256": "768569b1f751ec0ae8791035cd895b333e95a2269d15de0d94805e919d1b1e9e",
+      "bytes": 141
+    },
+    {
+      "path": "consumer-fence-20260909/ea9b4cc99a2347f98e30f8a7305a7d77/postgres-after.json",
+      "sha256": "0cba609b502ef12d392f76a27cb969b47cdf6be7d6d3ab58ff0a4eb104f9227b",
+      "bytes": 1088
+    },
+    {
+      "path": "consumer-fence-20260909/ea9b4cc99a2347f98e30f8a7305a7d77/postgres-before.json",
+      "sha256": "065a6bd189e3143d5ec0f37cbca02d9b0dc0feeec2814b8e38dfaeeb6cefc72c",
+      "bytes": 1089
+    },
+    {
+      "path": "consumer-fence-20260909/ea9b4cc99a2347f98e30f8a7305a7d77/pytest.log",
+      "sha256": "271e673dafc49d58dd8cc057b3c73869f6a08dac635fba8173269f7a3b981495",
+      "bytes": 98
+    },
+    {
+      "path": "consumer-fence-20260909/ea9b4cc99a2347f98e30f8a7305a7d77/receipt.json",
+      "sha256": "d9b507a6b6bd398b7dea2f17182901bf7dbeb314c3e3d2f77b4b74a488a7d5a0",
+      "bytes": 55883
+    },
+    {
+      "path": "consumer-fence-20260909/ea9b4cc99a2347f98e30f8a7305a7d77/runtime-fixtures.jsonl",
+      "sha256": "10d655a611203acd9f2592afc06978d16b402110a412601fb773af9e33149183",
+      "bytes": 1426
+    },
+    {
+      "path": "consumer-fence-20260909/ea9b4cc99a2347f98e30f8a7305a7d77/tests.xml",
+      "sha256": "ba1aa5aee49a885e4b7340b9c9f7ad5bb941c13e4dd711cb4d1ac565d154c24c",
+      "bytes": 403
+    },
+    {
+      "path": "consumer-fence-20260909/github-ci.json",
+      "sha256": "8c5cc4325ca4b6fbfc399445d65c52315a133b4027d1044cea2b044b01740cf0",
+      "bytes": 15352
+    },
+    {
+      "path": "consumer-fence-20260909/github-docs.json",
+      "sha256": "9c5aacade286de2b9fb85a9db563909c821d8eda8e2b9c0537edbfe0e73e8112",
+      "bytes": 188
+    },
+    {
+      "path": "consumer-fence-20260909/github-security.json",
+      "sha256": "a39fac185709bca76afee14aa17443b22c074ca74e39af8b1fa8d406575ae8a4",
+      "bytes": 188
+    },
+    {
+      "path": "consumer-fence-20260909/review.json",
+      "sha256": "787b0c9535b84448002197d4486cbc3de36202c70422ae297c8769b8540cb6df",
+      "bytes": 3164
+    },
+    {
+      "path": "consumer-fence-20260909/runner-qualification.json",
+      "sha256": "2c251f9e05b52eddb5cde0a156bb36e249086fb4824a562329dca8f99c9f3b89",
+      "bytes": 5126
+    },
+    {
+      "path": "consumer-fence-20260909/supported-upgrade/upgrade-20260909_05.log",
+      "sha256": "1ce8ec00ca821d6b06defeb374c66ac346e7ef1d958fca939d26c3fe95eede31",
+      "bytes": 5552
+    },
+    {
+      "path": "consumer-fence-20260909/supported-upgrade/upgrade-head.log",
+      "sha256": "fbf67b064573cf01ce496e31b517b6b1a1c1d3e9d195505129e0b7391dd44bc3",
+      "bytes": 423
+    },
+    {
+      "path": "consumer-fence-20260909/supported-upgrade/upgrade-receipt.json",
+      "sha256": "af99d32d6acc638db928179586ae7db6cae77ec1189ebdd51f2830b3974f2148",
+      "bytes": 1520
+    },
+    {
+      "path": "consumer-fence-20260909/verified-summary.json",
+      "sha256": "7058ed1d1acacffdc434b881750e1e482c763bb0ecf436fe6342e4c90d7a3a39",
+      "bytes": 3646
     },
     {
       "path": "cp1-collection.log",

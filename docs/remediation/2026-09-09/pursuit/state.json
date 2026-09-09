@@ -1,8 +1,8 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "9fcfd80c058178116db31d498c45546746873ad6",
-  "source_verified_at": "2026-09-09T12:34:50.502088+00:00",
+  "source_checkpoint": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
+  "source_verified_at": "2026-09-09T13:51:07.306816+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
@@ -53,7 +53,8 @@
         "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
         "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
         "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
-        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/consumer-fence-20260909/review.json"
       ]
     },
     "C03": {
@@ -80,7 +81,8 @@
         "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
         "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
-        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
+        "pursuit/evidence/consumer-fence-20260909/review.json"
       ]
     },
     "C04": {
@@ -118,7 +120,8 @@
         "validation.json",
         "pursuit/evidence/p1-ci-20260909/validation.json",
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
-        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
+        "pursuit/evidence/consumer-fence-20260909/review.json"
       ]
     },
     "C06": {
@@ -174,7 +177,7 @@
     },
     "S03": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "DISPOSABLE_PG_DELIVERY_AND_APPLICATION_ROLE_PASS_OPERATIONAL_BINDING_OPEN",
+      "execution_stage": "DISPOSABLE_DELIVERY_AND_RESTRICTED_ROLE_PASS_OPERATIONAL_BINDING_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -197,7 +200,8 @@
         "followup-consumer-owner/README.md",
         "followup-consumer-owner/validation.json",
         "followup-consumer-owner/acceptance-inventory.json",
-        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/consumer-fence-20260909/review.json"
       ]
     },
     "S04": {
@@ -764,7 +768,7 @@
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
   "previous_goal_turn_classification": "PROGRESS_REAL_PG_87_C04_CLOSED_REQUIRED_CI_REMEDIATION",
-  "actual_source_commit": "2e80441413cca767eec5c6d8baf4c643407d1159",
+  "actual_source_commit": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -880,12 +884,12 @@
     "K05_POST_PROOF_VALIDITY"
   ],
   "publication": {
-    "source_commit": "9fcfd80c058178116db31d498c45546746873ad6",
-    "remote_checkpoint": "9fcfd80c058178116db31d498c45546746873ad6",
+    "source_commit": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
+    "remote_checkpoint": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
     "pr": 428,
     "draft": false,
-    "push": "PR428_PUBLISHED_9FCFD80C",
-    "reason": "ae2abc56 CI passed; Security Gate failed on reviewed source-digest false positive. Review repair and all-required-workflow source gate await next CI. Merge and deployment HOLD.",
+    "push": "PR428_PUBLISHED_E70264CE",
+    "reason": "Security/Docs and PostgreSQL gates on e70264ce passed. Full CI failed on a stale lock-order assertion (10185pass/1fail); follow-up assertion repair requires new CI. Evidence publication may have a later SHA. Operational binding and fresh review remain open.",
     "no_main_merge": true,
     "no_deployment": true,
     "merge": "HOLD"

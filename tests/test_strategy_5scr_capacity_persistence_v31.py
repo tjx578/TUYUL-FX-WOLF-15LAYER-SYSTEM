@@ -207,7 +207,9 @@ def test_account_then_candidate_preparation_persists_one_capacity_state_and_repl
         async with db.transaction():
             result = await repo.prepare_parent_in_transaction(db, candidate_repository=candidate, **kwargs)
         assert "5scr-capacity-v31:" in db.calls[0]
-        assert next(i for i, s in enumerate(db.calls) if "5scr-owner:" in s) > 0
+        # The binder now owns the symbol lock inside PostgreSQL; account
+        # locking must still precede that capability-validation boundary.
+        assert next(i for i, s in enumerate(db.calls) if "bind_5scr_lifecycle_owner_v1" in s) > 0
         assert result.durable_commit is False and result.capacity.execution_authority is False
         restarted = CapacityRepositoryV31(fence=repo.fence)
         async with db.transaction():
