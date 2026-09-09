@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
 from contracts.strategy_5scr_activity_runtime import ActivityCoverageCheckpointV1, ActivityRuntimeBindingV1
 from storage.strategy_5scr_activity_runtime import PostgresActivityRuntime, unavailable_activity
 
@@ -46,4 +47,13 @@ def activity_runtime_from_environment(
             return None
         return ActivityCoverageCheckpointV1.model_validate_json(Path(checkpoint_path).read_text(encoding="utf-8"))
 
-    return PostgresActivityRuntime(dsn=dsn, binding=binding, checkpoint_provider=checkpoint)
+    try:
+        scope_path = env.get("WOLF15_PAIR_ACTIVITY_DELIVERY_SCOPE_PATH")
+        scope = (
+            ActivityConsumerScopeV1.model_validate_json(Path(scope_path).read_text(encoding="utf-8"))
+            if scope_path
+            else None
+        )
+        return PostgresActivityRuntime(dsn=dsn, binding=binding, checkpoint_provider=checkpoint, delivery_scope=scope)
+    except (OSError, ValueError, TypeError):
+        return UnboundActivityRuntime("ACTIVITY_DELIVERY_SCOPE_INVALID")

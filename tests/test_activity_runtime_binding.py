@@ -36,6 +36,38 @@ def test_factory_does_not_fall_back_to_general_database():
     assert runtime.snapshot()["reason_code"] == "ACTIVITY_RUNTIME_BINDING_UNBOUND"
 
 
+@pytest.mark.parametrize("valid", [True, False])
+def test_factory_binds_delivery_scope_or_fails_explicitly(tmp_path, valid):
+    from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
+    from storage.strategy_5scr_activity_runtime import PostgresActivityRuntime
+
+    bound = binding()
+    source = tmp_path / "binding.json"
+    source.write_text(bound.model_dump_json(), encoding="utf-8")
+    scope_path = tmp_path / "scope.json"
+    scope = ActivityConsumerScopeV1(
+        consumer_scope_id="fixture",
+        producer_binding_hash=bound.binding_hash if valid else "sha256:" + "0" * 64,
+        lifecycle_owner_id="fixture-owner",
+        lifecycle_policy_hash="sha256:" + "2" * 64,
+        environment_class="DISPOSABLE_TEST",
+    )
+    scope_path.write_text(scope.model_dump_json(), encoding="utf-8")
+    runtime = activity_runtime_from_environment(
+        {
+            "WOLF15_PAIR_ACTIVITY_BINDING_PATH": str(source),
+            "WOLF15_PAIR_ACTIVITY_DATABASE_URL": "never-connected",
+            "DEPLOYMENT_ID": bound.deployment_id,
+            "WOLF15_PAIR_ACTIVITY_DELIVERY_SCOPE_PATH": str(scope_path),
+        }
+    )
+    if valid:
+        assert isinstance(runtime, PostgresActivityRuntime)
+        assert runtime._delivery_scope == scope
+    else:
+        assert runtime.snapshot()["reason_code"] == "ACTIVITY_DELIVERY_SCOPE_INVALID"
+
+
 def test_factory_missing_dsn_or_wrong_deployment_is_explicit(tmp_path):
     path = tmp_path / "binding.json"
     path.write_text(binding().model_dump_json(), encoding="utf-8")

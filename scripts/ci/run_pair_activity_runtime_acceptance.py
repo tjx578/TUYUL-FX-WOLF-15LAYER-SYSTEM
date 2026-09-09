@@ -44,6 +44,11 @@ SOURCES = (
     "contracts/strategy_5scr_pair_activity.py",
     "contracts/strategy_5scr_activity_runtime.py",
     "storage/strategy_5scr_activity_runtime.py",
+    "storage/strategy_5scr_activity_outbox.py",
+    "contracts/strategy_5scr_activity_delivery.py",
+    "services/pressure_outbox/activity_delivery_relay.py",
+    "tests/integration/test_activity_delivery_producer_postgres.py",
+    "scripts/ci/run_activity_delivery_producer_acceptance.py",
     "storage/strategy_5scr_activity_schema.py",
     "storage/migrations/versions/20260909_01_pair_activity_runtime.py",
     "pipeline/wolf_constitutional_pipeline.py",
@@ -87,7 +92,7 @@ def source_hashes() -> dict[str, str]:
     return {name: digest(ROOT / name) for name in sorted(names)}
 
 
-def main() -> int:
+def main(*, test_module: str = TEST) -> int:
     run_id = uuid4().hex
     out = ROOT / "artifacts/pair-activity-runtime" / run_id
     out.mkdir(parents=True, exist_ok=False)
@@ -96,6 +101,7 @@ def main() -> int:
         "started_at_utc": now(),
         "accepted": False,
         "scope": "DISPOSABLE_POSTGRES_ONLY",
+        "test_module": test_module,
         "execution_authority": False,
         "migration_upgrade_execution": "NOT_BOUND",
         "linux_acceptance": "NOT_EXECUTED",
@@ -144,7 +150,7 @@ def main() -> int:
                 or capacity.get("cgroup", {}).get("below_90_percent") is False
             ):
                 raise ValueError("RUNNER_CAPACITY_NOT_ADMITTED")
-        base = [sys.executable, "-m", "pytest", TEST, "-o", "addopts=", "-p", "no:cacheprovider"]
+        base = [sys.executable, "-m", "pytest", test_module, "-o", "addopts=", "-p", "no:cacheprovider"]
         collection = subprocess.run(
             [*base, "--collect-only", "-q"],
             cwd=ROOT,
@@ -155,7 +161,7 @@ def main() -> int:
             timeout=180,
         )
         (out / "collection.log").write_text(redact(collection.stdout + collection.stderr, env), encoding="utf-8")
-        expected = [line for line in collection.stdout.splitlines() if line.startswith(TEST + "::")]
+        expected = [line for line in collection.stdout.splitlines() if line.startswith(test_module + "::")]
         receipt.update(collection_exit=collection.returncode, expected_tests=len(expected), expected_ids=expected)
         if collection.returncode or not expected or len(set(expected)) != len(expected):
             raise ValueError("ACCEPTANCE_COLLECTION_FAILED")

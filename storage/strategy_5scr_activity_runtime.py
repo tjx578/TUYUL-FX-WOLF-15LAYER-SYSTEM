@@ -22,8 +22,10 @@ from analysis.strategy_5scr_pair_activity import (
     normalize_pair_activity_observations,
     pair_activity_raw_event_id,
 )
+from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
 from contracts.strategy_5scr_activity_runtime import ActivityCoverageCheckpointV1, ActivityRuntimeBindingV1
 from contracts.strategy_5scr_pair_activity import PairActivityEvaluationV31, RawActivityCoverageV31, activity_hash
+from storage.strategy_5scr_activity_outbox import enqueue_activity_evaluation
 
 
 class ActivityRuntimeIntegrityError(ValueError):
@@ -57,12 +59,21 @@ class PostgresActivityRuntime:
         checkpoint_provider: Callable[[], ActivityCoverageCheckpointV1 | None],
         clock: Callable[[], datetime] | None = None,
         after_evaluations: Callable[[], None] | None = None,
+        delivery_scope: ActivityConsumerScopeV1 | None = None,
     ) -> None:
         self._dsn = dsn
         self.binding = ActivityRuntimeBindingV1.model_validate(binding.model_dump(mode="json"))
         self._checkpoint_provider = checkpoint_provider
         self._clock = clock or (lambda: datetime.now(UTC))
         self._after_evaluations = after_evaluations
+        self._delivery_scope = (
+            ActivityConsumerScopeV1.model_validate(delivery_scope.model_dump(mode="json")) if delivery_scope else None
+        )
+        if self._delivery_scope and (
+            self._delivery_scope.producer_binding_hash != self.binding.binding_hash
+            or self._delivery_scope.environment_class != self.binding.environment_class
+        ):
+            raise ActivityRuntimeIntegrityError("DELIVERY_PRODUCER_BINDING_MISMATCH")
         self._record_failure: str | None = None
 
     def _connect(self) -> psycopg.Connection:
@@ -342,6 +353,16 @@ class PostgresActivityRuntime:
             # including its trigger and replay boundary, rather than a new view
             # masquerading under the same immutable snapshot identity.
             report = stored_snapshot["report"]
+            if self._delivery_scope is not None:
+                for item in audit.evaluations:
+                    enqueue_activity_evaluation(
+                        connection,
+                        binding=self.binding,
+                        scope=self._delivery_scope,
+                        snapshot_id=snapshot_id,
+                        revision=ledger["revision"],
+                        evaluation=item,
+                    )
         return report
 
     def snapshot(self) -> dict[str, Any]:
