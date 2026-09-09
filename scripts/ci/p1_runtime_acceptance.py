@@ -167,7 +167,7 @@ def main(image: str, output: Path) -> None:
             "all-required-role-entrypoints",
             "dedicated-owner-fencing",
             "application-role-PostgreSQL",
-            "legacy-path-recording-broker-sink",
+            "legacy-queue-path-covered-separately-by-engine-trade-process-receipt",
             "production-runtime",
             "actual-inflight-database-drain",
         ],
