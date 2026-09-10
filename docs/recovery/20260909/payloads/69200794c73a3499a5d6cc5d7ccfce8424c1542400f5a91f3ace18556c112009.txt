@@ -1,0 +1,184 @@
+"""Unified, non-executable admission contract for Strategy 5S-CR analysis.
+
+PairAdmission remains the canonical raw-ledger authority.  This contract sits
+one level above it and makes the other legitimate doorway explicit: mature,
+directionally aligned advisory pressure may open a durable *shadow* analysis
+episode, but can never reserve risk or authorize execution.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+STRATEGY_ANALYSIS_ADMISSION_RULE_VERSION = "strategy-analysis-admission.v1"
+
+AnalysisAdmissionClass = Literal["CANONICAL_RAW", "MATURE_ADVISORY"]
+AnalysisAdmissionStatus = Literal["GRANTED", "REJECTED", "SUSPENDED"]
+AnalysisAuthority = Literal["FULL_CANONICAL_ANALYSIS", "FULL_SHADOW_ANALYSIS"]
+AnalysisSourceAuthority = Literal["RAW_SIGNAL_THROTTLE_LEDGER", "DERIVED_PRESSURE_ADVISORY"]
+AdvisoryMaturity = Literal["IMMATURE", "MATURE", "EXTREME", "EXPIRED"]
+AnalysisDirection = Literal["BUY", "SELL", "CONFLICT", "INCOMPLETE"]
+DirectionLineageAlignment = Literal["ALIGNED", "CONFLICT", "UNAVAILABLE"]
+AnalysisContextAlignment = Literal["ALIGNED", "DEFERRED", "CONTEXT_CONFLICT", "BLOCKED", "UNAVAILABLE"]
+AnalysisLifecycleState = Literal[
+    "ADVISORY_OBSERVED_IMMATURE",
+    "ADVISORY_ANALYSIS_QUEUED",
+    "ADVISORY_ANALYSIS_READY",
+    "ADVISORY_WAITING_PRICE_QUALITY",
+    "ADVISORY_WAITING_CONTEXT",
+    "ADVISORY_WAITING_PRESSURE_RESOLUTION",
+    "ADVISORY_WAITING_H1",
+    "ADVISORY_WAITING_M15",
+    "ADVISORY_SHADOW_CANDIDATE",
+    "ADVISORY_TERMINAL_NO_TRADE",
+    "ADVISORY_INVALIDATED",
+    "ADVISORY_EXPIRED",
+    "CANONICAL_ANALYSIS_READY",
+]
+AnalysisEvidenceResult = Literal["WAIT", "NO_TRADE", "SHADOW_CANDIDATE"]
+
+
+def _utc(value: datetime, field_name: str) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field_name} must include a UTC offset")
+    return value.astimezone(UTC)
+
+
+class StrategyAnalysisAdmissionV1(BaseModel):
+    """One deterministic decision to admit a pressure episode for analysis."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    analysis_admission_id: str = Field(..., pattern=r"^5scr-analysis-admission:[0-9a-f]{32}$")
+    symbol: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Z0-9._-]+$")
+    admission_class: AnalysisAdmissionClass
+    admission_status: AnalysisAdmissionStatus
+    analysis_authority: AnalysisAuthority
+    source_authority: AnalysisSourceAuthority
+    pressure_direction: AnalysisDirection
+    direction_lineage_alignment: DirectionLineageAlignment
+    advisory_maturity: AdvisoryMaturity
+    context_alignment: AnalysisContextAlignment
+    analysis_state: AnalysisLifecycleState
+    context_resolution_allowed: bool
+    structural_evidence_prefetch_required: bool
+    shadow_tradeplan_allowed: bool
+    strategy_next_required_stage: str = Field(..., min_length=3, max_length=120)
+    source_pressure_event_id: str | None = Field(default=None, max_length=240)
+    pair_admission_id: str | None = Field(default=None, pattern=r"^5scr-admission:[0-9a-f]{32}$")
+    observed_at_utc: datetime
+    admitted_at_utc: datetime | None = None
+    expires_at_utc: datetime | None = None
+    reason_codes: tuple[str, ...] = ()
+    rule_version: Literal["strategy-analysis-admission.v1"] = STRATEGY_ANALYSIS_ADMISSION_RULE_VERSION
+    analysis_material_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    evidence_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    final_direction: Literal["WAIT"] = "WAIT"
+    valid_for_execution: Literal[False] = False
+    risk_authority: Literal[False] = False
+    execution_authority: Literal[False] = False
+
+    @field_validator("observed_at_utc", "admitted_at_utc", "expires_at_utc")
+    @classmethod
+    def _timestamps_are_utc(cls, value: datetime | None, info: object) -> datetime | None:
+        return None if value is None else _utc(value, str(getattr(info, "field_name", "timestamp")))
+
+    @model_validator(mode="after")
+    def _authority_is_coherent(self) -> StrategyAnalysisAdmissionV1:
+        if len(set(self.reason_codes)) != len(self.reason_codes):
+            raise ValueError("analysis-admission reason codes must be unique")
+        if self.expires_at_utc is not None and self.expires_at_utc <= self.observed_at_utc:
+            raise ValueError("analysis-admission expiry must follow observation")
+        if self.admission_status == "GRANTED" and self.admitted_at_utc is None:
+            raise ValueError("granted analysis admission requires admitted_at_utc")
+        if self.admission_status != "GRANTED" and self.admitted_at_utc is not None:
+            raise ValueError("only a granted analysis admission may expose admitted_at_utc")
+
+        if self.admission_class == "CANONICAL_RAW":
+            if (
+                self.analysis_authority != "FULL_CANONICAL_ANALYSIS"
+                or self.source_authority != "RAW_SIGNAL_THROTTLE_LEDGER"
+                or self.pair_admission_id is None
+            ):
+                raise ValueError("canonical analysis requires raw PairAdmission lineage")
+        elif (
+            self.analysis_authority != "FULL_SHADOW_ANALYSIS"
+            or self.source_authority != "DERIVED_PRESSURE_ADVISORY"
+            or self.pair_admission_id is not None
+        ):
+            raise ValueError("mature advisory analysis must remain derived and shadow-only")
+
+        if self.admission_status == "GRANTED":
+            if self.pressure_direction not in {"BUY", "SELL"}:
+                raise ValueError("granted analysis admission requires a definite pressure direction")
+            if self.direction_lineage_alignment != "ALIGNED":
+                raise ValueError("granted analysis admission requires aligned direction lineage")
+            if not self.context_resolution_allowed or not self.structural_evidence_prefetch_required:
+                raise ValueError("granted analysis admission must proceed to structural analysis")
+        if (
+            self.admission_class == "MATURE_ADVISORY"
+            and self.admission_status == "GRANTED"
+            and (self.advisory_maturity not in {"MATURE", "EXTREME"} or not self.shadow_tradeplan_allowed)
+        ):
+            raise ValueError("advisory grant requires mature pressure and shadow tradeplan authority")
+        if self.direction_lineage_alignment == "CONFLICT" and self.admission_status != "SUSPENDED":
+            raise ValueError("direction conflict must suspend analysis admission")
+        return self
+
+
+class StrategyAnalysisEvidenceSnapshotV1(BaseModel):
+    """Immutable shadow evidence result owned by an analysis admission."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    snapshot_id: str = Field(..., pattern=r"^5scr-analysis-evidence:[0-9a-f]{32}$")
+    evidence_job_id: str = Field(..., pattern=r"^5scr-analysis-evidence-job:[0-9a-f]{32}$")
+    analysis_admission_id: str = Field(..., pattern=r"^5scr-analysis-admission:[0-9a-f]{32}$")
+    strategy_lifecycle_id: str = Field(..., pattern=r"^5scr-lifecycle:[0-9a-f]{32}$")
+    symbol: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Z0-9._-]+$")
+    decision_time_utc: datetime
+    source_timeframes: tuple[Literal["D1", "H4", "H1", "M15", "M1"], ...] = ()
+    coverage_status: Literal["COMPLETE", "INCOMPLETE"]
+    result_state: AnalysisEvidenceResult
+    terminal_reason: str = Field(..., min_length=3, max_length=160)
+    evidence_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    shadow_tradeplan_candidate: bool = False
+    final_direction: Literal["WAIT"] = "WAIT"
+    valid_for_execution: Literal[False] = False
+    risk_authority: Literal[False] = False
+    execution_authority: Literal[False] = False
+
+    @field_validator("decision_time_utc")
+    @classmethod
+    def _decision_time_is_utc(cls, value: datetime) -> datetime:
+        return _utc(value, "decision_time_utc")
+
+    @model_validator(mode="after")
+    def _snapshot_is_coherent(self) -> StrategyAnalysisEvidenceSnapshotV1:
+        if len(set(self.source_timeframes)) != len(self.source_timeframes):
+            raise ValueError("analysis evidence timeframes must be unique")
+        if self.result_state == "SHADOW_CANDIDATE" and not self.shadow_tradeplan_candidate:
+            raise ValueError("shadow candidate result must expose its non-executable candidate")
+        if self.shadow_tradeplan_candidate and self.result_state != "SHADOW_CANDIDATE":
+            raise ValueError("only SHADOW_CANDIDATE may expose a shadow tradeplan candidate")
+        return self
+
+
+__all__ = [
+    "STRATEGY_ANALYSIS_ADMISSION_RULE_VERSION",
+    "AdvisoryMaturity",
+    "AnalysisAdmissionClass",
+    "AnalysisAdmissionStatus",
+    "AnalysisAuthority",
+    "AnalysisContextAlignment",
+    "AnalysisDirection",
+    "AnalysisEvidenceResult",
+    "AnalysisLifecycleState",
+    "AnalysisSourceAuthority",
+    "DirectionLineageAlignment",
+    "StrategyAnalysisAdmissionV1",
+    "StrategyAnalysisEvidenceSnapshotV1",
+]

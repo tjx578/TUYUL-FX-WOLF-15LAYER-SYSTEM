@@ -1,0 +1,359 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+OCI_INDEX = "application/vnd.oci.image.index.v1+json"
+OCI_IMAGE_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
+DOCKER_IMAGE_MANIFEST = "application/vnd.docker.distribution.manifest.v2+json"
+SUPPORTED_DESCRIPTOR_MEDIA_TYPES = {
+    OCI_INDEX,
+    OCI_IMAGE_MANIFEST,
+    DOCKER_IMAGE_MANIFEST,
+}
+CONFIG_MEDIA_TYPES = {
+    "application/vnd.oci.image.config.v1+json",
+    "application/vnd.docker.container.image.v1+json",
+}
+ATTESTATION_CONFIG_MEDIA_TYPES = {
+    "application/vnd.oci.empty.v1+json",
+}
+LAYER_MEDIA_TYPES = {
+    "application/vnd.oci.image.layer.v1.tar",
+    "application/vnd.oci.image.layer.v1.tar+gzip",
+    "application/vnd.oci.image.layer.v1.tar+zstd",
+    "application/vnd.docker.image.rootfs.diff.tar",
+    "application/vnd.docker.image.rootfs.diff.tar.gzip",
+}
+SHA256_RE = re.compile(r"^sha256:([0-9a-f]{64})$")
+
+
+class ResolutionError(ValueError):
+    classification = "HOLD_PROVENANCE"
+
+
+class ProvenanceResolutionError(ResolutionError):
+    classification = "HOLD_PROVENANCE"
+
+
+class HarnessResolutionError(ResolutionError):
+    classification = "HOLD_HARNESS"
+
+
+@dataclass(frozen=True)
+class ResolvedDescriptor:
+    descriptor: dict[str, Any]
+    payload: bytes
+    document: dict[str, Any]
+    depth: int
+
+
+@dataclass(frozen=True)
+class ResolutionResult:
+    runtime: ResolvedDescriptor
+    attestations: tuple[ResolvedDescriptor, ...]
+    indexes: tuple[ResolvedDescriptor, ...]
+    visited: tuple[dict[str, Any], ...]
+
+
+class RecursiveOCIResolver:
+    def __init__(
+        self,
+        read_blob: Callable[[str], bytes],
+        *,
+        max_depth: int = 8,
+        max_descriptors: int = 128,
+        max_fanout: int = 64,
+        max_json_bytes: int = 4 * 1024 * 1024,
+        max_total_descriptor_bytes: int = 32 * 1024 * 1024,
+    ) -> None:
+        if max_depth < 1:
+            raise HarnessResolutionError("maximum nesting depth must be positive")
+        self.read_blob = read_blob
+        self.max_depth = max_depth
+        self.max_descriptors = max_descriptors
+        self.max_fanout = max_fanout
+        self.max_json_bytes = max_json_bytes
+        self.max_total_descriptor_bytes = max_total_descriptor_bytes
+        self._visiting: set[str] = set()
+        self._seen: dict[str, tuple[str, int]] = {}
+        self._total_descriptor_bytes = 0
+        self._visited_records: list[dict[str, Any]] = []
+        self._runtime: list[ResolvedDescriptor] = []
+        self._attestations: list[ResolvedDescriptor] = []
+        self._indexes: list[ResolvedDescriptor] = []
+
+    @staticmethod
+    def _validate_descriptor_shape(descriptor: dict[str, Any]) -> tuple[str, str, int]:
+        media_type = descriptor.get("mediaType")
+        digest = descriptor.get("digest")
+        size = descriptor.get("size")
+        if media_type not in SUPPORTED_DESCRIPTOR_MEDIA_TYPES:
+            raise HarnessResolutionError(
+                f"unsupported descriptor media type: {media_type!r}"
+            )
+        if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+            raise ProvenanceResolutionError(f"malformed descriptor digest: {digest!r}")
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            raise ProvenanceResolutionError(f"malformed descriptor size: {size!r}")
+        if "urls" in descriptor:
+            raise HarnessResolutionError("external descriptor urls are forbidden")
+        return media_type, digest, size
+
+    def _load_descriptor(
+        self, descriptor: dict[str, Any], depth: int
+    ) -> ResolvedDescriptor:
+        media_type, digest, expected_size = self._validate_descriptor_shape(descriptor)
+        if expected_size > self.max_json_bytes:
+            raise HarnessResolutionError(
+                f"descriptor JSON byte limit exceeded: size={expected_size} max={self.max_json_bytes}"
+            )
+        try:
+            payload = self.read_blob(digest)
+        except Exception as exc:
+            raise ProvenanceResolutionError(
+                f"descriptor blob missing or unreadable: {digest}"
+            ) from exc
+        actual_digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+        if actual_digest != digest:
+            raise ProvenanceResolutionError(
+                f"descriptor digest mismatch: expected={digest} actual={actual_digest}"
+            )
+        if len(payload) != expected_size:
+            raise ProvenanceResolutionError(
+                f"descriptor size mismatch: digest={digest} expected={expected_size} actual={len(payload)}"
+            )
+        self._total_descriptor_bytes += len(payload)
+        if self._total_descriptor_bytes > self.max_total_descriptor_bytes:
+            raise HarnessResolutionError("aggregate descriptor byte limit exceeded")
+        try:
+            document = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ProvenanceResolutionError(
+                f"descriptor JSON invalid: {digest}"
+            ) from exc
+        if not isinstance(document, dict):
+            raise ProvenanceResolutionError(
+                f"descriptor JSON must be an object: {digest}"
+            )
+        return ResolvedDescriptor(dict(descriptor), payload, document, depth)
+
+    @staticmethod
+    def _is_attestation(descriptor: dict[str, Any]) -> bool:
+        annotations = descriptor.get("annotations") or {}
+        platform = descriptor.get("platform") or {}
+        marked = annotations.get("vnd.docker.reference.type") == "attestation-manifest"
+        if marked and platform != {"architecture": "unknown", "os": "unknown"}:
+            raise ProvenanceResolutionError(
+                "attestation platform must be unknown/unknown"
+            )
+        return marked
+
+    def _walk(self, descriptor: dict[str, Any], depth: int) -> None:
+        if depth > self.max_depth:
+            raise HarnessResolutionError(
+                f"maximum nesting depth exceeded: depth={depth} max={self.max_depth}"
+            )
+        _, digest, _ = self._validate_descriptor_shape(descriptor)
+        if digest in self._visiting:
+            raise HarnessResolutionError(
+                f"recursive descriptor cycle detected: {digest}"
+            )
+        identity = (str(descriptor["mediaType"]), int(descriptor["size"]))
+        if digest in self._seen:
+            if self._seen[digest] != identity:
+                raise HarnessResolutionError(
+                    f"conflicting descriptor reference: {digest}"
+                )
+            raise HarnessResolutionError(f"duplicate descriptor reference: {digest}")
+        if len(self._seen) >= self.max_descriptors:
+            raise HarnessResolutionError("descriptor count limit exceeded")
+        self._seen[digest] = identity
+        self._visiting.add(digest)
+        try:
+            resolved = self._load_descriptor(descriptor, depth)
+            media_type = resolved.descriptor["mediaType"]
+            self._visited_records.append(
+                {
+                    "depth": depth,
+                    "digest": digest,
+                    "size": len(resolved.payload),
+                    "mediaType": media_type,
+                    "platform": resolved.descriptor.get("platform"),
+                    "annotations": resolved.descriptor.get("annotations"),
+                }
+            )
+            if media_type == OCI_INDEX:
+                if resolved.document.get("schemaVersion") != 2:
+                    raise ProvenanceResolutionError(
+                        f"index schemaVersion is not 2: {digest}"
+                    )
+                manifests = resolved.document.get("manifests")
+                if not isinstance(manifests, list):
+                    raise ProvenanceResolutionError(
+                        f"index manifests is not a list: {digest}"
+                    )
+                if len(manifests) > self.max_fanout:
+                    raise HarnessResolutionError(
+                        f"index fanout limit exceeded: {digest}"
+                    )
+                self._indexes.append(resolved)
+                for child in manifests:
+                    if not isinstance(child, dict):
+                        raise ProvenanceResolutionError(
+                            f"index child descriptor is not an object: {digest}"
+                        )
+                    child_digest = child.get("digest")
+                    if isinstance(child_digest, str) and child_digest in self._visiting:
+                        raise HarnessResolutionError(
+                            f"recursive descriptor cycle detected: {child_digest}"
+                        )
+                    self._walk(child, depth + 1)
+                return
+
+            if resolved.document.get("schemaVersion") != 2:
+                raise ProvenanceResolutionError(
+                    f"manifest schemaVersion is not 2: {digest}"
+                )
+            if self._is_attestation(resolved.descriptor):
+                self._attestations.append(resolved)
+                return
+            platform = resolved.descriptor.get("platform")
+            if (
+                not isinstance(platform, dict)
+                or not platform.get("os")
+                or not platform.get("architecture")
+            ):
+                raise ProvenanceResolutionError(
+                    f"runtime manifest platform missing: {digest}"
+                )
+            if platform == {"os": "linux", "architecture": "amd64"}:
+                self._runtime.append(resolved)
+            else:
+                raise ProvenanceResolutionError(
+                    f"unclassified terminal image manifest: {digest}"
+                )
+        finally:
+            self._visiting.remove(digest)
+
+    def resolve(self, root_index: dict[str, Any]) -> ResolutionResult:
+        if root_index.get("schemaVersion") != 2:
+            raise ProvenanceResolutionError("root index schemaVersion is not 2")
+        manifests = root_index.get("manifests")
+        if not isinstance(manifests, list):
+            raise ProvenanceResolutionError("root index manifests is not a list")
+        for descriptor in manifests:
+            if not isinstance(descriptor, dict):
+                raise ProvenanceResolutionError(
+                    "root child descriptor is not an object"
+                )
+            self._walk(descriptor, 0)
+        if len(self._runtime) != 1:
+            raise ProvenanceResolutionError(
+                f"expected exactly one eligible linux/amd64 runtime image; found {len(self._runtime)}"
+            )
+        return ResolutionResult(
+            runtime=self._runtime[0],
+            attestations=tuple(self._attestations),
+            indexes=tuple(self._indexes),
+            visited=tuple(self._visited_records),
+        )
+
+
+def verify_blob_descriptor(
+    descriptor: dict[str, Any],
+    read_blob: Callable[[str], bytes],
+    *,
+    allowed_media_types: set[str],
+    object_name: str,
+) -> bytes:
+    media_type = descriptor.get("mediaType")
+    digest = descriptor.get("digest")
+    size = descriptor.get("size")
+    if media_type not in allowed_media_types:
+        raise ProvenanceResolutionError(
+            f"unsupported {object_name} media type: {media_type!r}"
+        )
+    if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+        raise ProvenanceResolutionError(f"malformed {object_name} digest: {digest!r}")
+    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+        raise ProvenanceResolutionError(f"malformed {object_name} size: {size!r}")
+    try:
+        payload = read_blob(digest)
+    except Exception as exc:
+        raise ProvenanceResolutionError(
+            f"{object_name} blob missing or unreadable: {digest}"
+        ) from exc
+    actual = "sha256:" + hashlib.sha256(payload).hexdigest()
+    if actual != digest:
+        raise ProvenanceResolutionError(
+            f"{object_name} digest mismatch: expected={digest} actual={actual}"
+        )
+    if len(payload) != size:
+        raise ProvenanceResolutionError(
+            f"{object_name} size mismatch: digest={digest} expected={size} actual={len(payload)}"
+        )
+    return payload
+
+
+def validate_image_graph(
+    manifest: dict[str, Any], read_blob: Callable[[str], bytes]
+) -> tuple[bytes, dict[str, Any], tuple[bytes, ...]]:
+    config_descriptor = manifest.get("config")
+    layers = manifest.get("layers")
+    if not isinstance(config_descriptor, dict):
+        raise ProvenanceResolutionError("image config descriptor missing")
+    if not isinstance(layers, list) or not layers:
+        raise ProvenanceResolutionError("image layer descriptors missing")
+    config_bytes = verify_blob_descriptor(
+        config_descriptor,
+        read_blob,
+        allowed_media_types=CONFIG_MEDIA_TYPES,
+        object_name="image config",
+    )
+    try:
+        config = json.loads(config_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProvenanceResolutionError("image config JSON invalid") from exc
+    if not isinstance(config, dict):
+        raise ProvenanceResolutionError("image config JSON must be an object")
+    layer_payloads: list[bytes] = []
+    for position, layer in enumerate(layers):
+        if not isinstance(layer, dict):
+            raise ProvenanceResolutionError(
+                f"image layer descriptor is not an object: {position}"
+            )
+        layer_payloads.append(
+            verify_blob_descriptor(
+                layer,
+                read_blob,
+                allowed_media_types=LAYER_MEDIA_TYPES,
+                object_name=f"image layer[{position}]",
+            )
+        )
+    return config_bytes, config, tuple(layer_payloads)
+
+
+def validate_slsa_subject(statement: dict[str, Any], runtime_digest: str) -> None:
+    expected = runtime_digest.split(":", 1)[1]
+    subjects = statement.get("subject")
+    if not isinstance(subjects, list) or len(subjects) != 1:
+        raise ProvenanceResolutionError(
+            "SLSA statement must contain exactly one subject"
+        )
+    if subjects[0].get("digest", {}).get("sha256") != expected:
+        raise ProvenanceResolutionError("SLSA subject digest mismatch")
+
+
+def classify_security(
+    findings: list[dict[str, Any]], self_tests: dict[str, bool]
+) -> str:
+    if findings:
+        return "FAIL_IMAGE_SECURITY"
+    if not all(self_tests.values()):
+        return "HOLD_PROVENANCE_ANALYZER"
+    return "PASS"

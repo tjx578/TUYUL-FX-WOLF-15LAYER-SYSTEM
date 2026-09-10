@@ -1,0 +1,638 @@
+"""
+REST polling fallback — hybrid mode.
+
+Activates in two scenarios:
+1. **WS fully down** — polls all symbols (original behaviour).
+2. **WS connected but specific pairs silent** — polls only the pairs
+   that haven't received a WebSocket tick within the silence threshold
+   (e.g. exotic/minor crosses on Finnhub's OANDA feed).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from collections import defaultdict
+from typing import Any
+
+import orjson
+from loguru import logger
+
+from config_loader import load_finnhub
+from context.live_context_bus import LiveContextBus
+from core.redis_keys import candle_history, channel_candle, latest_candle
+
+from .finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
+from .finnhub_ws import is_forex_market_open
+from .hybrid_candle_provider import HybridCandleProvider
+
+
+def enqueue_candle_dict(candle: dict[str, Any]) -> None:
+    """Best-effort persistence enqueue without making Postgres a hard ingest dependency."""
+
+    try:
+        from storage.candle_persistence import enqueue_candle_dict as _enqueue  # noqa: PLC0415
+
+        _enqueue(candle)
+    except Exception as exc:
+        logger.debug("[RestPoll] candle persistence enqueue skipped: {}", exc)
+
+
+class RestPollFallback:
+    """Periodic REST candle poller — hybrid WS-down / per-symbol-silence mode.
+
+    Parameters
+    ----------
+    ws_connected_fn:
+        Callable returning True when the WebSocket is connected.
+    symbols:
+        List of internal symbols to poll (e.g. ``["EURUSD", "XAUUSD"]``).
+    """
+
+    # TTL for candle history keys (6 hours)
+    _HISTORY_TTL_SEC = 6 * 3600
+
+    def __init__(
+        self,
+        ws_connected_fn: Any,
+        symbols: list[str],
+        redis_client: Any = None,
+    ) -> None:
+        super().__init__()
+        cfg = load_finnhub()
+        rest_poll_cfg = cfg.get("rest_poll_fallback", {})
+
+        self._ws_connected = ws_connected_fn
+        self._symbols = symbols
+        self._redis = redis_client
+        self._redis_maxlen = 300
+
+        # Polling interval while WS is down (seconds)
+        self._poll_interval: float = float(rest_poll_cfg.get("poll_interval_sec", 90))
+        # Grace period before first poll after WS disconnect (seconds)
+        self._grace_sec: float = float(rest_poll_cfg.get("grace_before_poll_sec", 30))
+        # How many M15 bars to fetch per poll cycle
+        self._bars: int = int(rest_poll_cfg.get("bars", 4))
+        # Also refresh H1 during fallback
+        self._refresh_h1: bool = bool(rest_poll_cfg.get("refresh_h1", True))
+        self._h1_bars: int = int(rest_poll_cfg.get("h1_bars", 2))
+        # When WS is connected but a symbol is silent, H1/H4 alone can recover
+        # intraday analysis while D1/W1 remain stale.  Refresh HTF on a slower
+        # cadence to keep governance freshness from holding metals/crosses.
+        self._silent_refresh_htf: bool = bool(rest_poll_cfg.get("silent_refresh_htf", True))
+        self._silent_htf_min_interval_sec: float = float(rest_poll_cfg.get("silent_htf_min_interval_sec", 3600))
+        self._last_silent_htf_poll_ts: dict[str, float] = {}
+        # Per-symbol silence check interval (when WS is up)
+        self._silence_check_interval: float = float(rest_poll_cfg.get("silence_check_interval_sec", 60))
+
+        self._fetcher = FinnhubCandleFetcher()
+        self._repair_provider = HybridCandleProvider(
+            finnhub_fetcher=self._fetcher,
+            redis_client=redis_client,
+        )
+        self._context_bus = LiveContextBus()
+        self._running = False
+
+        # Track redis write stats for diagnostics
+        self._redis_writes: int = 0
+        self._redis_skips: int = 0
+        self._finnhub_all_keys_suspended_skip_until: float = 0.0
+
+        # Log redis client status at init for visibility
+        if self._redis is None:
+            logger.error(
+                "[RestPoll] redis_client is None at init! "
+                "All candle writes will be silently skipped. "
+                "Check ingest_service.py redis_client injection."
+            )
+        else:
+            logger.info(
+                "[RestPoll] redis_client injected OK: {}",
+                type(self._redis).__name__,
+            )
+
+        logger.info(
+            "RestPollFallback initialized: interval={:.1f}s, grace={:.1f}s, m15_bars={}, refresh_h1={}, silent_refresh_htf={}, symbols={}",
+            self._poll_interval,
+            self._grace_sec,
+            self._bars,
+            self._refresh_h1,
+            self._silent_refresh_htf,
+            len(self._symbols),
+        )
+
+    async def run(self) -> None:
+        """Monitor WS and activate REST fallback when needed."""
+        self._running = True
+        _last_full_poll_ts: float = 0.0
+        _ws_down_since: float = 0.0
+        logger.info(
+            "RestPollFallback started — grace={:.0f}s, poll_interval={:.0f}s",
+            self._grace_sec,
+            self._poll_interval,
+        )
+
+        while self._running:
+            try:
+                if not self._ws_connected():
+                    now = time.time()
+                    # Track when WS first went down for grace period
+                    if _ws_down_since == 0.0:
+                        _ws_down_since = now
+                    # Grace period — wait before first poll to allow WS reconnect
+                    if now - _ws_down_since < self._grace_sec:
+                        await asyncio.sleep(min(1.0, self._grace_sec))
+                        continue
+                    elapsed = now - _last_full_poll_ts
+                    if elapsed >= self._poll_interval:
+                        logger.warning(
+                            "[RestFallback] WS disconnected — REST poll cycle (interval={:.0f}s)",
+                            self._poll_interval,
+                        )
+                        await self._poll_all_symbols()
+                        _last_full_poll_ts = time.time()
+                    # Check WS state frequently for fast reconnect detection
+                    await asyncio.sleep(10)
+                else:
+                    # WS reconnected — reset down tracker
+                    _ws_down_since = 0.0
+                    # WS connected — check for silent symbols at silence interval
+                    silent_symbols = self._get_silent_symbols()
+                    if silent_symbols:
+                        logger.info("[RestFallback] Polling {} silent symbols", len(silent_symbols))
+                        await self._poll_symbols(silent_symbols)
+                    await asyncio.sleep(self._silence_check_interval)
+
+            except asyncio.CancelledError:
+                logger.info("[RestFallback] Task cancelled")
+                raise
+            except Exception as e:
+                logger.error("[RestFallback] Error: {}", e)
+                await asyncio.sleep(10)
+
+    def _get_silent_pairs(self) -> list[str]:
+        """Return pairs whose last WS tick exceeds the silence threshold."""
+        from .dependencies import PAIR_WS_SILENCE_THRESHOLD_S, _pair_last_tick_ts
+
+        now = time.time()
+        silent: list[str] = []
+        for symbol in self._symbols:
+            last = _pair_last_tick_ts.get(symbol, 0.0)
+            if now - last > PAIR_WS_SILENCE_THRESHOLD_S:
+                silent.append(symbol)
+        return silent
+
+    def _get_silent_symbols(self) -> list[str]:
+        """Compatibility alias for silent symbol detection."""
+        return self._get_silent_pairs()
+
+    async def _poll_symbols(self, symbols: list[str]) -> None:
+        """Poll only the provided symbols via the existing symbol poll routine."""
+        if not is_forex_market_open():
+            logger.info("[RestFallback] Market closed - skipping silent-symbol polling")
+            return
+        for symbol in symbols:
+            if not self._running:
+                break
+            await self._poll_symbol(symbol)
+
+    async def _poll_all_symbols(self) -> None:
+        """Poll all symbols via REST API."""
+        if not is_forex_market_open():
+            logger.info("[RestFallback] Market closed - skipping full-symbol polling")
+            return
+
+        for symbol in self._symbols:
+            if not self._running:
+                break
+
+            try:
+                # Fetch M15, H1, H4, D1, W1 — M15 is critical when WS is down
+                for tf in ["M15", "H1", "H4", "D1", "W1"]:
+                    candles = await self._fetch_candles(symbol, tf)
+                    if candles:
+                        await self._save_to_redis(symbol, tf, candles)
+
+                await asyncio.sleep(1)  # Rate limit
+
+            except Exception as e:
+                logger.error("[RestFallback] Error polling {}: {}", symbol, e)
+
+    async def _fetch_from_repair_provider(
+        self,
+        symbol: str,
+        timeframe: str,
+        bars: int,
+    ) -> list[dict[str, Any]]:
+        """Fetch candles through the hybrid live repair provider."""
+        result = await self._repair_provider.fetch(symbol, timeframe, bars)
+        if result.candles:
+            logger.info(
+                "[RestFallback] fetched {} {} bars for {} via {} ({})",
+                len(result.candles),
+                timeframe,
+                symbol,
+                result.provider,
+                result.reason,
+            )
+        else:
+            logger.warning(
+                "[RestFallback] no live candles for {} {} via hybrid repair (reason={} attempts={})",
+                symbol,
+                timeframe,
+                result.reason,
+                result.attempts,
+            )
+        return result.candles
+
+    async def _fetch_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
+        """Fetch candles for one symbol/timeframe using hybrid live repair."""
+        bars_by_tf = {
+            "M15": self._bars,
+            "H1": self._h1_bars,
+            "H4": max(1, self._h1_bars),
+            "D1": 1,
+            "W1": 1,
+        }
+        bars = bars_by_tf.get(timeframe, 1)
+        return await self._fetch_from_repair_provider(symbol, timeframe, bars)
+
+    async def _save_to_redis(self, symbol: str, timeframe: str, candles: list[dict[str, Any]]) -> None:
+        """Normalize and persist candles to context bus and Redis."""
+        normalized = self._normalize_candles(candles, symbol, timeframe)
+        for candle in normalized:
+            self._context_bus.update_candle(candle)
+        await self._push_candles_to_redis(normalized)
+
+    async def _poll_loop_ws_down(self) -> None:
+        """Fetch M15 (and optionally H1) candles until WS reconnects."""
+        cycle = 0
+        while self._running and not self._ws_connected():
+            # Skip REST calls when forex market is closed (weekend)
+            if not is_forex_market_open():
+                logger.info("Forex market closed (weekend) — skipping REST poll cycle")
+                await asyncio.sleep(self._poll_interval)
+                continue
+
+            cycle += 1
+            logger.info(
+                'REST poll cycle #{:d} for {:d} symbols',
+                cycle,
+                len(self._symbols),
+            )
+
+            for symbol in self._symbols:
+                if self._ws_connected():
+                    return  # WS back — stop immediately
+                await self._poll_symbol(symbol)
+
+            # Sleep between cycles, checking WS state periodically
+            elapsed = 0.0
+            while elapsed < self._poll_interval and self._running:
+                if self._ws_connected():
+                    return
+                await asyncio.sleep(min(5.0, self._poll_interval - elapsed))
+                elapsed += 5.0
+
+    # ── FIX: ensure candle dicts always contain symbol + timeframe ──
+    @staticmethod
+    def _normalize_candles(
+        candles: list[dict[str, Any]],
+        symbol: str,
+        timeframe: str,
+    ) -> list[dict[str, Any]]:
+        """Inject symbol/timeframe into candle dicts if missing.
+
+        FinnhubCandleFetcher.fetch() may return candle dicts parsed
+        from the REST API response ({c,h,l,o,t,v}) without symbol
+        and timeframe fields — those are parameters of the fetch call,
+        not fields in Finnhub's response payload.
+
+        Without this normalization, _push_candles_to_redis() silently
+        skips every candle because candle.get("symbol") returns None.
+        """
+        normalized: list[dict[str, Any]] = []
+        for candle in candles:
+            c = dict(candle)  # shallow copy — don't mutate upstream data
+            if not c.get("symbol"):
+                c["symbol"] = symbol
+            if not c.get("timeframe"):
+                c["timeframe"] = timeframe
+            normalized.append(c)
+        return normalized
+
+    async def _poll_symbol(self, symbol: str) -> None:
+        """Fetch M15 + optional H1 for a single symbol and seed the context bus."""
+        from .finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
+        fetch_candles: Any = self._fetch_from_repair_provider
+
+        # Use configured REST substitutes while all Finnhub keys are suspended.
+        # This keeps candle analysis alive in degraded mode without retrying
+        # a rejected Finnhub credential on every silent-symbol poll.
+        key_statuses = finnhub_keys.status()
+        if key_statuses and all(k["suspended"] for k in key_statuses):
+            remaining = max(k["cooldown_remaining_sec"] for k in key_statuses)
+            from .fallback_provider import FallbackCandleProvider  # noqa: PLC0415
+
+            fallback_provider = FallbackCandleProvider(redis_client=self._redis)
+            if not fallback_provider.available_providers:
+                now = time.monotonic()
+                if now < self._finnhub_all_keys_suspended_skip_until:
+                    logger.debug(
+                        '[RestPoll] Finnhub keys still suspended — cooldown-aware skip for {} ({:.0f}s remaining)',
+                        symbol,
+                        self._finnhub_all_keys_suspended_skip_until - now,
+                    )
+                    return
+                self._finnhub_all_keys_suspended_skip_until = now + max(1.0, remaining)
+                logger.warning(
+                    "[RestPoll] Finnhub key suspended ({:.0f}s cooldown) — "
+                    "entering degraded cooldown skip for {}, no substitute provider configured",
+                    remaining,
+                    symbol,
+                )
+                return
+            logger.warning(
+                "[RestPoll] Finnhub key suspended ({:.0f}s cooldown) — using {} REST substitute for {}",
+                remaining,
+                fallback_provider.available_providers,
+                symbol,
+            )
+            fetch_candles = fallback_provider.fetch
+
+        try:
+            m15_candles = await fetch_candles(symbol, "M15", self._bars)
+            # ── FIX: normalize before context bus + redis push ──
+            m15_candles = self._normalize_candles(m15_candles, symbol, "M15")
+
+            for candle in m15_candles:
+                self._context_bus.update_candle(candle)
+            await self._push_candles_to_redis(m15_candles)
+
+            if m15_candles:
+                logger.debug(
+                    "REST poll: seeded {} M15 bars for {}",
+                    len(m15_candles),
+                    symbol,
+                )
+
+        except FinnhubCandleError as exc:
+            logger.warning("REST poll M15 failed for {}: {}", symbol, exc)
+        except Exception as exc:
+            logger.error("REST poll M15 unexpected error for {}: {}", symbol, exc)
+
+        if self._refresh_h1:
+            try:
+                h1_candles = await fetch_candles(symbol, "H1", self._h1_bars)
+                # ── FIX: normalize H1 candles ──
+                h1_candles = self._normalize_candles(h1_candles, symbol, "H1")
+
+                for candle in h1_candles:
+                    self._context_bus.update_candle(candle)
+
+                if h1_candles:
+                    await self._push_candles_to_redis(h1_candles)
+                    # Also aggregate H4
+                    h4_candles = self._fetcher.aggregate_h4(h1_candles)
+                    # ── FIX: normalize H4 candles ──
+                    h4_candles = self._normalize_candles(h4_candles, symbol, "H4")
+                    for candle in h4_candles:
+                        self._context_bus.update_candle(candle)
+                    await self._push_candles_to_redis(h4_candles)
+
+            except FinnhubCandleError as exc:
+                logger.warning("REST poll H1 failed for {}: {}", symbol, exc)
+            except Exception as exc:
+                logger.error("REST poll H1 unexpected error for {}: {}", symbol, exc)
+
+        await self._maybe_refresh_silent_htf(symbol)
+
+    async def _maybe_refresh_silent_htf(self, symbol: str) -> None:
+        if not self._silent_refresh_htf:
+            return
+
+        now = time.time()
+        last_poll_ts = self._last_silent_htf_poll_ts.get(symbol, 0.0)
+        if now - last_poll_ts < self._silent_htf_min_interval_sec:
+            return
+
+        self._last_silent_htf_poll_ts[symbol] = now
+        for tf in ("D1", "W1"):
+            try:
+                candles = await self._fetch_candles(symbol, tf)
+                if candles:
+                    await self._save_to_redis(symbol, tf, candles)
+                    logger.info("[RestFallback] Silent {}: refreshed {} bars for {}", symbol, len(candles), tf)
+                else:
+                    logger.warning("[RestFallback] Silent {}: REST returned 0 {} bars", symbol, tf)
+            except Exception as exc:
+                logger.warning("[RestFallback] Silent {}: {} refresh failed: {}", symbol, tf, exc)
+
+    async def stop(self) -> None:
+        """Signal the fallback scheduler to stop."""
+        self._running = False
+        logger.info(
+            "RestPollFallback stopping — redis writes={:d}, skips={:d}",
+            self._redis_writes,
+            self._redis_skips,
+        )
+
+    async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
+        """RPUSH candle dicts to Redis history lists (best-effort).
+
+        Candles are grouped by key so each unique key receives a single
+        RPUSH with all its values, one LTRIM, and one EXPIRE, reducing
+        round trips from (rpush + ltrim + expire + publish) × N to
+        (rpush + ltrim + expire) × K + publish × N  (K = unique keys ≤ N).
+        """
+        if not candles:
+            return
+
+        if not self._redis:
+            self._redis_skips += len(candles)
+            if self._redis_skips <= len(candles):
+                logger.error(
+                    "[RestPoll] REDIS CLIENT IS NONE — "
+                    "cannot write {:d} candles to Redis! "
+                    "Total skipped: {:d}. "
+                    "Fix: pass redis_client to RestPollFallback.__init__()",
+                    len(candles),
+                    self._redis_skips,
+                )
+            elif self._redis_skips % 100 == 0:
+                logger.error(
+                    '[RestPoll] Still no redis_client — {:d} candles skipped so far',
+                    self._redis_skips,
+                )
+            return
+
+        written_in_batch = 0
+        dedup_skipped = 0
+        skip_reasons: dict[str, int] = defaultdict(int)
+        skip_samples: list[dict[str, Any]] = []
+        duplicate_heartbeat_candidates: list[dict[str, Any]] = []
+
+        # ── Group valid candles by Redis key to batch writes ─────────────────
+        # Reduces round trips: 4 × N → 3 × K + N  (K = unique keys, K ≤ N).
+        from core.candle_bridge_fix import is_duplicate_candle, is_ohlc_stale
+
+        key_batches: dict[str, list[tuple[str, str, dict[str, Any]]]] = defaultdict(list)
+        for candle in candles:
+            symbol = candle.get("symbol")
+            timeframe = candle.get("timeframe")
+            if not symbol or not timeframe:
+                skip_reasons["missing_symbol_or_timeframe"] += 1
+                if len(skip_samples) < 3:
+                    skip_samples.append(
+                        {
+                            "reason": "missing_symbol_or_timeframe",
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "timestamp": candle.get("timestamp") or candle.get("time"),
+                        }
+                    )
+                logger.warning(
+                    "[RestPoll] Candle skipped — missing symbol={} timeframe={} keys={}",
+                    symbol,
+                    timeframe,
+                    list(candle.keys())[:8],
+                )
+                continue
+            key = candle_history(symbol, timeframe)
+            # Persist every provider revision before Redis duplicate checks so
+            # the canonical row can promote forming→closed for the same window.
+            enqueue_candle_dict(candle)
+
+            try:
+                if await is_duplicate_candle(self._redis, key, candle):
+                    dedup_skipped += 1
+                    skip_reasons["duplicate_open_time"] += 1
+                    duplicate_heartbeat_candidates.append(candle)
+                    if len(skip_samples) < 3:
+                        skip_samples.append(
+                            {
+                                "reason": "duplicate_open_time",
+                                "symbol": symbol,
+                                "timeframe": timeframe,
+                                "timestamp": candle.get("timestamp") or candle.get("time"),
+                            }
+                        )
+                    continue
+            except Exception:
+                pass  # On error, allow write
+
+            try:
+                if await is_ohlc_stale(self._redis, key, candle):
+                    dedup_skipped += 1
+                    skip_reasons["stale_ohlc"] += 1
+                    if len(skip_samples) < 3:
+                        skip_samples.append(
+                            {
+                                "reason": "stale_ohlc",
+                                "symbol": symbol,
+                                "timeframe": timeframe,
+                                "timestamp": candle.get("timestamp") or candle.get("time"),
+                            }
+                        )
+                    logger.debug(
+                        '[RestPoll] Stale OHLC skip {}:{} — consecutive identical prices',
+                        symbol,
+                        timeframe,
+                    )
+                    continue
+            except Exception:
+                pass
+
+            candle_json = orjson.dumps(candle).decode("utf-8")
+            pub_channel = channel_candle(symbol, timeframe)
+            key_batches[key].append((candle_json, pub_channel, candle))
+
+        for key, items in key_batches.items():
+            try:
+                # Push all candles for this key in one RPUSH call, then trim/expire once
+                await self._redis.rpush(key, *[item[0] for item in items])
+                await self._redis.ltrim(key, -self._redis_maxlen, -1)
+                await self._redis.expire(key, self._HISTORY_TTL_SEC)
+                for candle_json, pub_channel, _candle in items:
+                    # Notify engine-side RedisConsumer via Pub/Sub
+                    await self._redis.publish(pub_channel, candle_json)
+                # Update latest_candle hash so pipeline staleness check
+                # sees fresh data from REST-sourced candles (not only WS).
+                last_item = items[-1]
+                sym = last_item[2].get("symbol", "")
+                tf = last_item[2].get("timeframe", "")
+                if sym and tf:
+                    hash_key = latest_candle(sym, tf)
+                    await self._redis.hset(
+                        hash_key,
+                        mapping={
+                            "data": last_item[0],
+                            "last_seen_ts": str(time.time()),
+                        },
+                    )
+                self._redis_writes += len(items)
+                written_in_batch += len(items)
+            except Exception as exc:
+                logger.warning("[RestPoll] RPUSH failed {}: {}", key, exc)
+
+        if written_in_batch > 0:
+            logger.info(
+                "[RestPoll] Wrote {}/{} candles to Redis ({}/{}) — dedup_skipped: {}, total writes: {}",
+                written_in_batch,
+                len(candles),
+                candles[0].get("symbol", "?"),
+                candles[0].get("timeframe", "?"),
+                dedup_skipped,
+                self._redis_writes,
+            )
+        elif candles and dict(skip_reasons) == {"duplicate_open_time": len(candles)}:
+            refreshed = await self._refresh_duplicate_heartbeat(duplicate_heartbeat_candidates)
+            logger.info(
+                "[RestPoll] 0/{} new candles — duplicate_open_time heartbeat refreshed={} symbol={} timeframe={} sample={}",
+                len(candles),
+                refreshed,
+                candles[0].get("symbol", "?"),
+                candles[0].get("timeframe", "?"),
+                skip_samples,
+            )
+        elif candles:
+            logger.warning(
+                "[RestPoll] 0/{} candles written — all skipped! symbol={} timeframe={} reasons={} sample={} first_keys={}",
+                len(candles),
+                candles[0].get("symbol", "?"),
+                candles[0].get("timeframe", "?"),
+                dict(skip_reasons),
+                skip_samples,
+                list(candles[0].keys())[:10],
+            )
+
+    async def _refresh_duplicate_heartbeat(self, candles: list[dict[str, Any]]) -> int:
+        if not self._redis or not candles:
+            return 0
+        latest_by_hash: dict[str, str] = {}
+        for candle in candles:
+            symbol = candle.get("symbol")
+            timeframe = candle.get("timeframe")
+            if not symbol or not timeframe:
+                continue
+            try:
+                candle_json = orjson.dumps(candle).decode("utf-8")
+            except Exception:
+                continue
+            latest_by_hash[latest_candle(symbol, timeframe)] = candle_json
+        refreshed = 0
+        for hash_key, candle_json in latest_by_hash.items():
+            try:
+                await self._redis.hset(
+                    hash_key,
+                    mapping={
+                        "data": candle_json,
+                        "last_seen_ts": str(time.time()),
+                        "heartbeat_reason": "duplicate_open_time",
+                    },
+                )
+                refreshed += 1
+            except Exception as exc:
+                logger.debug("[RestPoll] duplicate heartbeat refresh failed {}: {}", hash_key, exc)
+        return refreshed

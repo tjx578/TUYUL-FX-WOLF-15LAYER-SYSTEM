@@ -1,0 +1,101 @@
+"""Portable source extraction: schema-bound encoding only; no remote execution."""
+from __future__ import annotations
+
+import base64
+import binascii
+import hashlib
+import hmac
+import re
+from dataclasses import dataclass
+from typing import Any
+
+from . import spec_schema
+from .spec_schema import canonical_json_bytes, strict_json_loads, validate_spec
+
+BASE64URL = re.compile(r"[A-Za-z0-9_-]*")
+HEX64 = re.compile(r"[0-9a-f]{64}")
+
+class TransportError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class EncodedSpec:
+    canonical_bytes: bytes
+    encoded: str
+    sha256: str
+
+    def receipt(self) -> dict[str, object]:
+        return {
+            "schema_version": spec_schema.SCHEMA_VERSION,
+            "canonical_byte_size": len(self.canonical_bytes),
+            "canonical_sha256": self.sha256,
+            "encoded_byte_size": len(self.encoded.encode("ascii")),
+            "encoding": "base64url-unpadded",
+        }
+
+
+def encode_spec(spec: object) -> EncodedSpec:
+    canonical = canonical_json_bytes(spec)
+    encoded = base64.urlsafe_b64encode(canonical).rstrip(b"=").decode("ascii")
+    return EncodedSpec(canonical, encoded, hashlib.sha256(canonical).hexdigest())
+
+
+def decode_spec(encoded: str, expected_sha256: str) -> dict[str, Any]:
+    if type(encoded) is not str or not BASE64URL.fullmatch(encoded):
+        raise TransportError("MALFORMED_BASE64URL")
+    if len(encoded) % 4 == 1:
+        raise TransportError("MALFORMED_BASE64URL_LENGTH")
+    if type(expected_sha256) is not str or not HEX64.fullmatch(expected_sha256):
+        raise TransportError("MALFORMED_EXPECTED_SHA256")
+    padded = encoded + "=" * ((4 - len(encoded) % 4) % 4)
+    try:
+        decoded = base64.b64decode(padded, altchars=b"-_", validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise TransportError("BASE64URL_DECODE_FAILED") from exc
+    digest = hashlib.sha256(decoded).hexdigest()
+    if not hmac.compare_digest(digest, expected_sha256):
+        raise TransportError("PAYLOAD_DIGEST_MISMATCH")
+    return validate_spec(strict_json_loads(decoded))
+
+
+def synthetic_identity() -> dict[str, Any]:
+    zero = "0" * 64
+    return {
+        "role": "synthetic-fixture",
+        "observed_path": "/synthetic/observed",
+        "canonical_path": "/synthetic/canonical",
+        "path_is_symlink": False,
+        "file_type": "regular_file",
+        "uid": 0,
+        "gid": 0,
+        "owner_name": "root",
+        "group_name": "root",
+        "mode_octal": "0644",
+        "size_bytes": 1,
+        "sha256": zero,
+        "identity_method": "RAW_FILE_BYTES",
+        "source_capture_role": "synthetic-acceptance",
+        "capture_campaign": "synthetic-acceptance",
+        "capture_receipt_sha256": zero,
+    }
+
+
+def synthetic_spec(annotation: str | None = None) -> dict[str, Any]:
+    return {
+        "schema_version": spec_schema.SCHEMA_VERSION,
+        "campaign_id": "rc6q-h3-synthetic-acceptance",
+        "campaign_started_utc": "2026-09-03T00:00:00+00:00",
+        "remediation_lock_packet_sha256": "0" * 64,
+        "identities": [synthetic_identity()],
+        "annotation": annotation,
+        "execution_boundary": {
+            "mode": "SYNTHETIC_ACCEPTANCE",
+            "ssh_campaign_limit": 0,
+            "remote_python_invocation_limit": 0,
+            "systemd_mutation_authorized": False,
+            "docker_object_mutation_authorized": False,
+            "package_operations_authorized": False,
+            "automatic_reruns": 0,
+        },
+    }
