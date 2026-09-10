@@ -1,0 +1,8 @@
+{
+  "scope": "BUILT_ENGINE_PROCESS_WITH_INJECTED_DEPENDENCIES_TEST_ONLY",
+  "accepted": false,
+  "execution_authority": false,
+  "broker_acceptance": "NOT_EXECUTED",
+  "cases": [],
+  "failure_class": "FileNotFoundError"
+}

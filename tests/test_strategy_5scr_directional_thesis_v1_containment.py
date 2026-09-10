@@ -124,12 +124,11 @@ def test_p4_runtime_defaults_off_and_requires_shadow_mode() -> None:
         ).validate()
 
 
-def test_p4_has_no_production_consumer_or_runtime_wiring() -> None:
-    allowed_p5_consumers = {
-        # Explicit TEST_ONLY proof contracts reuse V1 candle/pattern predicates;
-        # neither is a service caller or an execution writer.
-        ("contracts/strategy_5scr_ordered_proof_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
+def test_p4_has_only_reviewed_p5_and_test_only_v31_consumers() -> None:
+    allowed_consumers = {
+        # V3.1 reuses candle contracts/predicates under Literal["TEST_ONLY"].
         ("analysis/strategy_5scr_reference_pattern_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
+        ("contracts/strategy_5scr_ordered_proof_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
         (
             "analysis/strategy_5scr_execution_box_v1.py",
             "contracts.strategy_5scr_directional_thesis_v1",
@@ -171,7 +170,7 @@ def test_p4_has_no_production_consumer_or_runtime_wiring() -> None:
             for module in sorted(P4_MODULES & imports):
                 consumers.append((path.relative_to(ROOT).as_posix(), module))
 
-    assert set(consumers) == allowed_p5_consumers
+    assert set(consumers) == allowed_consumers
 
 
 def test_p4_does_not_change_railway_or_mql5_surface() -> None:

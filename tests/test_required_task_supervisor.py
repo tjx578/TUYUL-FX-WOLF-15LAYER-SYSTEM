@@ -76,6 +76,35 @@ def test_required_retry_reaches_real_worker_then_intentional_shutdown():
     asyncio.run(run())
 
 
+def test_required_retry_without_readiness_owner_keeps_probe_closed():
+    async def run():
+        stop = asyncio.Event()
+        probe = HealthProbe(readiness_check=lambda: True)
+        calls = 0
+
+        async def worker():
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("transient")
+            assert probe._readiness_check() is False
+            assert probe._alive is False
+            stop.set()
+
+        await supervised_task(
+            "RequiredWorker",
+            worker,
+            shutdown_event=stop,
+            health_probe=probe,
+            max_restarts=1,
+            cooldown=0,
+            required=True,
+        )
+        assert calls == 2
+
+    asyncio.run(run())
+
+
 def test_shutdown_before_start_never_constructs_required_worker():
     async def run():
         stop = asyncio.Event()

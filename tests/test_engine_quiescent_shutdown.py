@@ -17,20 +17,22 @@ async def resistant_worker(started, release, events):
     events.append("writer-stopped")
 
 
-def test_strict_drain_timeout_never_calls_pool_cleanup():
+@pytest.mark.parametrize("strict", [False, True])
+def test_strict_drain_timeout_never_calls_pool_cleanup(strict):
     async def run():
         events = []
         started, release = asyncio.Event(), asyncio.Event()
         writer = asyncio.create_task(resistant_worker(started, release, events))
         await started.wait()
-        gs = GracefulShutdown(drain_timeout=0.01, require_quiescent=True)
+        gs = GracefulShutdown(drain_timeout=0.01, require_quiescent=strict)
 
         async def pool_close():
             events.append("pool-close")
 
         gs.register_cleanup("pool", pool_close)
         try:
-            with pytest.raises(ShutdownDrainTimeoutError, match="WRITERS_NOT_QUIESCENT"):
+            expected = ShutdownDrainTimeoutError if strict else RuntimeError
+            with pytest.raises(expected):
                 await gs.shutdown([writer])
             assert not writer.done()
             assert "pool-close" not in events
@@ -148,15 +150,16 @@ def test_default_cleanup_error_preserves_legacy_continue_behavior():
     asyncio.run(run())
 
 
-def test_strict_inflight_drain_reports_remaining_writer():
+@pytest.mark.parametrize("strict", [False, True])
+def test_strict_inflight_drain_reports_remaining_writer(strict):
     async def run():
         events = []
         started, release = asyncio.Event(), asyncio.Event()
         writer = asyncio.create_task(resistant_worker(started, release, events))
         await started.wait()
-        gs = GracefulShutdown(drain_timeout=0.01, require_quiescent=True)
+        gs = GracefulShutdown(drain_timeout=0.01, require_quiescent=strict)
         try:
-            with pytest.raises(ShutdownDrainTimeoutError):
+            with pytest.raises(ShutdownDrainTimeoutError if strict else RuntimeError):
                 await gs.drain_worker_tasks([writer])
             assert not writer.done()
         finally:

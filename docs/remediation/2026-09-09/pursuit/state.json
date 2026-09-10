@@ -6,7 +6,7 @@
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "C06_ENGINE_SHARED_PROBE_AND_FATAL_LIFECYCLE",
+  "current_slice": "P1_RECONCILE_428_431_AND_BOUND_LINUX_ACCEPTANCE",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -25,7 +25,7 @@
     },
     "C01": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "LOCAL_GATE_CONTROLS_PASS_ALTERNATE_DEPLOY_PATH_OPEN",
+      "execution_stage": "INTEGRATED_SOURCE_LOCAL_PASS_LINUX_CANDIDATE_PENDING",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -35,12 +35,13 @@
         "evidence/release-audit.json",
         "validation.json",
         "pursuit/evidence/p1-ci-20260909/validation.json",
-        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
+        "pursuit/reconciliation/local-review.json"
       ]
     },
     "C02": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "DISPOSABLE_APPLICATION_ROLE_FENCING_PASS_RUNTIME_OWNER_AND_ZERO_SUBMIT_OPEN",
+      "execution_stage": "INTEGRATED_SOURCE_LOCAL_PASS_LINUX_CANDIDATE_PENDING",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -55,12 +56,13 @@
         "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
         "pursuit/evidence/consumer-fence-20260909/review.json",
-        "pursuit/evidence/k05-detached-pg-20260909/review.json"
+        "pursuit/evidence/k05-detached-pg-20260909/review.json",
+        "pursuit/reconciliation/local-review.json"
       ]
     },
     "C03": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "CURRENT_LINUX_CI_SECURITY_ZERO_SKIP_PASS_C01_DEPENDENCY_OPEN",
+      "execution_stage": "INTEGRATED_SOURCE_LOCAL_PASS_LINUX_CANDIDATE_PENDING",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -84,7 +86,8 @@
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
         "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
         "pursuit/evidence/consumer-fence-20260909/review.json",
-        "pursuit/evidence/k05-detached-pg-20260909/review.json"
+        "pursuit/evidence/k05-detached-pg-20260909/review.json",
+        "pursuit/reconciliation/local-review.json"
       ]
     },
     "C04": {
@@ -111,7 +114,7 @@
     },
     "C05": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "CLASSIC_MAIN_PROTECTION_OBSERVED_REVIEW_AND_RELEASE_BINDING_OPEN",
+      "execution_stage": "INTEGRATED_SOURCE_LOCAL_PASS_LINUX_CANDIDATE_PENDING",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -124,12 +127,13 @@
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
         "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
         "pursuit/evidence/consumer-fence-20260909/review.json",
-        "pursuit/evidence/k05-detached-pg-20260909/review.json"
+        "pursuit/evidence/k05-detached-pg-20260909/review.json",
+        "pursuit/reconciliation/local-review.json"
       ]
     },
     "C06": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "BUILT_API_TEN_CASES_PASS_ENGINE_AND_OTHER_ROLES_OPEN",
+      "execution_stage": "INTEGRATED_SOURCE_LOCAL_PASS_LINUX_CANDIDATE_PENDING",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -143,7 +147,8 @@
         "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
         "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
-        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
+        "pursuit/reconciliation/local-review.json"
       ]
     },
     "S01": {
@@ -884,10 +889,10 @@
     }
   },
   "next_frontier": [
-    "C01_ALTERNATE_CANARY_EQUIVALENT_GATE",
-    "C02_RUNTIME_OWNER_AND_LEGACY_ZERO_SUBMIT",
-    "C06_ENGINE_SHARED_PROBE_AND_FATAL_LIFECYCLE",
-    "K05_POST_PROOF_VALIDITY"
+    "P1_INTEGRATED_LINUX_REQUIRED_GATES",
+    "C02_C05_C06_COMBINED_ACCEPTANCE_REVIEW",
+    "S03_PROTECTED_SYMBOL_COVERAGE",
+    "PER_FOLDER_RECOVERY_VERIFICATION"
   ],
   "publication": {
     "source_commit": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
@@ -970,5 +975,34 @@
       "no_deployment": true,
       "merge": "HOLD"
     }
-  ]
+  ],
+  "reconciliation_checkpoint": {
+    "status": "PARTIAL_CANDIDATE_AWAITING_LINUX_CI",
+    "observed_at_utc": "2026-09-09T15:33:59.061018+00:00",
+    "parents": [
+      "09f1075eeab48c86409c0a99bc631c648e24db78",
+      "1966c55eb06069a7b77660d35b2fc828293378ae"
+    ],
+    "original_428": "65cdf4e2eb57748accf1eb08f8d7f75b96317575",
+    "original_431": "9e6f1ee38aaed8ff858f78611520ac61f79abe25",
+    "current_431": "1966c55eb06069a7b77660d35b2fc828293378ae",
+    "database_execution": "100_PASS_NO_SKIP_SOURCE_BOUND_FB782C14",
+    "database_collected": 100,
+    "drain_pg_collected": 2,
+    "redis_collected": 4,
+    "main_merge_by_this_task": false,
+    "production_mutation": false,
+    "observed_external_main_merge": "44deab805248d8607e32200890edd3ab9d8e698e includes recovery dba789ed via PR434",
+    "remaining": [
+      "Linux required CI on this candidate",
+      "PG100 and drain2 and Redis4 no-skip execution",
+      "Built runtime acceptance including new required engine fault lane",
+      "P1 C01-C06 combined closure review",
+      "S03 protected-symbol coverage and effective target privilege binding"
+    ],
+    "evidence_ref": "pursuit/reconciliation/local-review.json",
+    "database_execution_source": "fb782c147a02f8dfaa902624d014c0afd9a919db",
+    "database_evidence_ref": "pursuit/reconciliation/fb782c14/postgres-verified-summary.json",
+    "runtime_execution": "FIRST_CANDIDATE_FAILED_ORCHESTRATOR_TIMEOUT_AND_ENGINE_BUILD_INPUT_PATH; FOLLOWUP_PENDING"
+  }
 }

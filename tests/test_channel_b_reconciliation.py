@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import os
 import shutil
 import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -747,12 +747,18 @@ def test_powershell_process_helper_propagates_nonzero_and_keeps_report(tmp_path:
         pytest.skip("PowerShell is required for launcher contract verification")
 
     launcher = Path("scripts/run_channel_b_reconciliation.ps1").resolve()
-    fake_python = tmp_path / ("fake-python.cmd" if os.name == "nt" else "fake-python")
-    if os.name == "nt":
-        fake_python.write_text('@echo off\r\necho {"B-B16":"EXECUTED_BLOCKED"}\r\nexit /b 3\r\n', encoding="ascii")
-    else:
+    # Exercise the same PowerShell native-process boundary on both runner OSes.
+    if sys.platform == "win32":
+        fake_python = tmp_path / "fake-python.cmd"
         fake_python.write_text(
-            "#!/bin/sh\nprintf '%s\\n' '{\"B-B16\":\"EXECUTED_BLOCKED\"}'\nexit 3\n", encoding="ascii"
+            '@echo off\r\necho {"B-B16":"EXECUTED_BLOCKED"}\r\nexit /b 3\r\n',
+            encoding="ascii",
+        )
+    else:
+        fake_python = tmp_path / "fake-python"
+        fake_python.write_text(
+            "#!/bin/sh\nprintf '%s\\n' '{\"B-B16\":\"EXECUTED_BLOCKED\"}'\nexit 3\n",
+            encoding="ascii",
         )
         fake_python.chmod(0o700)
     report_path = tmp_path / "blocked-report.json"
