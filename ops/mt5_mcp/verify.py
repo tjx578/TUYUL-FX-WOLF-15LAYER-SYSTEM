@@ -76,7 +76,8 @@ async def verify_configured_stdio(config_path: Path) -> dict[str, Any]:
     server_environment = {
         str(key): str(value)
         for key, value in entry.get("env", {}).items()
-        if key.upper() not in {
+        if key.upper()
+        not in {
             "AUDIT_DATABASE_URL",
             account_binding.KEY_ENV,
             account_binding.KEY_ID_ENV,
