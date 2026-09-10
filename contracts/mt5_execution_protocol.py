@@ -227,6 +227,8 @@ class EngineeringDemoCanaryGuards(StrictModel):
     guard_type: Literal["ENGINEERING_DEMO_CANARY"] = "ENGINEERING_DEMO_CANARY"
     scoped_demo_window_required: Literal[True] = True
     broker_ledger_reconciled: Literal[True] = True
+    reconciliation_evidence_id: UUID | None = None
+    reconciliation_evidence_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     expected_margin_mode: MarginMode
     account_snapshot_id: str = Field(..., min_length=3, max_length=200)
     balance_snapshot: float = Field(..., gt=0)

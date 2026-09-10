@@ -28,6 +28,7 @@ from contracts.mt5_execution_protocol import (
     OrderInstruction,
     sign_execution_command,
 )
+from execution.broker_reconciliation_evidence import ReconciliationEvidenceError, digest, verify_attestation
 from execution.mt5_command_repository import CommandConflictError, MT5CommandRepository
 
 ENGINEERING_DEMO_CANARY_MANIFEST_VERSION: Final = "wolf15.mt5.engineering-demo-canary-manifest.v1"
@@ -108,6 +109,8 @@ def build_engineering_demo_canary_command(
     snapshot: AccountSnapshotV1,
     signing_secret: str | bytes,
     signing_key_id: str,
+    reconciliation_identity: dict[str, Any] | None = None,
+    reconciliation_evidence: dict[str, Any] | None = None,
 ) -> ExecutionCommandV1:
     """Build one signed market command whose lineage can never count as strategy evidence."""
 
@@ -129,8 +132,16 @@ def build_engineering_demo_canary_command(
         raise EngineeringDemoCanaryError("account snapshot identity differs from operator approval")
     if not snapshot.trade_allowed or not snapshot.autotrading_enabled:
         raise EngineeringDemoCanaryError("DEMO terminal trading is not enabled")
-    if not snapshot.broker_ledger_reconciled:
-        raise EngineeringDemoCanaryError("direct broker ledger is not reconciled")
+    try:
+        if reconciliation_identity is None or reconciliation_evidence is None:
+            raise ReconciliationEvidenceError("RECONCILIATION_EVIDENCE_MISSING")
+        if reconciliation_identity.get("broker_server") != request.approved_broker_server:
+            raise ReconciliationEvidenceError("RECONCILIATION_BINDING_MISMATCH")
+        proof = verify_attestation(
+            reconciliation_evidence, identity=reconciliation_identity, snapshot=snapshot, now=datetime.now(UTC)
+        )
+    except ReconciliationEvidenceError as exc:
+        raise EngineeringDemoCanaryError(str(exc)) from exc
     if snapshot.open_positions or snapshot.pending_orders:
         raise EngineeringDemoCanaryError("engineering canary requires a flat DEMO account")
 
@@ -190,6 +201,8 @@ def build_engineering_demo_canary_command(
             time_in_force="GTC",
         ),
         "guards": EngineeringDemoCanaryGuards(
+            reconciliation_evidence_id=proof.evidence_id,
+            reconciliation_evidence_sha256=digest(reconciliation_evidence),
             expected_margin_mode=snapshot.margin_mode,
             account_snapshot_id=snapshot.snapshot_id,
             balance_snapshot=snapshot.balance,
@@ -269,12 +282,18 @@ class EngineeringDemoCanaryAuthorityV1:
         key_id = os.getenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", "").strip()
         if len(secret.encode("utf-8")) < 32 or not key_id:
             raise EngineeringDemoCanaryError("canary signing authority is unavailable")
+        try:
+            identity, evidence = await self._repository.load_engineering_reconciliation(snapshot)
+        except ReconciliationEvidenceError as exc:
+            raise EngineeringDemoCanaryError(str(exc)) from exc
         command = build_engineering_demo_canary_command(
             request,
             executor=executor,
             snapshot=snapshot,
             signing_secret=secret,
             signing_key_id=key_id,
+            reconciliation_identity=identity,
+            reconciliation_evidence=evidence,
         )
         try:
             await self._repository.enqueue_engineering_demo_canary_command(command)

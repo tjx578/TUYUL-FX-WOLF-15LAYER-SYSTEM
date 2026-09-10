@@ -33,6 +33,13 @@ from execution.mt5_engineering_demo_canary import (
     engineering_demo_canary_manifest,
 )
 from scripts import issue_mt5_engineering_demo_canary as canary_cli
+from tests.reconciliation_fixtures import configure_test_keys, fixture_attestation, fixture_identity
+
+
+@pytest.fixture(autouse=True)
+def reconciliation_keys(monkeypatch):
+    configure_test_keys(monkeypatch)
+
 
 SECRET = "d" * 64
 EXECUTOR_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -75,7 +82,7 @@ def _snapshot(**updates: object) -> AccountSnapshotV1:
         "autotrading_enabled": True,
         "open_positions": [],
         "pending_orders": [],
-        "broker_ledger_reconciled": True,
+        "broker_ledger_reconciled": False,
         "symbols": [
             SymbolCapability(
                 canonical_symbol="EURUSD",
@@ -127,12 +134,16 @@ def _command(
     executor: dict[str, object] | None = None,
     snapshot: AccountSnapshotV1 | None = None,
 ) -> ExecutionCommandV1:
+    snapshot = snapshot or _snapshot()
+    identity = fixture_identity(snapshot)
     return build_engineering_demo_canary_command(
         request or _request(),
         executor=executor or _executor(),
         snapshot=snapshot or _snapshot(),
         signing_secret=SECRET,
         signing_key_id="d0-test-key",
+        reconciliation_identity=identity,
+        reconciliation_evidence=fixture_attestation(identity),
     )
 
 
@@ -253,7 +264,6 @@ def test_canary_rejects_more_than_broker_minimum_volume() -> None:
 @pytest.mark.parametrize(
     ("snapshot_update", "message"),
     [
-        ({"broker_ledger_reconciled": False}, "ledger"),
         ({"autotrading_enabled": False}, "trading"),
         ({"trade_allowed": False}, "trading"),
         (
@@ -516,6 +526,10 @@ class _FakeRepository:
     async def latest_snapshot(self, executor_id: UUID) -> AccountSnapshotV1:
         assert executor_id == EXECUTOR_ID
         return self.snapshot
+
+    async def load_engineering_reconciliation(self, snapshot):
+        identity = fixture_identity(snapshot)
+        return identity, fixture_attestation(identity)
 
     async def enqueue_engineering_demo_canary_command(self, command: ExecutionCommandV1) -> None:
         self.enqueued.append(command)

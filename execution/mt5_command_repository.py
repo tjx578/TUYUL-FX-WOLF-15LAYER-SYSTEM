@@ -12,6 +12,9 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
+from execution.broker_reconciliation_evidence import ReconciliationEvidenceError
+from execution.broker_reconciliation_repository import load_evidence
+
 from contracts.mt5_execution_protocol import (
     ENGINEERING_DEMO_CANARY_EA_VERSION,
     SHADOW_ACCEPTANCE_EA_VERSION,
@@ -648,6 +651,10 @@ class MT5CommandRepository:
                           'canary_purpose'
                       )
                 ) AS canary_lineage_columns,
+                to_regclass('public.executor_reconciliation_bindings') IS NOT NULL
+                    AND to_regclass('public.broker_reconciliation_evidence') IS NOT NULL
+                    AND to_regclass('wolf15_audit.backend_account_identity_v1') IS NOT NULL
+                    AS reconciliation_evidence_schema,
                 EXISTS (
                     SELECT 1 FROM pg_constraint AS c
                     WHERE c.conrelid = 'public.execution_commands'::regclass
@@ -697,6 +704,24 @@ class MT5CommandRepository:
             return {"ready": False, "reason": "engineering canary schema status query returned no row"}
         details = dict(row)
         return {"ready": all(bool(value) for value in details.values()), **details}
+
+    async def load_engineering_reconciliation(self, snapshot: AccountSnapshotV1) -> tuple[dict[str, Any], dict[str, Any]]:
+        self._require_database()
+        async with self._pg.transaction() as connection:
+            return await load_evidence(connection, executor_id=snapshot.executor_id, snapshot=snapshot)
+
+    @staticmethod
+    async def _require_engineering_reconciliation(connection: Any, command: ExecutionCommandV1, snapshot: AccountSnapshotV1) -> None:
+        guards = command.guards
+        if not isinstance(guards, EngineeringDemoCanaryGuards) or guards.reconciliation_evidence_id is None or guards.reconciliation_evidence_sha256 is None:
+            raise CommandConflictError("RECONCILIATION_EVIDENCE_MISSING")
+        try:
+            await load_evidence(
+                connection, executor_id=command.executor_binding.executor_id, snapshot=snapshot,
+                evidence_id=guards.reconciliation_evidence_id, expected_digest=guards.reconciliation_evidence_sha256,
+            )
+        except ReconciliationEvidenceError as exc:
+            raise CommandConflictError(str(exc)) from exc
 
     async def latest_snapshot(self, executor_id: UUID | str) -> AccountSnapshotV1 | None:
         self._require_database()
@@ -907,8 +932,7 @@ class MT5CommandRepository:
                 raise CommandConflictError("engineering canary account snapshot has drifted")
             if not snapshot.trade_allowed or not snapshot.autotrading_enabled:
                 raise CommandConflictError("engineering canary terminal trading is unavailable")
-            if not snapshot.broker_ledger_reconciled:
-                raise CommandConflictError("engineering canary broker ledger is not reconciled")
+            await self._require_engineering_reconciliation(connection, command, snapshot)
             if snapshot.open_positions or snapshot.pending_orders:
                 raise CommandConflictError("engineering canary requires a flat account")
             symbol_capabilities = [
@@ -1169,11 +1193,11 @@ class MT5CommandRepository:
             if (
                 not snapshot.trade_allowed
                 or not snapshot.autotrading_enabled
-                or not snapshot.broker_ledger_reconciled
                 or snapshot.open_positions
                 or snapshot.pending_orders
             ):
-                raise CommandConflictError("engineering canary account is no longer reconciled and flat")
+                raise CommandConflictError("engineering canary account is no longer tradeable and flat")
+            await self._require_engineering_reconciliation(connection, command, snapshot)
             symbol_capabilities = [
                 item
                 for item in snapshot.symbols

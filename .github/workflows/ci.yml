@@ -45,7 +45,8 @@ jobs:
         run: ruff check . --config pyproject.toml
 
       - name: Ruff format check (hard fail)
-        run: ruff format --check . --config pyproject.toml
+        if: ${{ !cancelled() }}
+        run: ruff format --check --diff . --config pyproject.toml
 
   tests:
     name: Python tests (pytest)
