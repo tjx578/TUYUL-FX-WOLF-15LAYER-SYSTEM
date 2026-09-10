@@ -42,6 +42,7 @@ ACCOUNT_ID = "12345678"
 @pytest.fixture(autouse=True)
 def reconciliation_keys(monkeypatch):
     configure_test_keys(monkeypatch)
+    monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", SIGNING_KEY_ID)
     monkeypatch.setattr(bridge_e2e, "ACCOUNT_ID", ACCOUNT_ID)
 
 

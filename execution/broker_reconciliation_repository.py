@@ -86,16 +86,33 @@ async def produce_backend_identity(connection: Any, executor_id: UUID | str) -> 
 
 
 async def current_identity(connection: Any, executor_id: UUID | str, snapshot: AccountSnapshotV1) -> dict[str, Any]:
-    row = await connection.fetchrow(
-        """SELECT b.*, e.execution_mode, e.revoked_at FROM executor_reconciliation_bindings b
-           JOIN executor_instances e ON e.executor_id=b.executor_id
-           WHERE b.executor_id=$1::uuid AND b.account_id=e.account_id AND b.login_hash=e.login_hash
-             AND b.broker_server=e.broker_server FOR SHARE OF b, e""",
-        str(executor_id),
+    # Make lock acquisition order explicit; a join's row-lock order is planner-dependent.
+    executor = await connection.fetchrow(
+        "SELECT * FROM executor_instances WHERE executor_id=$1::uuid FOR SHARE", str(executor_id)
     )
-    if not row or row["execution_mode"] != "DEMO" or row["revoked_at"] is not None:
+    if not executor or executor["execution_mode"] != "DEMO" or executor["revoked_at"] is not None:
         raise ReconciliationEvidenceError("RECONCILIATION_BACKEND_BINDING_MISSING")
-    if row["account_id"] != snapshot.account_id or row["snapshot_sha256"] != snapshot_digest(snapshot):
+    stored_snapshot = await connection.fetchrow(
+        "SELECT payload FROM executor_account_snapshots WHERE executor_id=$1::uuid AND snapshot_id=$2 FOR SHARE",
+        str(executor_id),
+        snapshot.snapshot_id,
+    )
+    if (
+        not stored_snapshot
+        or snapshot_digest(AccountSnapshotV1.model_validate(_object(stored_snapshot["payload"])))
+        != snapshot_digest(snapshot)
+    ):
+        raise ReconciliationEvidenceError("RECONCILIATION_BINDING_MISMATCH")
+    row = await connection.fetchrow(
+        "SELECT * FROM executor_reconciliation_bindings WHERE executor_id=$1::uuid FOR SHARE", str(executor_id)
+    )
+    if not row:
+        raise ReconciliationEvidenceError("RECONCILIATION_BACKEND_BINDING_MISSING")
+    if (
+        any(row[field] != executor[field] for field in ("account_id", "login_hash", "broker_server"))
+        or row["account_id"] != snapshot.account_id
+        or row["snapshot_sha256"] != snapshot_digest(snapshot)
+    ):
         raise ReconciliationEvidenceError("RECONCILIATION_BINDING_MISMATCH")
     return {**dict(row), "account_binding_source": account_binding.DATABASE_SOURCE}
 
