@@ -7,9 +7,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from mcp import Client
 
-from ops.mt5_mcp import account_binding, server
+from ops.mt5_mcp import account_binding, server, verify
 
 EXPECTED_TOOLS = {
     "mt5_account_get",
@@ -458,3 +459,63 @@ def test_collector_rejects_helper_source_change(monkeypatch, tmp_path):
     monkeypatch.setattr(snapshot, "_helper_provenance", changed)
     with pytest.raises(ValueError, match="HELPER_SOURCE_CHANGED"):
         run()
+
+
+@pytest.mark.parametrize("key_present,key_id_present", [(True, True), (True, False), (False, True), (False, False)])
+def test_stdio_forwards_only_ephemeral_binding_material(
+    monkeypatch, tmp_path: Path, capsys, key_present: bool, key_id_present: bool
+) -> None:
+    config = tmp_path / "config.toml"
+    original = """[mcp_servers.native_mt5_readonly]
+command = "fixture-python"
+args = ["-m", "ops.mt5_mcp.server"]
+cwd = "fixture-checkout"
+[mcp_servers.native_mt5_readonly.env]
+MT5_TERMINAL_PATH = "fixture-terminal"
+WOLF15_ACCOUNT_BINDING_KEY_B64URL = "fixture-stored-key"
+wolf15_account_binding_key_id = "fixture-stored-id"
+audit_database_url = "fixture-config-database"
+"""
+    config.write_text(original, encoding="utf-8")
+    expected = {"MT5_TERMINAL_PATH": "fixture-terminal"}
+    for name, present, value in (
+        (account_binding.KEY_ENV, key_present, "fixture-process-key"),
+        (account_binding.KEY_ID_ENV, key_id_present, "fixture-process-id"),
+    ):
+        monkeypatch.delenv(name, raising=False)
+        if present:
+            monkeypatch.setenv(name, value)
+            expected[name] = value
+    monkeypatch.setenv("AUDIT_DATABASE_URL", "fixture-parent-database")
+    monkeypatch.setenv("UNRELATED_PRIVATE_TOKEN", "fixture-unrelated-token")
+    captured = []
+
+    def fake_stdio(parameters):
+        captured.append(parameters)
+        return "fixture-transport"
+
+    class FakeClient:
+        def __init__(self, transport):
+            assert transport == "fixture-transport"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+    async def fake_verify(client):
+        assert isinstance(client, FakeClient)
+        return {"fixture": "sanitized-report"}
+
+    monkeypatch.setattr(verify, "stdio_client", fake_stdio)
+    monkeypatch.setattr(verify, "Client", FakeClient)
+    monkeypatch.setattr(verify, "_verify_client", fake_verify)
+    assert asyncio.run(verify.verify_configured_stdio(config)) == {"fixture": "sanitized-report"}
+    assert len(captured) == 1
+    assert captured[0].env == expected
+    assert captured[0].args == ["-m", "ops.mt5_mcp.server"]
+    assert captured[0].cwd == "fixture-checkout"
+    assert config.read_text(encoding="utf-8") == original
+    output = capsys.readouterr()
+    assert output.out == output.err == ""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Any
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
+from ops.mt5_mcp import account_binding
 from ops.mt5_mcp.server import ALLOWED_TOOL_NAMES, mcp
 
 
@@ -70,10 +72,20 @@ async def verify() -> dict[str, Any]:
 async def verify_configured_stdio(config_path: Path) -> dict[str, Any]:
     config = tomllib.loads(config_path.read_text(encoding="utf-8"))
     entry = config["mcp_servers"]["native_mt5_readonly"]
+    # Match snapshot.py: binding secrets come only from the ephemeral parent.
+    server_environment = {
+        str(key): str(value)
+        for key, value in entry.get("env", {}).items()
+        if key.upper() not in {"AUDIT_DATABASE_URL", account_binding.KEY_ENV, account_binding.KEY_ID_ENV}
+    }
+    for name in (account_binding.KEY_ENV, account_binding.KEY_ID_ENV):
+        value = os.environ.get(name)
+        if value is not None:
+            server_environment[name] = value
     parameters = StdioServerParameters(
         command=entry["command"],
         args=entry.get("args", []),
-        env=entry.get("env", {}),
+        env=server_environment,
         cwd=entry.get("cwd"),
     )
     async with Client(stdio_client(parameters)) as client:
