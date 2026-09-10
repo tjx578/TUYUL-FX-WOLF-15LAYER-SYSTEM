@@ -24,6 +24,20 @@ function dashboard(): DashboardElement {
 }
 
 describe("WOLF15 Railway dashboard v2.1 integration", () => {
+  // The legacy connectionState.ts timers were retired by #422. Freshness in
+  // the selected viewer comes from the bounded core projection.
+  it.each([0, 7200])("preserves observed STALE status at age %s without a local timer override", async (age) => {
+    globalThis.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => Promise.resolve(
+      new Response(JSON.stringify(String(input).endsWith("dashboard/feed-status")
+        ? { ingest_status: "HEALTHY", symbols: { EURUSD: { feed_status: "STALE", age_seconds: age } } }
+        : { status: { status: "ok", service: "tuyul-fx" } }), { status: 200 }),
+    ));
+    render(<DashboardPage />);
+    await waitFor(() => expect(dashboard().snapshot?.feed?.data?.items).toEqual([
+      expect.objectContaining({ symbol: "EURUSD", state: "STALE", quality: "STALE" }),
+    ]));
+  });
+
   it("loads exactly the three existing GET projections and exposes all nine views", async () => {
     globalThis.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => Promise.resolve(
       new Response(JSON.stringify({ status: "ok", source: "core-api", endpoint: String(input), token: "SECRET_VALUE" }), {

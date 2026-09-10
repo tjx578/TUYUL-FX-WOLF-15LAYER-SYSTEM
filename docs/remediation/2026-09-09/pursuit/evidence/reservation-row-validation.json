@@ -1,0 +1,102 @@
+{
+  "source_commit": "07495800dabe175be63841bd008274af37ec0b19",
+  "status": "SOURCE_FIX_LOCAL_PASS_RUNTIME_UNVERIFIED",
+  "source_files": {
+    "risk/s5_campaign_risk.py": {
+      "git_sha256": "e8520c584b798972cc44fd882a985f5ca70c5ecf2652508bcc5e96bf0ffedf57",
+      "working_sha256": "1a0ad2e440b1a9fa44f3459a815ec98540db80a93bb7224b555bb16dd82337b7"
+    },
+    "storage/strategy_5scr_risk_reservation_repository.py": {
+      "git_sha256": "90c6f72baef59644ddc04edee77ff7ad4c94f8d920fbcc5f38d5ff6d90e36e88",
+      "working_sha256": "8d1da12987d8f3f1115378ae30cc12f49a4715b6cf60c157f1a4b7b1f6f1bf85"
+    },
+    "tests/test_s5_campaign_risk.py": {
+      "git_sha256": "44b6e128efb526274cb499db66fb7939fff6cb4c126e75fd05dbbb59310b2764",
+      "working_sha256": "b7d211c376c523d93ab1fd738b4e538e99a3430f2067ea70821ea4b6e3313e22"
+    },
+    "tests/test_strategy_5scr_risk_reservation.py": {
+      "git_sha256": "6756536d6c231287197e0cf8ddb6ed765aee65409d426561554851ae1b47698f",
+      "working_sha256": "d8fd17681bc2ee00392978513a7034c7ebcc0f87e4b92fb049c691f723c98e49"
+    }
+  },
+  "tests": 52,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "exact_junit_identity_match": true,
+  "test_ids": [
+    "tests/test_s5_campaign_risk.py::test_account_cap_blocks_additional_campaign",
+    "tests/test_s5_campaign_risk.py::test_broker_aware_volume_rounds_down",
+    "tests/test_s5_campaign_risk.py::test_campaign_locks_five_percent_from_closed_balance",
+    "tests/test_s5_campaign_risk.py::test_child_requires_open_parent",
+    "tests/test_s5_campaign_risk.py::test_current_lock_valid_candidate_is_still_approved",
+    "tests/test_s5_campaign_risk.py::test_decimal_ledger_excess_is_not_rounded_down_at_cap[account_total_open_risk_usd-RISK_ACCOUNT_OPEN_RISK_EXCEEDED]",
+    "tests/test_s5_campaign_risk.py::test_decimal_ledger_excess_is_not_rounded_down_at_cap[committed_or_reserved_campaign_risk_usd-RISK_CAMPAIGN_EXCEEDS_2R]",
+    "tests/test_s5_campaign_risk.py::test_equal_budget_does_not_allow_cross_lock_sizing[changes0]",
+    "tests/test_s5_campaign_risk.py::test_equal_budget_does_not_allow_cross_lock_sizing[changes1]",
+    "tests/test_s5_campaign_risk.py::test_equal_budget_does_not_allow_cross_lock_sizing[changes2]",
+    "tests/test_s5_campaign_risk.py::test_equal_budget_does_not_allow_cross_lock_sizing[changes3]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes0]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes1]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes2]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes3]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes4]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes5]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[-1-account_total_open_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[-1-committed_or_reserved_campaign_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[inf-account_total_open_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[inf-committed_or_reserved_campaign_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[nan-account_total_open_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[nan-committed_or_reserved_campaign_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_naive_lock_clock_is_rejected_explicitly",
+    "tests/test_s5_campaign_risk.py::test_negative_cost_buffer_fails_closed",
+    "tests/test_s5_campaign_risk.py::test_one_risk_unit_is_rechecked_even_when_campaign_cap_has_room",
+    "tests/test_s5_campaign_risk.py::test_risk_lock_fingerprint_survives_decimal_database_scale",
+    "tests/test_s5_campaign_risk.py::test_sizing_from_different_risk_lock_cannot_borrow_current_campaign_capacity",
+    "tests/test_s5_campaign_risk.py::test_stale_snapshot_fails_closed",
+    "tests/test_s5_campaign_risk.py::test_unbound_legacy_sizing_cannot_authorize",
+    "tests/test_s5_campaign_risk.py::test_unknown_entry_role_fails_closed",
+    "tests/test_s5_campaign_risk.py::test_usd_risk_does_not_assume_account_currency_conversion[EUR]",
+    "tests/test_s5_campaign_risk.py::test_usd_risk_does_not_assume_account_currency_conversion[JPY]",
+    "tests/test_s5_campaign_risk.py::test_usd_risk_does_not_assume_account_currency_conversion[USC]",
+    "tests/test_s5_campaign_risk.py::test_volume_is_never_clamped_up_to_broker_minimum",
+    "tests/test_strategy_5scr_risk_reservation.py::test_candidate_row_metadata_drift_is_rejected_even_with_valid_payload_hash[decision_at]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_candidate_row_metadata_drift_is_rejected_even_with_valid_payload_hash[direction]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_candidate_row_metadata_drift_is_rejected_even_with_valid_payload_hash[lifecycle_id]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_candidate_row_metadata_drift_is_rejected_even_with_valid_payload_hash[symbol]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_candidate_row_metadata_drift_is_rejected_even_with_valid_payload_hash[tradeplan_id]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_candidate_with_premature_execution_authority_is_rejected",
+    "tests/test_strategy_5scr_risk_reservation.py::test_current_candidate_and_snapshot_row_bindings_pass",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_promotion_is_credential_free_and_does_not_mutate_candidate",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path0-44444444-4444-4444-8444-444444444444-does not match proof]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path1-other-snapshot-does not match proof]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path2-0.2-does not match proof]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path3-CHFJPY.other-does not match reservation proof]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path4-2.0-universal-pattern-wrong event or schema]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path5-False-requires valid_for_execution=true]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_reservation_request_is_parent_only_and_ttl_is_bounded",
+    "tests/test_strategy_5scr_risk_reservation.py::test_snapshot_row_identity_and_recency_cannot_drift_from_payload[captured_at]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_snapshot_row_identity_and_recency_cannot_drift_from_payload[snapshot_id]"
+  ],
+  "receipt": "rs1-receipt.json",
+  "new_cases": 11,
+  "ruff": "PASS",
+  "format": "PASS_1409_FILES",
+  "platform": "Windows",
+  "scope": [
+    "Snapshot payload ID/capture match stored row.",
+    "Candidate metadata match parsed TradePlan in addition to existing payload hash/authority checks.",
+    "USD risk primitives reject non-USD snapshots without conversion authority."
+  ],
+  "limits": [
+    "Tests execute the helpers wired into reserve_parent, not a real PostgreSQL transaction.",
+    "Existing V1 lifecycle/campaign mapping retained; no v3.1 identity rewrite or schema migration.",
+    "USD-only check does not choose an active DEMO profile.",
+    "Independent agent review unavailable after previous quota failure.",
+    "Deployment, broker and Linux acceptance not executed."
+  ],
+  "canonical_actions_closed": [],
+  "milestones_done": 0,
+  "merge": "HOLD",
+  "push": "HOLD_B-PUBLISH-FRONTEND-BRANCH"
+}

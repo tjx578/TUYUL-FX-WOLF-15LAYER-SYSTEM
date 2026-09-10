@@ -15,7 +15,7 @@ risk profile, instrumen, window, atau approval order yang diisi dengan asumsi.
 
 ## Follow-up S01/S03 dan dependency API
 
-[Laporan lanjutan](followup-s01-s03/README.md) mengikat perbaikan activity v3.1, pemetaan S01, dan 334 tes yang lulus pada environment API dengan Pydantic 2.9.2. Temuan S03 `FAIL` historis di bawah tetap merupakan bukti checkpoint lama; status terbaru adalah `PATCHED_TESTED_LOCAL_PARTIAL`. S01 dan semua milestone tetap belum DONE.
+[Laporan lanjutan](followup-s01-s03/README.md) mengikat perbaikan activity v3.1, pemetaan S01, dan 334 tes yang lulus pada environment API dengan Pydantic 2.9.2. Temuan S03 `FAIL` historis di bawah tetap merupakan bukti checkpoint lama; status pada follow-up tersebut adalah `PATCHED_TESTED_LOCAL_PARTIAL`. Status terbaru tersedia dalam [follow-up runtime S03](followup-s03-runtime/README.md). S01 dan semua milestone tetap belum DONE.
 
 ## Mulai membaca
 
@@ -207,3 +207,19 @@ Tidak ada memory writeback karena pengguna tidak meminta pembaruan durable
 memory secara langsung. Persistence pekerjaan terdapat di artifact repo ini.
 
 Current-main integration: [followup-main-merge/README.md](followup-main-merge/README.md) records conflict resolution against main e3a0d8c8, independent review and 434 passing selected tests. Program remains HOLD; S01/S03 runtime acceptance remains open.
+
+Latest continuation: [S03 durable caller implementation](followup-s03-runtime/README.md), source59f2db54 aligned with main68ad0794. Final local613 cases pass;45 realPostgreSQL cases remain NOT_EXECUTED. Program remains INCOMPLETE/HOLD,0/6 milestones.
+
+
+Latest bounded follow-up: [runner evidence binding and pressure expiry](followup-runner-binding/README.md), source `94cd6a5d`. Current changed-source regression241 PASS; no new PostgreSQL/Linux acceptance. Runner remains UNBOUND and program INCOMPLETE / HOLD,0/6 milestones. Prior613 and current241 overlap and must not be summed.
+
+
+Latest follow-up: [S03 delivery protocol and hosted-runner diagnosis](followup-delivery-contract/README.md), source `a25b41cf`. The runner-list endpoint is self-hosted-only; exact hosted ubuntu-latest jobs report billing lock.126 local contract/regression tests PASS; producer-to-lifecycle/emission runtime remains NOT_IMPLEMENTED and PostgreSQL/Linux acceptance NOT_EXECUTED. Program remains0/6, INCOMPLETE / HOLD.
+
+## Producer/relay follow-up
+
+Source `5219624a92253b66fe8bc67a1acace99b71e61e7`: opt-in producer outbox and relay implemented; 176 selected local tests pass. Existing45 and new7 PostgreSQL cases remain unexecuted. Consumer owner transaction/fencing is still open. See [checkpoint](followup-producer-relay/README.md). Status remains INCOMPLETE / HOLD, 0/6 milestones.
+
+## Consumer and owner follow-up
+
+Source `3d8df68057d6a0c2f9dc1b1969651f8f298aa713` adds the owner transaction, shared DB fence and explicit authenticated endpoint binding. Latest local subset: 185 passed. The separate 11-case consumer PostgreSQL gate remains unexecuted, as do the original 45 and producer 7. See [consumer checkpoint](followup-consumer-owner/README.md). INCOMPLETE / HOLD, 0/6 milestones.

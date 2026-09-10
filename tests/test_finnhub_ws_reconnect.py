@@ -339,7 +339,7 @@ class TestLockRenewalLoop:
         assert call_count >= 2
 
     def test_cancel_lock_renewal_cancels_running_task(self, ws_client: FinnhubWebSocket) -> None:
-        """_cancel_lock_renewal cancels a running task and clears the reference."""
+        """_cancel_lock_renewal cancels a running task and retains ownership until drain."""
         fake_task = MagicMock()
         fake_task.done.return_value = False
         ws_client._lock_renewal_task = fake_task
@@ -347,7 +347,7 @@ class TestLockRenewalLoop:
         ws_client._cancel_lock_renewal()
 
         fake_task.cancel.assert_called_once()
-        assert ws_client._lock_renewal_task is None
+        assert ws_client._lock_renewal_task is fake_task
 
     def test_cancel_lock_renewal_noop_when_no_task(self, ws_client: FinnhubWebSocket) -> None:
         """_cancel_lock_renewal is safe to call when no task exists."""
@@ -364,7 +364,7 @@ class TestLockRenewalLoop:
         ws_client._cancel_lock_renewal()
 
         fake_task.cancel.assert_not_called()
-        assert ws_client._lock_renewal_task is None
+        assert ws_client._lock_renewal_task is fake_task
 
 
 # ---------------------------------------------------------------------------
@@ -813,14 +813,11 @@ class TestGracefulStop:
     @pytest.mark.asyncio
     async def test_stop_cancels_lock_renewal_task(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """stop() cancels the background lock renewal task."""
-        fake_task = MagicMock()
-        fake_task.done.return_value = False
-        ws_client._lock_renewal_task = fake_task
+        task = asyncio.create_task(asyncio.Event().wait())
+        ws_client._lock_renewal_task = task
         ws_client._running = True
-
         await ws_client.stop()
-
-        fake_task.cancel.assert_called_once()
+        assert task.cancelled()
         assert ws_client._lock_renewal_task is None
 
     @pytest.mark.asyncio
@@ -920,3 +917,59 @@ class TestRateLimitError:
     def test_message_includes_retry_after(self) -> None:
         exc = FinnhubRateLimitError(retry_after=45.5)
         assert "45.5" in str(exc)
+
+
+@pytest.mark.asyncio
+async def test_stop_drains_callback_before_releasing_redis(ws_client, mock_redis):
+    entered = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def callback():
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)
+            stopped.set()
+
+    task = ws_client._track_background(callback(), name="WsOnConnectCallback")
+    await entered.wait()
+
+    async def delete(*args):
+        assert stopped.is_set()
+        assert task.done()
+
+    mock_redis.delete.side_effect = delete
+    await ws_client.stop()
+    assert stopped.is_set()
+    assert not ws_client._background_tasks
+
+
+@pytest.mark.asyncio
+async def test_resistant_callback_prevents_redis_cleanup(ws_client, mock_redis):
+    from ingest.finnhub_ws import FinnhubBackgroundDrainError
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def callback():
+        entered.set()
+        while not release.is_set():
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                continue
+
+    task = ws_client._track_background(callback(), name="WsOnConnectCallback")
+    await entered.wait()
+    ws_client._background_drain_timeout = 0.01
+    try:
+        with pytest.raises(FinnhubBackgroundDrainError, match="not_drained"):
+            await ws_client.stop()
+        mock_redis.delete.assert_not_awaited()
+        assert task in ws_client._background_tasks
+        assert not task.done()
+    finally:
+        release.set()
+        await task
+        await ws_client._drain_background()

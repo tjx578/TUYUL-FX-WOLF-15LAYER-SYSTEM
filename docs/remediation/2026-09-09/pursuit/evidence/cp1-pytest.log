@@ -1,0 +1,9 @@
+...........                                                              [100%]
+============================== warnings summary ===============================
+tests/test_native_mt5_readonly_mcp.py: 11 warnings
+  D:\WOLF15-work\master-remediation-20260909\mcp-test-env\Lib\site-packages\pytest_asyncio\plugin.py:916: PytestDeprecationWarning: Overriding the "event_loop_policy" fixture is deprecated and will be removed in a future version of pytest-asyncio. Use the "pytest_asyncio_loop_factories" hook to customize event loop creation.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\cp1.xml -
+11 passed, 11 warnings in 3.28s

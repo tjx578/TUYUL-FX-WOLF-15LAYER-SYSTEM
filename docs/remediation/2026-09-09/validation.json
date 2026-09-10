@@ -136,5 +136,78 @@
     "whole_source_format": "PASS",
     "formatted_files": 1367
   },
-  "latest_followup_validation": "followup-s01-s03/followup-validation.json"
+  "latest_followup_validation": "followup-s01-s03/followup-validation.json",
+  "latest_runtime_followup": "followup-s03-runtime/validation.json",
+  "latest_runner_binding_followup": "followup-runner-binding/validation.json",
+  "latest_delivery_contract_followup": "followup-delivery-contract/validation.json",
+  "latest_producer_relay_followup": {
+    "path": "followup-producer-relay/validation.json",
+    "source_commit": "5219624a92253b66fe8bc67a1acace99b71e61e7",
+    "verdict": "INCOMPLETE_HOLD",
+    "local": {
+      "passed": 176,
+      "failed": 0,
+      "skipped": 0,
+      "platform": "Windows",
+      "junit": "evidence/dpr3.xml",
+      "scope": "SELECTED_LOCAL_UNIT_AND_CONTRACT_TESTS_ONLY"
+    },
+    "postgres_existing": {
+      "cases": 45,
+      "skipped": 45
+    },
+    "postgres_producer_relay": {
+      "cases": 7,
+      "skipped": 7,
+      "accepted": false
+    },
+    "migration": {
+      "head": "20260909_02",
+      "offline_sql": "PASS",
+      "actual_upgrade": "NOT_EXECUTED"
+    },
+    "consumer": "NOT_IMPLEMENTED",
+    "owner_fencing": "NOT_IMPLEMENTED",
+    "authenticated_transport_binding": "NOT_BOUND",
+    "linux": "NOT_EXECUTED",
+    "github_required_checks": "NOT_SATISFIED",
+    "production_changes": "NONE",
+    "demo": "HOLD",
+    "independent_agent_review": "UNAVAILABLE_USAGE_LIMIT",
+    "prior_iterations": [
+      "160 passed, 1 failed: stale expected migration head; corrected",
+      "162 passed, 1 failed: FileNotFoundError in nested temporary fixture; same source passed with shorter temp label"
+    ]
+  },
+  "latest_consumer_owner_followup": {
+    "path": "followup-consumer-owner/validation.json",
+    "source_commit": "3d8df68057d6a0c2f9dc1b1969651f8f298aa713",
+    "verdict": "INCOMPLETE_HOLD",
+    "local": {
+      "tests": 185,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "local_platform": "Windows",
+    "local_scope": "SELECTED_MODEL_ASGI_AND_REGRESSION_TESTS",
+    "postgres_existing_skipped": 45,
+    "postgres_producer_skipped": 7,
+    "postgres_consumer_skipped": 11,
+    "strict_consumer_skip_control": "REJECTED_ON_SOURCE_COMMIT",
+    "postgres_acceptance": false,
+    "migration_head": "20260909_03",
+    "offline_sql": "PASS",
+    "actual_migration": "NOT_EXECUTED",
+    "runtime_activation": "NOT_EXECUTED",
+    "live_https_tls": "NOT_EXECUTED",
+    "linux": "NOT_EXECUTED",
+    "github_required_checks": "NOT_SATISFIED",
+    "performance": "NOT_BENCHMARKED; serialized per symbol, recovery refuses >1000 rows rather than truncating",
+    "consumer_policy_and_owner_credentials": "NOT_BOUND",
+    "legacy_worker": "Unbound writes to managed symbols are rejected; no automatic fence acquisition",
+    "independent_agent_review": "UNAVAILABLE_PREVIOUS_USAGE_LIMIT",
+    "milestones_done": 0,
+    "milestones_total": 6
+  }
 }

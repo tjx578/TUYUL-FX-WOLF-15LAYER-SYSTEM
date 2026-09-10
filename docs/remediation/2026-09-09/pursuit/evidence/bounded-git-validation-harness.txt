@@ -1,0 +1,90 @@
+"""Collect and run an explicitly bounded local pytest subset; no external services."""
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+STAGE = Path(__file__).resolve().parent
+REPO = Path('D:/WOLF15-work/master-remediation-20260909/repo')
+OUT = STAGE / 'ci-evidence'
+label, *files = sys.argv[1:]
+bound_source_files = [
+    'api/app_factory.py',
+    'api/owner_dashboard_release.py',
+    'deploy/railway/migration_runner.py',
+    'analysis/signal_throttle_log_analyzer.py',
+    'pipeline/wolf_constitutional_pipeline.py',
+    'analysis/strategy_5scr_pair_activity.py',
+    'analysis/strategy_5scr_pair_activity_report.py',
+    'contracts/strategy_5scr_pair_activity.py',
+    'tests/test_pair_activity_report_integration.py',
+    'tests/test_strategy_5scr_pair_activity.py',
+    'tests/test_signal_throttle_log_analyzer.py',
+]
+env = {k: v for k, v in os.environ.items() if k.upper() in {
+    'PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'PROGRAMFILES', 'PROGRAMFILES(X86)',
+}}
+env.update({
+    'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONUTF8': '1', 'PYTHONPATH': str(REPO),
+    'TEMP': str(STAGE / 'ci-temp'), 'TMP': str(STAGE / 'ci-temp'),
+    'WOLF15_LOAD_DOTENV': 'false', 'WOLF15_EMBED_ORCHESTRATOR': 'false',
+    'APP_ENV': 'test', 'ENV': 'test', 'RUN_MODE': 'SHADOW',
+    'REDIS_URL': 'redis://127.0.0.1:1/0',
+    'DATABASE_URL': 'postgresql://fixture:fixture@127.0.0.1:1/unavailable',
+    'JWT_SECRET': 'local-fixture-only-not-a-production-secret-20260909',
+    'DASHBOARD_JWT_SECRET': 'local-fixture-only-not-a-production-secret-20260909',
+})
+for flag in ('ALLOW_MARKET_EXECUTION', 'EXECUTION_ENABLED', 'CANARY_ISSUANCE_ENABLED',
+             'EA_COMMAND_DELIVERY_ENABLED', 'MT5_ORDER_SEND_ENABLED', 'RISK_RESERVATION_ENABLED',
+             'STRATEGY_5SCR_EXECUTION_ENABLED', 'LEGACY_PUSH_EXECUTION_ENABLED'):
+    env[flag] = 'false'
+
+def git(*args):
+    return subprocess.check_output(['git', '-c', 'core.packedGitWindowSize=1m', '-c', 'core.packedGitLimit=32m', '-c', 'core.deltaBaseCacheLimit=8m', *args], cwd=REPO, text=True, encoding='utf-8').strip()
+
+def snapshot():
+    diff = git('diff', '--binary', 'HEAD')
+    return {'head': git('rev-parse', 'HEAD'), 'diff_sha256': hashlib.sha256(diff.encode()).hexdigest(),
+            'files': {f: hashlib.sha256((REPO / f.split('::', 1)[0]).read_bytes()).hexdigest() for f in files},
+            'integration_source_files': {f: hashlib.sha256((REPO / f).read_bytes()).hexdigest()
+                                         for f in bound_source_files}}
+
+changed = git('diff', '--name-only', 'HEAD').splitlines()
+new = git('ls-files', '--others', '--exclude-standard').splitlines()
+bound_source_files = sorted(set(bound_source_files + [name for name in changed + new if name.endswith('.py') or name == '.github/workflows/ci.yml'] + ['requirements.txt']))
+before = snapshot()
+base = [sys.executable, '-m', 'pytest', '-o', 'addopts=', '-p', 'no:cacheprovider', *files]
+collect_command = [*base, '--collect-only', '-q']
+start = time.time()
+collected = subprocess.run(collect_command, cwd=REPO, env=env, capture_output=True, text=True, timeout=180)
+(OUT / f'{label}-collection.log').write_text(collected.stdout + collected.stderr, encoding='utf-8')
+expected = [line for line in collected.stdout.splitlines() if line.startswith('tests/') and '::' in line]
+test_command = [*base, '-q', '--timeout=60', '--basetemp', str(STAGE / 'ci-temp' / label),
+                '--junitxml', str(OUT / f'{label}.xml')]
+result = subprocess.run(test_command, cwd=REPO, env=env, capture_output=True, text=True, timeout=240)
+(OUT / f'{label}-pytest.log').write_text(result.stdout + result.stderr, encoding='utf-8')
+after = snapshot()
+xml_path = OUT / f'{label}.xml'
+xml_counts = None
+if xml_path.exists():
+    tree = ET.parse(xml_path)
+    xml_counts = {key: sum(int(s.get(key, '0')) for s in tree.findall('.//testsuite'))
+                  for key in ('tests', 'failures', 'errors', 'skipped')}
+receipt = {
+    'git_resource_options': {'core.packedGitWindowSize':'1m','core.packedGitLimit':'32m','core.deltaBaseCacheLimit':'8m'}, 'label': label, 'runner': sys.executable, 'platform': sys.platform,
+    'collection_command': collect_command, 'test_command': test_command,
+    'collection_exit': collected.returncode, 'expected_test_count': len(expected),
+    'expected_test_ids': expected, 'pytest_exit': result.returncode, 'xml_counts': xml_counts,
+    'elapsed_seconds': round(time.time() - start, 3), 'before': before, 'after': after,
+    'source_unchanged': before == after,
+    'scope': 'LOCAL_SUBSET_ONLY_NO_PRODUCTION_DB_BROKER_OR_PROVIDER',
+}
+(OUT / f'{label}-receipt.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
+print(json.dumps({k: v for k, v in receipt.items() if k not in {'before', 'after', 'expected_test_ids'}}, indent=2))
+print(result.stdout[-5000:])
+print(result.stderr[-1000:])
+raise SystemExit(result.returncode or collected.returncode)

@@ -41,6 +41,7 @@ from infrastructure.tracing import (
     instrument_requests,
     setup_tracer,
 )
+from startup.required_tasks import RequiredTaskSupervisor
 from storage.postgres_client import pg_client
 
 from .middleware.auth import verify_token
@@ -118,6 +119,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from api.owner_dashboard_release import validate_release_environment
 
         validate_release_environment(os.environ)
+    supervisor = RequiredTaskSupervisor({"trade_outbox": not read_only_startup})
+    app.state.required_task_supervisor = supervisor
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
     from dataclasses import replace
 
@@ -158,9 +161,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not read_only_startup:
         try:
             outbox_worker = TradeOutboxWorker(consumer_name="api-1")
-            outbox_task = asyncio.create_task(outbox_worker.run(), name="trade-outbox-worker")
+            outbox_task = supervisor.start("trade_outbox", outbox_worker.run())
         except Exception:
-            logger.warning("Trade outbox worker failed to start — will operate without outbox")
+            supervisor.fail("trade_outbox", "bootstrap_failed")
+            with suppress(Exception):
+                await asyncio.wait_for(pg_client.close(), timeout=10)
+            with suppress(Exception):
+                await asyncio.wait_for(close_pool(), timeout=10)
+            raise RuntimeError("REQUIRED_TRADE_OUTBOX_BOOTSTRAP_FAILED") from None
     app.state.trade_outbox_worker = outbox_worker
     app.state.trade_outbox_task = outbox_task
 
@@ -245,6 +253,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        supervisor.stopping = True
         if peer_checker is not None:
             with suppress(Exception):
                 await peer_checker.stop()
@@ -257,13 +266,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if outbox_worker is not None:
             with suppress(Exception):
                 await outbox_worker.stop()
-        if outbox_task is not None:
-            with suppress(asyncio.CancelledError):
-                outbox_task.cancel()
-                await outbox_task
+        # A cancellation-resistant writer must stop before its pools are closed.
+        await supervisor.stop(timeout=10)
         with suppress(Exception):
-            await pg_client.close()
-        await close_pool()
+            await asyncio.wait_for(pg_client.close(), timeout=10)
+        await asyncio.wait_for(close_pool(), timeout=10)
         logger.info("🐺 TUYUL FX Wolf-15 shutting down…")
 
 
@@ -576,6 +583,18 @@ def _register_health_routes(app: FastAPI) -> None:
                 status_code=503,
             )
 
+        supervisor = getattr(request.app.state, "required_task_supervisor", None)
+        runtime = (
+            supervisor.snapshot()
+            if supervisor is not None
+            else {"ready": False, "states": {}, "reasons": ["runtime_not_started"]}
+        )
+        if not runtime["ready"]:
+            return JSONResponse(
+                content={"ready": False, "router_boot_ok": True, "runtime": runtime, "reasons": runtime["reasons"]},
+                status_code=503,
+            )
+
         import math as _math  # noqa: PLC0415
 
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
@@ -591,6 +610,7 @@ def _register_health_routes(app: FastAPI) -> None:
         _staleness = feed_snapshot.staleness_seconds
         checks: dict[str, Any] = {
             "router_boot_ok": True,
+            "runtime": runtime,
             "feed_freshness_class": freshness_class.value,
             "feed_staleness_seconds": _staleness if _math.isfinite(_staleness) else None,
             "producer_alive": hb_alive,
@@ -812,7 +832,7 @@ def _create_app_inner() -> FastAPI:
     # Mount all routers from the registry. In degraded fail-open mode,
     # keep process alive with health endpoints so orchestrators can
     # inspect diagnostics instead of seeing a dead container.
-    fail_open = _env_bool("ROUTER_BOOT_FAIL_OPEN", default=True)
+    fail_open = _env_bool("ROUTER_BOOT_FAIL_OPEN", default=False)
     routers, router_import_errors = load_routers()
     if router_import_errors:
         router_boot_errors.extend(router_import_errors)
@@ -848,18 +868,45 @@ def _create_app_inner() -> FastAPI:
     return app
 
 
-def create_app() -> FastAPI:
-    """Build the FastAPI application with fail-open bootstrap protection.
+def create_app(*, activity_delivery_endpoint=None, executor_bridge_enabled: bool = False) -> FastAPI:
+    """Build the FastAPI application with explicit diagnostic fallback opt-in.
 
-    If ``API_BOOT_FAIL_OPEN`` is truthy (default) and the inner factory
+    If ``API_BOOT_FAIL_OPEN`` is explicitly truthy and the inner factory
     raises, returns a minimal fallback app that keeps ``/healthz`` alive
     so operators can diagnose the failure via ``/api/v1/status``.
+
+    Executor bridge routes require an explicit boolean opt-in. Mounting them
+    does not enable command production, delivery, or broker execution flags.
     """
-    fail_open = _env_bool("API_BOOT_FAIL_OPEN", True)
+    if type(executor_bridge_enabled) is not bool:
+        raise ValueError("EXECUTOR_BRIDGE_EXPLICIT_BOOLEAN_REQUIRED")
+    fail_open = _env_bool("API_BOOT_FAIL_OPEN", False)
     try:
-        return _create_app_inner()
+        application = _create_app_inner()
+        if executor_bridge_enabled:
+            from api.executor_bridge_router import router as executor_bridge_router
+
+            if getattr(application.state, "router_boot_errors", []):
+                raise ValueError("EXECUTOR_BRIDGE_ROUTER_BOOT_FAILED")
+            existing_paths = application.openapi().get("paths", {})
+            if any(getattr(route, "path", None) in existing_paths for route in executor_bridge_router.routes):
+                raise ValueError("EXECUTOR_BRIDGE_ALREADY_REGISTERED")
+            application.include_router(executor_bridge_router)
+            application.openapi_schema = None
+            _assert_no_duplicate_routes(application)
+        if activity_delivery_endpoint is not None:
+            from services.pressure_outbox.activity_delivery_transport import ActivityDeliveryEndpoint
+
+            if not isinstance(activity_delivery_endpoint, ActivityDeliveryEndpoint):
+                raise ValueError("ACTIVITY_DELIVERY_ENDPOINT_BINDING_REQUIRED")
+            if "/internal/s03/activity-deliveries" in application.openapi().get("paths", {}):
+                raise ValueError("ACTIVITY_DELIVERY_ENDPOINT_ALREADY_REGISTERED")
+            application.include_router(activity_delivery_endpoint.router())
+            application.openapi_schema = None
+            _assert_no_duplicate_routes(application)
+        return application
     except Exception as exc:
-        if not fail_open:
+        if not fail_open or activity_delivery_endpoint is not None or executor_bridge_enabled:
             raise
         logger.exception("API bootstrap failed — enabling fallback liveness app")
         return _build_bootstrap_fallback_app(f"api_bootstrap_failed: {exc!s}")

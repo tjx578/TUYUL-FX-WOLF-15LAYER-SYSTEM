@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.ci import p1_governance_gate as governance
 from scripts.ci import railway_release_source_gate as gate
 
 SHA = "a" * 40
@@ -59,6 +60,63 @@ def receipt():
 
 def test_complete_exact_source_receipt_passes(receipt):
     gate.validate_receipt(**receipt)
+
+
+def for_workflow(receipt, path):
+    result = deepcopy(receipt)
+    index = list(gate.RELEASE_WORKFLOWS).index(path)
+    result["expected_path"] = path
+    result["workflow"].update(path=path, id=9 + index)
+    result["run"].update(path=path, workflow_id=9 + index, id=42 + index)
+    result["ci_run_id"] = str(42 + index)
+    result["jobs"] = []
+    for name, steps in gate.RELEASE_WORKFLOWS[path].items():
+        job = deepcopy(receipt["jobs"][0])
+        job.update(name=name, run_id=42 + index)
+        job["steps"] = [
+            {"name": step, "status": "completed", "conclusion": "success"} for step in steps or {"Executed check"}
+        ]
+        result["jobs"].append(job)
+    return result
+
+
+@pytest.mark.parametrize("path", list(gate.RELEASE_WORKFLOWS)[1:])
+@pytest.mark.parametrize("fault", [None, "missing_job", "skipped_step", "source_mismatch", "spoof_workflow", "pending"])
+def test_security_and_docs_are_bound_executed_workflows(receipt, path, fault):
+    result = for_workflow(receipt, path)
+    if fault == "missing_job":
+        result["jobs"].pop()
+    elif fault == "skipped_step":
+        result["jobs"][0]["steps"][0]["conclusion"] = "skipped"
+    elif fault == "source_mismatch":
+        result["run"]["head_sha"] = "b" * 40
+    elif fault == "spoof_workflow":
+        result["run"]["workflow_id"] = 999
+    elif fault == "pending":
+        result["run"].update(status="in_progress", conclusion=None)
+    if fault:
+        with pytest.raises(gate.ReleaseGateError):
+            gate.validate_receipt(**result)
+    else:
+        gate.validate_receipt(**result)
+
+
+def test_latest_required_run_does_not_select_older_green(receipt):
+    older = deepcopy(receipt["run"])
+    latest = dict(older, id=43, status="in_progress", conclusion=None)
+    assert gate.latest_required_run({"workflow_runs": [older, latest], "total_count": 2}, SHA) == latest
+    with pytest.raises(gate.ReleaseGateError):
+        gate.latest_required_run({"workflow_runs": [older], "total_count": 2}, SHA)
+    with pytest.raises(gate.ReleaseGateError):
+        gate.latest_required_run({"workflow_runs": [], "total_count": 0}, SHA)
+
+
+@pytest.mark.parametrize("missing", sorted(gate.REQUIRED_STEPS["Python tests (pytest)"]))
+def test_release_rejects_missing_postgres_or_runner_step(receipt, missing):
+    job = next(job for job in receipt["jobs"] if job["name"] == "Python tests (pytest)")
+    job["steps"] = [step for step in job["steps"] if step["name"] != missing]
+    with pytest.raises(gate.ReleaseGateError, match="required CI step absent"):
+        gate.validate_receipt(**receipt)
 
 
 @pytest.mark.parametrize("field", ["release_sha", "checkout_sha", "remote_main_sha"])
@@ -148,9 +206,109 @@ def test_manual_dispatch_requires_explicit_sha_and_run_id(tmp_path, monkeypatch)
     assert gate.main() == 1
 
 
+def _governance_observer():
+    """Fixture GET receipts; exercise real governance validation without network."""
+    active_path = None
+    active_run = None
+    active_jobs = []
+    checks = {}
+
+    def read(endpoint):
+        nonlocal active_path, active_run, active_jobs, checks
+        if endpoint.endswith("/branches/main"):
+            return {"commit": {"sha": SHA}}
+        if endpoint.endswith("/protection"):
+            return {
+                "required_status_checks": {
+                    "strict": True,
+                    "checks": [
+                        {"context": name, "app_id": governance.GITHUB_ACTIONS_APP_ID}
+                        for name in governance.REQUIRED_CONTEXTS
+                    ],
+                },
+                "enforce_admins": {"enabled": True},
+                "required_pull_request_reviews": {
+                    "required_approving_review_count": 1,
+                    "dismiss_stale_reviews": True,
+                    "require_last_push_approval": True,
+                },
+                "required_conversation_resolution": {"enabled": True},
+                "allow_force_pushes": {"enabled": False},
+                "allow_deletions": {"enabled": False},
+            }
+        if endpoint.endswith("/environments/production"):
+            return {
+                "name": "production",
+                "can_admins_bypass": False,
+                "protection_rules": [
+                    {
+                        "type": "required_reviewers",
+                        "prevent_self_review": True,
+                        "reviewers": [{"type": "User", "reviewer": {"id": 1}}],
+                    }
+                ],
+                "deployment_branch_policy": {"protected_branches": True, "custom_branch_policies": False},
+            }
+        if "/actions/workflows/" in endpoint:
+            active_path = ".github/workflows/" + endpoint.split("/actions/workflows/")[1].split("/")[0]
+            active_run = {
+                "id": 42,
+                "workflow_id": 9,
+                "path": active_path,
+                "repository": {"full_name": "owner/repo"},
+                "head_repository": {"full_name": "owner/repo"},
+                "head_sha": SHA,
+                "head_branch": "main",
+                "event": "push",
+                "status": "completed",
+                "conclusion": "success",
+                "run_attempt": 1,
+                "check_suite_id": 7,
+            }
+            active_jobs = []
+            checks = {}
+            for job_id, (name, steps) in enumerate(governance.REQUIRED_WORKFLOWS[active_path].items(), 100):
+                active_jobs.append(
+                    {
+                        "id": job_id,
+                        "name": name,
+                        "head_sha": SHA,
+                        "run_id": 42,
+                        "run_attempt": 1,
+                        "status": "completed",
+                        "conclusion": "success",
+                        "runner_id": 123,
+                        "check_run_url": f"https://api.github.com/repos/owner/repo/check-runs/{job_id}",
+                        "steps": [{"name": step, "status": "completed", "conclusion": "success"} for step in steps],
+                    }
+                )
+                checks[job_id] = {
+                    "id": job_id,
+                    "name": name,
+                    "head_sha": SHA,
+                    "check_suite": {"id": 7},
+                    "status": "completed",
+                    "conclusion": "success",
+                    "app": {"id": governance.GITHUB_ACTIONS_APP_ID, "slug": "github-actions"},
+                }
+            if "/runs?" in endpoint:
+                return {"total_count": 1, "workflow_runs": [active_run]}
+            return {"id": 9, "path": active_path, "state": "active"}
+        if "/check-runs/" in endpoint:
+            return checks[int(endpoint.rsplit("/", 1)[-1])]
+        if "/jobs?" in endpoint:
+            return {"total_count": len(active_jobs), "jobs": active_jobs}
+        if "/actions/runs/" in endpoint:
+            return active_run
+        pytest.fail(f"unexpected read-only fixture endpoint: {endpoint}")
+
+    return read
+
+
 @pytest.mark.parametrize("event_name", ["workflow_dispatch", "workflow_run"])
 @pytest.mark.parametrize("rerun", [False, True])
-def test_cli_event_binding_and_rerun_race(receipt, tmp_path, monkeypatch, event_name, rerun):
+@pytest.mark.parametrize("new_run", [False, True])
+def test_cli_event_binding_and_rerun_race(receipt, tmp_path, monkeypatch, event_name, rerun, new_run):
     event = {"inputs": {"release_sha": SHA, "ci_run_id": "42"}, "workflow_run": {"head_sha": SHA, "id": 42}}
     event_path = tmp_path / "event.json"
     event_path.write_text(json.dumps(event), encoding="utf-8")
@@ -162,22 +320,43 @@ def test_cli_event_binding_and_rerun_race(receipt, tmp_path, monkeypatch, event_
     }.items():
         monkeypatch.setenv(key, value)
     calls = []
+    fixtures = {path: for_workflow(receipt, path) for path in gate.RELEASE_WORKFLOWS}
 
     def github_json(endpoint):
         calls.append(endpoint)
-        if endpoint.endswith("/ci.yml"):
-            return receipt["workflow"]
+        for path, fixture in fixtures.items():
+            name = path.rsplit("/", 1)[1]
+            if endpoint.endswith("/" + name):
+                return fixture["workflow"]
+            if "/" + name + "/runs?" in endpoint:
+                result = deepcopy(fixture["run"])
+                if new_run and calls.count(endpoint) > 1:
+                    result.update(id=result["id"] + 100, status="queued", conclusion=None)
+                return {"workflow_runs": [result], "total_count": 1}
+        fixture = next(f for f in fixtures.values() if f"/runs/{f['run']['id']}" in endpoint)
         if "/jobs?" in endpoint:
-            return {"jobs": receipt["jobs"], "total_count": len(receipt["jobs"])}
-        result = deepcopy(receipt["run"])
+            return {"jobs": fixture["jobs"], "total_count": len(fixture["jobs"])}
+        result = deepcopy(fixture["run"])
         if rerun and calls.count(endpoint) > 1:
             result["run_attempt"] = 2
         return result
 
     monkeypatch.setattr(gate, "github_json", github_json)
+    monkeypatch.setattr(governance, "github_json", _governance_observer())
     monkeypatch.setattr(gate, "command", lambda args: "" if "status" in args else SHA)
-    assert gate.main() == int(rerun)
+    assert gate.main() == int(rerun or new_run)
     assert all("railway" not in endpoint for endpoint in calls)
+
+
+def test_required_workflow_names_and_steps_match_repository():
+    import yaml
+
+    for path, required_jobs in gate.RELEASE_WORKFLOWS.items():
+        workflow = yaml.safe_load((ROOT / path).read_text())
+        jobs = {job.get("name", key): job for key, job in workflow["jobs"].items()}
+        assert set(required_jobs).issubset(jobs)
+        for name, required_steps in required_jobs.items():
+            assert required_steps.issubset({step.get("name") for step in jobs[name]["steps"]})
 
 
 def test_real_cli_rejects_before_provider_when_dispatch_missing_evidence(tmp_path):
@@ -214,3 +393,83 @@ def test_workflow_binds_checkout_and_never_swallows_provider_failure():
     assert "set -euo pipefail" in source
     assert "continue-on-error" not in source
     assert "|| true" not in source
+
+
+@pytest.mark.parametrize("standalone", [False, True])
+@pytest.mark.parametrize("protected", [False, True])
+def test_release_entrypoint_enforces_real_governance_with_fixture_reads(
+    receipt, tmp_path, monkeypatch, standalone, protected
+):
+    import importlib
+    import importlib.util
+
+    module = gate
+    governance_module = governance
+    if standalone:
+        monkeypatch.syspath_prepend(str(ROOT / "scripts/ci"))
+        spec = importlib.util.spec_from_file_location(
+            "release_standalone_fixture", ROOT / "scripts/ci/railway_release_source_gate.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        governance_module = importlib.import_module("p1_governance_gate")
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps({"inputs": {"release_sha": SHA, "ci_run_id": "42"}}), encoding="utf-8")
+    for key, value in {
+        "GITHUB_EVENT_PATH": str(event_path),
+        "GITHUB_REPOSITORY": "owner/repo",
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_REF": "refs/heads/main",
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    fixtures = {path: for_workflow(receipt, path) for path in module.RELEASE_WORKFLOWS}
+
+    def ci_read(endpoint):
+        for path, fixture in fixtures.items():
+            name = path.rsplit("/", 1)[1]
+            if endpoint.endswith("/" + name):
+                return fixture["workflow"]
+            if "/" + name + "/runs?" in endpoint:
+                return {"workflow_runs": [fixture["run"]], "total_count": 1}
+        for fixture in fixtures.values():
+            if f"/runs/{fixture['run']['id']}" in endpoint:
+                if "/jobs?" in endpoint:
+                    return {"jobs": fixture["jobs"], "total_count": len(fixture["jobs"])}
+                return fixture["run"]
+        pytest.fail(f"unexpected release fixture endpoint: {endpoint}")
+
+    observe = _governance_observer()
+    observed = []
+
+    def governance_read(endpoint):
+        observed.append(endpoint)
+        if not protected and endpoint.endswith("/protection"):
+            return {"message": "Branch not protected", "status": "404"}
+        return observe(endpoint)
+
+    monkeypatch.setattr(module, "github_json", ci_read)
+    monkeypatch.setattr(module, "command", lambda args: "" if "status" in args else SHA)
+    monkeypatch.setattr(governance_module, "github_json", governance_read)
+    assert module.main() == (0 if protected else 1)
+    assert any(path.endswith("/protection") for path in observed)
+    if protected:
+        assert any("/docs-hygiene.yml" in path for path in observed)
+        assert any("/wolf-security-scan.yml" in path for path in observed)
+
+
+@pytest.mark.parametrize(
+    "invocation", [["-m", "scripts.ci.p1_governance_gate"], [str(ROOT / "scripts/ci/p1_governance_gate.py")]]
+)
+def test_governance_real_cli_imports_and_rejects_before_external_observation(invocation):
+    result = subprocess.run(
+        [sys.executable, *invocation, "--repository", "owner/repo", "--release-sha", "invalid", "--ci-run-id", "42"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 1
+    assert "P1 governance rejected" in result.stderr
+    assert "ModuleNotFoundError" not in result.stderr

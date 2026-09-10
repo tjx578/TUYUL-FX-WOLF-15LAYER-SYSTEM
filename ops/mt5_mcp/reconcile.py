@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from ops.mt5_mcp import account_binding
+from ops.mt5_mcp.report_integrity import orchestrator_sources, seal_report
 
 MEASURED_STATES: Final = frozenset({"MEASURED", "MEASURED_EMPTY"})
 ENTITY_TYPES: Final = ("POSITION", "ORDER", "DEAL")
@@ -277,6 +278,18 @@ def _classify_entities(
     return broker_to_database, database_to_broker
 
 
+def _evidence_time(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(UTC)
+    except ValueError:
+        return None
+
+
 def _measurement_summary(
     broker: Mapping[str, Any], *, window_from: datetime, window_to: datetime
 ) -> tuple[dict[str, Any], bool]:
@@ -285,7 +298,14 @@ def _measurement_summary(
         return {}, False
     summary: dict[str, Any] = {}
     expected_window = {"from_utc": _iso(window_from), "to_utc": _iso(window_to)}
-    measured = bool(broker.get("tool_surface_exact")) and broker.get("window") == expected_window
+    measured = broker.get("tool_surface_exact") is True and broker.get("window") == expected_window
+    interval = broker.get("collection_interval")
+    interval = interval if isinstance(interval, Mapping) else {}
+    started = _evidence_time(interval.get("started_at_utc"))
+    finished = _evidence_time(interval.get("finished_at_utc"))
+    interval_valid = started is not None and finished is not None and window_to <= started <= finished
+    if not interval_valid:
+        measured = False
     for tool_name in (
         "mt5_account_get",
         "mt5_positions_get",
@@ -300,13 +320,34 @@ def _measurement_summary(
             continue
         state = payload.get("measurement_state", "NOT_MEASURED")
         truncated = payload.get("truncated")
+        observed = _evidence_time(payload.get("observed_at_utc"))
+        observation_in_interval = bool(interval_valid and observed is not None and started <= observed <= finished)
+        records = payload.get("records")
+        count = payload.get("record_count")
+        source_count = payload.get("source_record_count")
+        consistent = (
+            isinstance(records, list)
+            and all(isinstance(record, Mapping) for record in records)
+            and type(count) is int
+            and type(source_count) is int
+            and count == source_count == len(records)
+            and state == ("MEASURED" if records else "MEASURED_EMPTY")
+        )
+        if consistent and tool_name != "mt5_account_get":
+            tickets = [record.get("ticket") for record in records]
+            consistent = all(type(ticket) is int and ticket > 0 for ticket in tickets)
+            if consistent:
+                consistent = len(set(tickets)) == len(tickets)
         summary[tool_name] = {
             "measurement_state": state,
             "record_count": payload.get("record_count"),
             "source_record_count": payload.get("source_record_count"),
             "truncated": truncated,
+            "payload_consistent": consistent,
+            "observed_at_utc": payload.get("observed_at_utc"),
+            "observation_in_collection_interval": observation_in_interval,
         }
-        if state not in MEASURED_STATES or truncated is not False:
+        if state not in MEASURED_STATES or truncated is not False or not consistent or not observation_in_interval:
             measured = False
         if tool_name.startswith("mt5_history_") and payload.get("window") != expected_window:
             measured = False
@@ -403,9 +444,9 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
         if isinstance(row, Mapping)
         and str(row.get("executor_id")) in active_ids
         and row.get("status") == "ONLINE"
-        and isinstance(row.get("heartbeat_age_seconds"), int)
+        and type(row.get("heartbeat_age_seconds")) is int
         and -5 <= row["heartbeat_age_seconds"] <= MAX_RUNTIME_AGE_SECONDS
-        and isinstance(row.get("snapshot_age_seconds"), int)
+        and type(row.get("snapshot_age_seconds")) is int
         and -5 <= row["snapshot_age_seconds"] <= MAX_RUNTIME_AGE_SECONDS
         and row.get("latest_snapshot_id") is not None
     }
@@ -427,7 +468,7 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
             "outbox_v2_binding_mismatch_count",
         )
         internal_holds = row.get("latest_snapshot_account_matches") is True and all(
-            int(row.get(field) or 0) == 0 for field in mismatch_fields
+            type(row.get(field)) is int and row[field] == 0 for field in mismatch_fields
         )
     evidence: dict[str, Any] = {
         **direct_evidence,
@@ -481,12 +522,13 @@ def reconcile_snapshots(
         window_from=window_from,
         window_to=window_to,
     )
-    database_measured = bool(database.get("measured")) and not bool(database.get("truncated"))
+    database_measured = database.get("measured") is True and database.get("truncated") is False
     mutation_evidence = database.get("mutation_evidence", {})
     zero_mutation = bool(
         isinstance(mutation_evidence, Mapping)
         and mutation_evidence.get("xid_unassigned") is True
-        and int(mutation_evidence.get("changed_tuples") or 0) == 0
+        and type(mutation_evidence.get("changed_tuples")) is int
+        and mutation_evidence["changed_tuples"] == 0
     )
     account_state, account_evidence = _account_binding(broker, database)
 
@@ -672,16 +714,34 @@ async def _broker_snapshot(
         )
 
     try:
+        started_at = datetime.now(UTC)
         completed = await asyncio.to_thread(invoke)
+        finished_at = datetime.now(UTC)
         if completed.returncode != 0:
             return {"tool_surface_exact": False, "snapshots": {}, "error_type": "CollectorExitError"}
         payload = json.loads(completed.stdout)
-        return payload if isinstance(payload, dict) else {"tool_surface_exact": False, "snapshots": {}}
+        if not isinstance(payload, dict):
+            return {"tool_surface_exact": False, "snapshots": {}}
+        # Parent process bounds overwrite any interval asserted by the child.
+        payload["collection_interval"] = {
+            "started_at_utc": _iso(started_at),
+            "finished_at_utc": _iso(finished_at),
+        }
+        return payload
     except Exception as exc:  # noqa: BLE001
         return {"tool_surface_exact": False, "snapshots": {}, "error_type": type(exc).__name__}
 
 
-async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path) -> dict[str, Any]:
+async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, retention_sink=None) -> dict[str, Any]:
+    """Collect and seal; an optional synchronous sink returns True after durability.
+
+    Sink receives confidential replay bytes and a separately retainable receipt
+    digest. No default sink is configured. Storage protection and trusted digest
+    custody remain caller responsibilities; a sink failure aborts report return.
+    """
+    if retention_sink is not None and not callable(retention_sink):
+        raise ValueError("INVALID_REPLAY_RETENTION_SINK")
+    sources_before = orchestrator_sources()
     window_to = datetime.now(UTC)
     window_from = window_to - timedelta(days=HISTORY_DAYS)
     broker = await _broker_snapshot(
@@ -691,12 +751,33 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path) ->
         cwd=repo_root,
     )
     database = await _database_snapshot(dsn, window_from=window_from, window_to=window_to)
-    return reconcile_snapshots(
+    report = reconcile_snapshots(
         database=database,
         broker=broker,
         window_from=window_from,
         window_to=window_to,
     )
+    sealed = seal_report(
+        report,
+        database=database,
+        broker=broker,
+        sources_before=sources_before,
+        sources_after=orchestrator_sources(),
+    )
+    if retention_sink is not None:
+        from ops.mt5_mcp.replay_bundle import encode_replay_bundle
+
+        accepted = retention_sink(
+            encode_replay_bundle(report=sealed, database=database, broker=broker),
+            sealed["integrity"]["receipt_digest"],
+        )
+        if accepted is not True:
+            import inspect
+
+            if inspect.iscoroutine(accepted):
+                accepted.close()
+            raise ValueError("REPLAY_RETENTION_NOT_ACKNOWLEDGED")
+    return sealed
 
 
 def exit_code_for_gate(gate: object) -> int:

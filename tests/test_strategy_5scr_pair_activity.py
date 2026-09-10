@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import timedelta
 
 import pytest
@@ -321,3 +321,187 @@ def test_finalized_grant_does_not_hide_a_stopped_global_source():
     events = [_raw(second) for second in (0, 60, 120, 180, 240, 300)] + [_raw(301, "GBPUSD")]
     result = evaluate(events, end=370, policy=policy)
     assert all(item.reason_code == "SUSPENDED_SOURCE_GAP" for item in result.evaluations)
+
+
+# A source observation groups raw delivery facts, not Microboost transitions.
+def source_observation(event, source_id):
+    payload = asdict(event)
+    payload.update(source_observation_id=source_id, source_observation_schema="signal-throttle-observation.v1")
+    return payload
+
+
+def test_explicit_twins_reduce_logical_count_and_preserve_raw_fact_lineage():
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+    from tests.test_strategy_5scr_raw_admission_blocks import _runtime_throttle_pair
+
+    raw = [event for second in (0, 150, 300) for event in _runtime_throttle_pair(second)]
+    bound = [source_observation(event, f"producer-call-{index // 2}") for index, event in enumerate(raw)]
+    result = normalize_pair_activity_observations(bound)
+    assert (result.raw_event_count, result.logical_observation_count) == (6, 3)
+    assert all(len(item.source_raw_event_ids) == 2 for item in result.logical_observations)
+    bound_receipt = evaluate(bound).evaluations[0]
+    legacy_receipt = evaluate(raw).evaluations[0]
+    assert bound_receipt.duration_seconds == legacy_receipt.duration_seconds == 300
+    assert bound_receipt.direction_quality == legacy_receipt.direction_quality == "BUY"
+    assert bound_receipt.admission_id != legacy_receipt.admission_id
+    assert len(bound_receipt.observations) == 6
+    assert result.execution_authority is False
+
+
+def test_unbound_twins_remain_distinct_even_with_identical_time_and_cycle():
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+    from tests.test_strategy_5scr_raw_admission_blocks import _runtime_throttle_pair
+
+    result = normalize_pair_activity_observations(_runtime_throttle_pair(0))
+    assert result.logical_observation_count == result.raw_event_count == 2
+    assert all(item.identity_basis == "RAW_EVENT_ID" for item in result.logical_observations)
+
+
+def test_reordered_duplicate_delivery_and_restart_keep_logical_ids_and_duration():
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+    from contracts.strategy_5scr_pair_activity import PairActivityObservationNormalizationV1
+
+    bound = [source_observation(event, f"source-{index}") for index, event in enumerate(mixed())]
+    first = normalize_pair_activity_observations(bound)
+    replay = normalize_pair_activity_observations([bound[2], bound[0], bound[1], bound[1]])
+    restored = PairActivityObservationNormalizationV1.model_validate_json(first.model_dump_json())
+    assert restored == first
+    assert replay.logical_observations == restored.logical_observations
+    assert replay.raw_population_hash == restored.raw_population_hash
+    assert replay.duplicate_delivery_count == 1
+    result = evaluate([*bound, bound[1]])
+    receipt = result.evaluations[0]
+    assert (receipt.duration_seconds, receipt.direction_quality) == (300, "CONFLICT")
+    assert len(result.evaluations) == 1
+    assert receipt.execution_authority is False
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("timestamp", START + timedelta(seconds=300)),
+        ("symbol", "GBPUSD"),
+        ("scanner_cycle_id", "another-cycle"),
+        ("direction", "SELL"),
+    ],
+)
+def test_reused_source_observation_with_conflicting_facts_fails_closed(field, value):
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+
+    original = source_observation(_raw(0), "immutable-source-call")
+    conflicting = {**original, field: value}
+    with pytest.raises(ValueError, match="conflict"):
+        normalize_pair_activity_observations([original, conflicting])
+    unknown = coverage([], status="UNKNOWN")
+    with pytest.raises(ValueError, match="conflict"):
+        evaluate([original, conflicting], proof=unknown)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"source_observation_schema": None},
+        {"source_observation_schema": "future-unsupported.v2"},
+        {"source_observation_id": None},
+        {"source_observation_id": " "},
+        {"source_observation_id": 42},
+    ],
+)
+def test_partial_or_unknown_source_identity_is_never_silently_ignored(changes):
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+
+    event = {**source_observation(_raw(0), "call-1"), **changes}
+    with pytest.raises(ValueError, match="identity requires"):
+        normalize_pair_activity_observations([event])
+
+
+def test_distinct_source_observations_at_identical_timestamp_and_payload_remain_distinct():
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+
+    result = normalize_pair_activity_observations(
+        [
+            source_observation(_raw(0), "first"),
+            source_observation(_raw(0), "second"),
+            source_observation(_raw(0), "first"),
+        ]
+    )
+    assert result.logical_observation_count == result.raw_event_count == 2
+    assert result.duplicate_delivery_count == 1
+    assert len({item.observation_id for item in result.logical_observations}) == 2
+    assert len({item.raw_event_id for item in result.raw_observations}) == 2
+
+
+def test_raw_identity_version_changes_only_explicit_source_bound_facts():
+    from analysis.strategy_5scr_pair_activity import pair_activity_raw_event_id
+    from analysis.strategy_5scr_raw_admission_blocks import raw_signal_throttle_event_id
+
+    event = _raw(0)
+    assert pair_activity_raw_event_id(event) == raw_signal_throttle_event_id(event)
+    assert pair_activity_raw_event_id(asdict(event)) == raw_signal_throttle_event_id(event)
+    bound = source_observation(event, "source-1")
+    assert pair_activity_raw_event_id(bound) != raw_signal_throttle_event_id(event)
+    assert pair_activity_raw_event_id(dict(bound)) == pair_activity_raw_event_id(bound)
+
+
+def test_same_scanner_cycle_does_not_collapse_distinct_source_observations():
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+
+    events = [
+        source_observation(replace(_raw(second), scanner_cycle_id="one-window"), f"call-{second}")
+        for second in (0, 150, 300)
+    ]
+    result = normalize_pair_activity_observations(events)
+    assert result.logical_observation_count == 3
+    assert evaluate(events).evaluations[0].duration_seconds == 300
+
+
+def test_normalization_rejects_forged_nested_identity_and_incomplete_raw_mapping():
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+    from contracts.strategy_5scr_pair_activity import PairActivityObservationNormalizationV1
+
+    result = normalize_pair_activity_observations([source_observation(_raw(0), "call-1")])
+    forged = result.logical_observations[0].model_copy(update={"observation_id": "sha256:" + "0" * 64})
+    with pytest.raises(ValueError, match="identity mismatch"):
+        PairActivityObservationNormalizationV1(**{**result.model_dump(), "logical_observations": (forged,)})
+    with pytest.raises(ValueError, match="cover each raw fact"):
+        PairActivityObservationNormalizationV1(
+            **{**result.model_dump(), "logical_observations": (), "logical_observation_count": 0}
+        )
+
+
+def test_source_identity_does_not_override_gap_or_backfill_reconciliation():
+    bound = [source_observation(event, f"source-{index}") for index, event in enumerate(mixed())]
+    initial = evaluate(bound).evaluations[0]
+    stale = evaluate(bound, end=601, previous=(initial,)).evaluations[0]
+    assert stale.reason_code == "SUSPENDED_SOURCE_GAP"
+    backfill = source_observation(_raw(75, "GBPUSD"), "late-source")
+    replay = evaluate([*bound, backfill], previous=(initial,))
+    related = [item for item in replay.evaluations if item.symbol == "EURUSD"]
+    assert all(item.decision == "RECONCILIATION_REQUIRED" for item in related)
+    assert all(item.previous_admission_id == initial.admission_id for item in related)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_explicit_equal_time_cross_symbol_order_never_manufactures_threshold_grant(reverse):
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+
+    events = [
+        source_observation(_raw(0), "start"),
+        source_observation(_raw(300, "GBPUSD"), "earlier-B"),
+        source_observation(_raw(300), "later-A"),
+    ]
+    if reverse:
+        events.reverse()
+    with pytest.raises(ValueError, match="AMBIGUOUS_GLOBAL_SOURCE_ORDER"):
+        normalize_pair_activity_observations(events)
+    with pytest.raises(ValueError, match="AMBIGUOUS_GLOBAL_SOURCE_ORDER"):
+        evaluate(events, proof=coverage([], status="UNKNOWN"))
+
+
+def test_legacy_equal_time_population_remains_compatible_but_mixed_binding_is_ambiguous():
+    from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
+
+    legacy = [_raw(0), _raw(300, "GBPUSD"), _raw(300)]
+    assert normalize_pair_activity_observations(legacy).raw_event_count == 3
+    with pytest.raises(ValueError, match="AMBIGUOUS_GLOBAL_SOURCE_ORDER"):
+        normalize_pair_activity_observations([*legacy[:2], source_observation(legacy[2], "bound-A")])

@@ -1,0 +1,390 @@
+commit 1e0444f0c96e161ba41b468d5716cc9cea2077a3
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 12:34:54 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 12:34:54 2026 +0800
+
+    Bind nearest structural target selection to the net geometry caller
+
+diff --git a/analysis/strategy_5scr_target_selection_v31.py b/analysis/strategy_5scr_target_selection_v31.py
+new file mode 100644
+index 00000000..f5afcb98
+--- /dev/null
++++ b/analysis/strategy_5scr_target_selection_v31.py
+@@ -0,0 +1,77 @@
++"""Select nearest attested target once, then call the fixed-target net solver."""
++
++import hashlib
++import json
++from collections.abc import Callable
++from fractions import Fraction
++
++from analysis.strategy_5scr_net_geometry_v31 import solve_net_geometry_v31
++from contracts.strategy_5scr_net_geometry_v31 import NetGeometryContextV31, NetGeometryRequestV31
++from contracts.strategy_5scr_target_selection_v31 import TargetGeometryResultV31, TargetUniverseV31
++
++
++def target_universe_hash_v31(universe: TargetUniverseV31) -> str:
++    # Reordering sources/targets does not create a different cohort identity.
++    payload = universe.model_dump(mode="json")
++    payload["targets"] = sorted(payload["targets"], key=lambda item: item["target_id"])
++    for key in ("required_sources", "covered_sources"):
++        payload[key] = sorted(payload[key])
++    return (
++        "sha256:"
++        + hashlib.sha256(
++            json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
++        ).hexdigest()
++    )
++
++
++def solve_target_geometry_v31(
++    *,
++    universe: TargetUniverseV31,
++    context: NetGeometryContextV31,
++    verify_universe: Callable[[TargetUniverseV31, str], bool] | None,
++) -> TargetGeometryResultV31:
++    universe = TargetUniverseV31.model_validate(universe.model_dump())
++    context = NetGeometryContextV31.model_validate(context.model_dump())
++    digest = target_universe_hash_v31(universe)
++
++    def wait(reason: str) -> TargetGeometryResultV31:
++        return TargetGeometryResultV31(universe_hash=digest, reason=reason)
++
++    if (universe.symbol, universe.direction, universe.decision_at) != (
++        context.symbol,
++        context.direction,
++        context.decision_at,
++    ):
++        return wait("TARGET_CONTEXT_MISMATCH")
++    if context.policy is None or universe.policy_hash != context.policy.policy_hash:
++        return wait("TARGET_POLICY_UNBOUND_OR_MISMATCH")
++    if set(universe.covered_sources) != set(universe.required_sources):
++        return wait("TARGET_SOURCE_COVERAGE_INCOMPLETE")
++    if any(t.source not in universe.covered_sources for t in universe.targets):
++        return wait("TARGET_OUTSIDE_DECLARED_COVERAGE")
++    if any(
++        t.formed_at > universe.decision_at or (t.consumed_at is not None and t.consumed_at > universe.decision_at)
++        for t in universe.targets
++    ):
++        return wait("TARGET_FUTURE_EVIDENCE")
++    if verify_universe is None:
++        return wait("TARGET_ATTESTOR_UNBOUND")
++    if verify_universe(universe, digest) is not True:
++        return wait("TARGET_ATTESTATION_REJECTED")
++    legal = [
++        t
++        for t in universe.targets
++        if t.consumed_at is None
++        and universe.decision_at < t.valid_until
++        and (t.price > universe.anchor_price if universe.direction == "BUY" else t.price < universe.anchor_price)
++    ]
++    if not legal:
++        return wait("NO_FRESH_UNCONSUMED_DIRECTIONAL_TARGET")
++    # No geometry-dependent filtering: an off-grid or uneconomic nearest target
++    # cannot be skipped in favour of a farther, more profitable target.
++    selected = min(legal, key=lambda t: (abs(Fraction(t.price) - Fraction(universe.anchor_price)), t.target_id))
++    request = NetGeometryRequestV31(**context.model_dump(), target_price=selected.price, target_evidence_hash=digest)
++    geometry = solve_net_geometry_v31(request)
++    return TargetGeometryResultV31(
++        universe_hash=digest, selected_target_id=selected.target_id, reason=geometry.reason, geometry=geometry
++    )
+diff --git a/contracts/strategy_5scr_net_geometry_v31.py b/contracts/strategy_5scr_net_geometry_v31.py
+index aaf38c47..437f13d8 100644
+--- a/contracts/strategy_5scr_net_geometry_v31.py
++++ b/contracts/strategy_5scr_net_geometry_v31.py
+@@ -68,16 +68,12 @@ class NetGeometryPolicyV31(GeometryContract):
+     minimum_net_rr: Annotated[Decimal, Field(ge=Decimal("1.5"), max_digits=28, decimal_places=12)]
+ 
+ 
+-class NetGeometryRequestV31(GeometryContract):
++class NetGeometryContextV31(GeometryContract):
+     symbol: str = Field(min_length=3, max_length=32)
+     instrument_class: Literal["FX", "METAL", "OTHER"]
+     direction: Literal["BUY", "SELL"]
+     decision_at: datetime
+-    # Already-selected nearest target and structural SL; the kernel cannot
+-    # search for a farther target or tighten a stop to improve RR.
+-    target_price: Price
+     stop_price: Price
+-    target_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+     stop_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+     digits: int = Field(ge=0, le=12, strict=True)
+     point: Price
+@@ -89,6 +85,13 @@ class NetGeometryRequestV31(GeometryContract):
+     policy: NetGeometryPolicyV31 | None
+     costs: NetCostSnapshotV31 | None
+ 
++
++class NetGeometryRequestV31(NetGeometryContextV31):
++    # Already-selected nearest target and structural SL; the kernel cannot
++    # search for a farther target or tighten a stop to improve RR.
++    target_price: Price
++    target_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++
+     @model_validator(mode="after")
+     def geometry(self) -> NetGeometryRequestV31:
+         if self.decision_at.tzinfo is None or self.decision_at.utcoffset() is None:
+diff --git a/contracts/strategy_5scr_target_selection_v31.py b/contracts/strategy_5scr_target_selection_v31.py
+new file mode 100644
+index 00000000..0cafc80e
+--- /dev/null
++++ b/contracts/strategy_5scr_target_selection_v31.py
+@@ -0,0 +1,64 @@
++"""TEST_ONLY target universe interface; target derivation/attestation is external."""
++
++from datetime import datetime
++from typing import Literal
++
++from pydantic import Field, model_validator
++
++from contracts.strategy_5scr_net_geometry_v31 import GeometryContract, NetGeometryResultV31, Price
++
++TargetSource = Literal["SWING", "D1_SR", "H4_SR", "H1_SR", "RANGE", "BREAKOUT", "LIQUIDITY", "FIBONACCI"]
++
++
++class StructuralTargetV31(GeometryContract):
++    target_id: str = Field(min_length=1, max_length=200)
++    source: TargetSource
++    price: Price
++    evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    formed_at: datetime
++    valid_until: datetime
++    consumed_at: datetime | None
++
++    @model_validator(mode="after")
++    def clocks(self) -> "StructuralTargetV31":
++        values = (self.formed_at, self.valid_until, self.consumed_at)
++        if any(t is not None and (t.tzinfo is None or t.utcoffset() is None) for t in values):
++            raise ValueError("target clocks must be timezone-aware")
++        if self.valid_until <= self.formed_at or (self.consumed_at is not None and self.consumed_at < self.formed_at):
++            raise ValueError("target clock ordering is invalid")
++        return self
++
++
++class TargetUniverseV31(GeometryContract):
++    profile: Literal["TEST_ONLY"]
++    symbol: str = Field(min_length=3, max_length=32)
++    direction: Literal["BUY", "SELL"]
++    decision_at: datetime
++    anchor_price: Price
++    anchor_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    policy_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    # Source completeness requires an external verifier over the entire snapshot.
++    # A source with zero targets must still appear in covered_sources.
++    required_sources: tuple[TargetSource, ...] = Field(min_length=1, max_length=8)
++    covered_sources: tuple[TargetSource, ...] = Field(max_length=8)
++    targets: tuple[StructuralTargetV31, ...] = Field(max_length=10000)
++
++    @model_validator(mode="after")
++    def identities(self) -> "TargetUniverseV31":
++        if self.decision_at.tzinfo is None or self.decision_at.utcoffset() is None:
++            raise ValueError("universe decision clock must be timezone-aware")
++        for values in (self.required_sources, self.covered_sources, tuple(t.target_id for t in self.targets)):
++            if len(values) != len(set(values)):
++                raise ValueError("duplicate source or target identity")
++        return self
++
++
++class TargetGeometryResultV31(GeometryContract):
++    profile: Literal["TEST_ONLY"] = "TEST_ONLY"
++    universe_hash: str
++    reason: str
++    selected_target_id: str | None = None
++    geometry: NetGeometryResultV31 | None = None
++    hypothesis_authority: Literal[False] = False
++    capital_reservation_authority: Literal[False] = False
++    execution_authority: Literal[False] = False
+diff --git a/tests/test_strategy_5scr_target_selection_v31.py b/tests/test_strategy_5scr_target_selection_v31.py
+new file mode 100644
+index 00000000..755b9593
+--- /dev/null
++++ b/tests/test_strategy_5scr_target_selection_v31.py
+@@ -0,0 +1,187 @@
++from datetime import timedelta
++from decimal import Decimal
++
++import pytest
++from pydantic import ValidationError
++
++from analysis.strategy_5scr_target_selection_v31 import solve_target_geometry_v31, target_universe_hash_v31
++from contracts.strategy_5scr_net_geometry_v31 import NetGeometryContextV31
++from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
++from tests.test_strategy_5scr_net_geometry_v31 import NOW, H, request_data
++
++SOURCES = ("SWING", "D1_SR", "H4_SR", "H1_SR", "RANGE", "BREAKOUT", "LIQUIDITY", "FIBONACCI")
++
++
++def fixture(direction="BUY"):
++    context = request_data(direction)
++    del context["target_price"], context["target_evidence_hash"]
++    sign = 1 if direction == "BUY" else -1
++    universe = {
++        "profile": "TEST_ONLY",
++        "symbol": "EURUSD",
++        "direction": direction,
++        "decision_at": NOW,
++        "anchor_price": "1.1",
++        "anchor_evidence_hash": H,
++        "policy_hash": H,
++        "required_sources": SOURCES,
++        "covered_sources": SOURCES,
++        "targets": [
++            {
++                "target_id": name,
++                "source": source,
++                "price": Decimal("1.1") + sign * distance,
++                "evidence_hash": H,
++                "formed_at": NOW - timedelta(hours=1),
++                "valid_until": NOW + timedelta(hours=1),
++                "consumed_at": None,
++            }
++            for name, source, distance in (
++                ("nearest", "D1_SR", Decimal("0.0012")),
++                ("farther", "H4_SR", Decimal("0.003")),
++            )
++        ],
++    }
++    return universe, context
++
++
++def solve(data, context, verifier="BOUND_TEST_RECEIPT"):
++    universe = TargetUniverseV31(**data)
++    if verifier == "BOUND_TEST_RECEIPT":
++        expected = target_universe_hash_v31(universe)
++
++        def verifier(snapshot, digest):
++            return digest == expected and snapshot.policy_hash == H
++
++    return solve_target_geometry_v31(
++        universe=universe, context=NetGeometryContextV31(**context), verify_universe=verifier
++    )
++
++
++@pytest.mark.parametrize("direction", ["BUY", "SELL"])
++def test_nearest_selected_before_net_solver_and_farther_never_used_to_rescue_rr(direction):
++    data, context = fixture(direction)
++    assert solve(data, context).geometry.status == "FEASIBLE_TEST_ONLY"
++    data["targets"][0]["price"] = Decimal("1.1002") if direction == "BUY" else Decimal("1.0998")
++    result = solve(data, context)
++    assert result.selected_target_id == "nearest"
++    assert result.geometry.status == "NO_VALID_ENTRY_DOMAIN"
++    assert not result.execution_authority and not result.geometry.execution_authority
++    assert not result.capital_reservation_authority and not result.hypothesis_authority
++    only_far = dict(data, targets=[data["targets"][1]])
++    assert solve(only_far, context).geometry.status == "FEASIBLE_TEST_ONLY"
++
++
++@pytest.mark.parametrize("source", SOURCES)
++def test_all_declared_legal_source_kinds_feed_same_caller(source):
++    data, context = fixture()
++    data["targets"][0]["source"] = source
++    result = solve(data, context)
++    assert result.selected_target_id == "nearest"
++    assert result.geometry.status == "FEASIBLE_TEST_ONLY"
++
++
++@pytest.mark.parametrize("mutation", ["expired", "consumed", "passed", "wrong_side"])
++def test_ineligible_nearest_allows_next_legal_target(mutation):
++    data, context = fixture()
++    if mutation == "expired":
++        data["targets"][0]["valid_until"] = NOW
++    elif mutation == "consumed":
++        data["targets"][0]["consumed_at"] = NOW
++    else:
++        data["targets"][0]["price"] = Decimal("1.1") if mutation == "passed" else Decimal("1.099")
++    assert solve(data, context).selected_target_id == "farther"
++
++
++@pytest.mark.parametrize(
++    "mutation,reason",
++    [
++        ("coverage", "TARGET_SOURCE_COVERAGE_INCOMPLETE"),
++        ("policy", "TARGET_POLICY_UNBOUND_OR_MISMATCH"),
++        ("symbol", "TARGET_CONTEXT_MISMATCH"),
++        ("future_formed", "TARGET_FUTURE_EVIDENCE"),
++        ("future_consumed", "TARGET_FUTURE_EVIDENCE"),
++    ],
++)
++def test_bad_binding_does_not_reach_attestor_or_geometry(mutation, reason):
++    data, context = fixture()
++    if mutation == "coverage":
++        data["covered_sources"] = SOURCES[1:]
++    elif mutation == "policy":
++        context["policy"] = None
++    elif mutation == "symbol":
++        context["symbol"] = "USDJPY"
++    elif mutation == "future_formed":
++        data["targets"][0]["formed_at"] = NOW + timedelta(seconds=1)
++    else:
++        data["targets"][0]["consumed_at"] = NOW + timedelta(seconds=1)
++
++    def never(*args):
++        pytest.fail("invalid snapshot reached attestor")
++
++    result = solve(data, context, never)
++    assert result.reason == reason
++    assert result.geometry is None and result.selected_target_id is None
++
++
++@pytest.mark.parametrize(
++    "verifier,reason",
++    [
++        (None, "TARGET_ATTESTOR_UNBOUND"),
++        (lambda *args: False, "TARGET_ATTESTATION_REJECTED"),
++        (lambda *args: 1, "TARGET_ATTESTATION_REJECTED"),
++    ],
++)
++def test_unbound_or_non_boolean_attestation_cannot_pass(verifier, reason):
++    data, context = fixture()
++    assert solve(data, context, verifier).reason == reason
++
++
++def test_receipt_covers_whole_cohort_and_reordering_is_stable():
++    data, context = fixture()
++    pinned = target_universe_hash_v31(TargetUniverseV31(**data))
++    data["targets"].reverse()
++    data["covered_sources"] = tuple(reversed(SOURCES))
++    assert solve(data, context, lambda snapshot, digest: digest == pinned).selected_target_id == "nearest"
++    data["targets"].pop()
++    assert solve(data, context, lambda snapshot, digest: digest == pinned).reason == "TARGET_ATTESTATION_REJECTED"
++
++
++def test_duplicate_identity_and_off_grid_nearest_fail_without_fallback():
++    data, context = fixture()
++    data["targets"].append(data["targets"][0].copy())
++    with pytest.raises(ValidationError):
++        solve(data, context)
++    data["targets"].pop()
++    data["targets"][0]["price"] = Decimal("1.101201")
++    with pytest.raises(ValidationError, match="tick grid"):
++        solve(data, context)
++
++
++def test_empty_fully_covered_source_is_distinct_from_missing_coverage():
++    data, context = fixture()
++    data["targets"] = []
++    result = solve(data, context)
++    assert result.reason == "NO_FRESH_UNCONSUMED_DIRECTIONAL_TARGET"
++    assert result.geometry is None
++
++
++def test_missing_cost_preserves_selected_target_without_searching_farther():
++    data, context = fixture()
++    context["costs"] = None
++    result = solve(data, context)
++    assert result.selected_target_id == "nearest"
++    assert result.geometry.status == "WAIT"
++    assert result.geometry.reason == "COST_EVIDENCE_UNBOUND"
++
++
++def test_equal_price_tie_is_stable_and_evidence_change_changes_geometry_binding():
++    data, context = fixture()
++    data["targets"][1]["price"] = data["targets"][0]["price"]
++    first = solve(data, context)
++    data["targets"].reverse()
++    assert solve(data, context) == first
++    data["targets"][0]["evidence_hash"] = "sha256:" + "2" * 64
++    second = solve(data, context)
++    assert second.selected_target_id == first.selected_target_id
++    assert second.geometry.request_hash != first.geometry.request_hash

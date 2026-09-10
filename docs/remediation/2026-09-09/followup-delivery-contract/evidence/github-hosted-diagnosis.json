@@ -1,0 +1,163 @@
+{
+  "observed_at_utc": "2026-09-09T02:31:47.316756+00:00",
+  "head": "0f7a98b28d9b3ee3a72cd1309ada2236b6a9e3fb",
+  "records": [
+    {
+      "run": {
+        "conclusion": "failure",
+        "databaseId": 34281720281,
+        "event": "pull_request",
+        "headSha": "0f7a98b28d9b3ee3a72cd1309ada2236b6a9e3fb",
+        "name": "CI",
+        "status": "completed",
+        "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34281720281"
+      },
+      "workflow_path": ".github/workflows/ci.yml",
+      "workflow_commit": "0f7a98b28d9b3ee3a72cd1309ada2236b6a9e3fb",
+      "workflow_sha256": "0b834c49becd7fbf4248096895d22b89f180598f588be49f75cd81b48d735058",
+      "runs_on": [
+        {
+          "line": 26,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 52,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 178,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 214,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 237,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 295,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 367,
+          "text": "runs-on: ubuntu-latest"
+        }
+      ],
+      "job": {
+        "id": 102247803775,
+        "name": "Python tests (pytest)",
+        "status": "completed",
+        "conclusion": "failure",
+        "runner_id": 0,
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/check-runs/102247803775"
+      },
+      "check_output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/check-runs/102247803775/annotations"
+      },
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/blob/0f7a98b28d9b3ee3a72cd1309ada2236b6a9e3fb/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because your account is locked due to a billing issue.",
+          "raw_details": ""
+        }
+      ]
+    },
+    {
+      "run": {
+        "conclusion": "failure",
+        "databaseId": 34281716405,
+        "event": "push",
+        "headSha": "0f7a98b28d9b3ee3a72cd1309ada2236b6a9e3fb",
+        "name": "CI",
+        "status": "completed",
+        "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34281716405"
+      },
+      "workflow_path": ".github/workflows/ci.yml",
+      "workflow_commit": "0f7a98b28d9b3ee3a72cd1309ada2236b6a9e3fb",
+      "workflow_sha256": "0b834c49becd7fbf4248096895d22b89f180598f588be49f75cd81b48d735058",
+      "runs_on": [
+        {
+          "line": 26,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 52,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 178,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 214,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 237,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 295,
+          "text": "runs-on: ubuntu-latest"
+        },
+        {
+          "line": 367,
+          "text": "runs-on: ubuntu-latest"
+        }
+      ],
+      "job": {
+        "id": 102247792723,
+        "name": "Python tests (pytest)",
+        "status": "completed",
+        "conclusion": "failure",
+        "runner_id": 0,
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/check-runs/102247792723"
+      },
+      "check_output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/check-runs/102247792723/annotations"
+      },
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/blob/0f7a98b28d9b3ee3a72cd1309ada2236b6a9e3fb/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because your account is locked due to a billing issue.",
+          "raw_details": ""
+        }
+      ]
+    }
+  ],
+  "runner_endpoint_interpretation": "REPOSITORY_SELF_HOSTED_ONLY",
+  "billing_mutation": false,
+  "ci_rerun": false
+}
