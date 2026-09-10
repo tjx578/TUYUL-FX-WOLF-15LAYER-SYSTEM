@@ -995,23 +995,29 @@ class MT5CommandRepository:
             )
             if not inserted:
                 raise CommandConflictError("engineering canary identity or idempotency key already exists")
-            await connection.execute(
-                """
-                INSERT INTO engineering_demo_canary_windows (
-                    canary_id, command_id, executor_id, account_id,
-                    broker_server, canonical_symbol, broker_symbol,
-                    state, max_broker_effects, expires_at
-                ) VALUES ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, 'QUEUED', 1, $8)
-                """,
-                source.canary_id,
-                str(command.command_id),
-                str(binding.executor_id),
-                binding.account_id,
-                binding.broker_server,
-                source.approved_canonical_symbol,
-                source.approved_broker_symbol,
-                command.expires_at_utc,
-            )
+            try:
+                await connection.execute(
+                    """
+                    INSERT INTO engineering_demo_canary_windows (
+                        canary_id, command_id, executor_id, account_id,
+                        broker_server, canonical_symbol, broker_symbol,
+                        state, max_broker_effects, expires_at
+                    ) VALUES ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, 'QUEUED', 1, $8)
+                    """,
+                    source.canary_id,
+                    str(command.command_id),
+                    str(binding.executor_id),
+                    binding.account_id,
+                    binding.broker_server,
+                    source.approved_canonical_symbol,
+                    source.approved_broker_symbol,
+                    command.expires_at_utc,
+                )
+            except Exception as exc:
+                message = str(exc)
+                if "uq_engineering_demo_canary_single_open" in message or "unique" in message.lower():
+                    raise CommandConflictError("another engineering canary window is already open") from exc
+                raise
         return command
 
     async def arm_engineering_demo_canary(
