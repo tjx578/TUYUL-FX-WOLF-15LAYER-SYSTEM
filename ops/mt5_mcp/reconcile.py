@@ -621,7 +621,9 @@ def _clean_database_rows(rows: Iterable[Any]) -> list[dict[str, Any]]:
     return [_mapping(row) for row in rows]
 
 
-async def _database_snapshot(dsn: str, *, window_from: datetime, window_to: datetime) -> dict[str, Any]:
+async def _database_snapshot(
+    dsn: str, *, window_from: datetime, window_to: datetime, include_backend_identity: bool = False
+) -> dict[str, Any]:
     asyncpg = importlib.import_module("asyncpg")
     connection: Any | None = None
     transaction: Any | None = None
@@ -641,6 +643,7 @@ async def _database_snapshot(dsn: str, *, window_from: datetime, window_to: date
                 "error_type": "DATABASE_AUDIT_SESSION_MISMATCH",
                 "audit_session": audit_session,
             }
+        observed_at = datetime.now(UTC)
         limit = MAX_DATABASE_ROWS + 1
         identity = await connection.fetch(IDENTITY_SQL, limit)
         freshness = await connection.fetch(FRESHNESS_SQL, limit)
@@ -648,6 +651,25 @@ async def _database_snapshot(dsn: str, *, window_from: datetime, window_to: date
         containment = await connection.fetch(CONTAINMENT_SQL)
         ledger = await connection.fetch(LEDGER_SQL, window_from, window_to, limit)
         mirror = await connection.fetch(MIRROR_SQL, window_from, window_to, limit)
+        backend_identity = []
+        if include_backend_identity:
+            backend_identity = _clean_database_rows(
+                await connection.fetch(
+                    "SELECT * FROM wolf15_audit.backend_account_identity_v1 ORDER BY executor_id LIMIT $1", limit
+                )
+            )
+            # Replace any legacy identifier columns only with the backend projection.
+            projected = {str(row["executor_id"]): row for row in backend_identity}
+            binding = [
+                {
+                    **dict(row),
+                    "account_binding_identifier": projected.get(str(row["executor_id"]), {}).get(
+                        "account_binding_identifier"
+                    ),
+                    "account_binding_source": projected.get(str(row["executor_id"]), {}).get("account_binding_source"),
+                }
+                for row in binding
+            ]
         mutation = _mapping(await connection.fetchrow(MUTATION_SQL))
         truncated = (
             any(len(rows) > MAX_DATABASE_ROWS for rows in (identity, freshness, binding, ledger, mirror))
@@ -655,7 +677,9 @@ async def _database_snapshot(dsn: str, *, window_from: datetime, window_to: date
         )
         report = {
             "measured": True,
-            "truncated": truncated,
+            "observed_at_utc": observed_at.isoformat(),
+            "backend_identity": backend_identity,
+            "truncated": truncated or len(backend_identity) > MAX_DATABASE_ROWS,
             "executor_identity": _clean_database_rows(identity[:MAX_DATABASE_ROWS]),
             "executor_freshness": _clean_database_rows(freshness[:MAX_DATABASE_ROWS]),
             "account_binding": _clean_database_rows(binding[:MAX_DATABASE_ROWS]),
@@ -699,7 +723,12 @@ async def _broker_snapshot(
     config_path: Path, *, window_from: datetime, window_to: datetime, cwd: Path
 ) -> dict[str, Any]:
     environment = os.environ.copy()
-    environment.pop("AUDIT_DATABASE_URL", None)
+    for name in (
+        "AUDIT_DATABASE_URL",
+        "WOLF15_RECONCILIATION_ISSUER_KEY_B64URL",
+        "WOLF15_RECONCILIATION_ISSUER_KEY_ID",
+    ):
+        environment.pop(name, None)
     command = _collector_command(config_path, window_from=window_from, window_to=window_to)
 
     def invoke() -> subprocess.CompletedProcess[str]:
@@ -732,7 +761,9 @@ async def _broker_snapshot(
         return {"tool_surface_exact": False, "snapshots": {}, "error_type": type(exc).__name__}
 
 
-async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, retention_sink=None) -> dict[str, Any]:
+async def run_reconciliation(
+    *, dsn: str, repo_root: Path, config_path: Path, retention_sink=None, attest: bool = False
+) -> dict[str, Any]:
     """Collect and seal; an optional synchronous sink returns True after durability.
 
     Sink receives confidential replay bytes and a separately retainable receipt
@@ -750,13 +781,25 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, re
         window_to=window_to,
         cwd=repo_root,
     )
-    database = await _database_snapshot(dsn, window_from=window_from, window_to=window_to)
+    database = await _database_snapshot(
+        dsn,
+        window_from=window_from,
+        window_to=window_to,
+        **({"include_backend_identity": True} if attest else {}),
+    )
     report = reconcile_snapshots(
         database=database,
         broker=broker,
         window_from=window_from,
         window_to=window_to,
     )
+    attestation = None
+    if attest:
+        from execution.broker_reconciliation_evidence import attest_collected_reconciliation
+
+        attestation = attest_collected_reconciliation(
+            database=database, broker=broker, window_from=window_from, window_to=window_to
+        )
     sealed = seal_report(
         report,
         database=database,
@@ -777,6 +820,8 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, re
             if inspect.iscoroutine(accepted):
                 accepted.close()
             raise ValueError("REPLAY_RETENTION_NOT_ACKNOWLEDGED")
+    if attestation is not None:
+        return {"reconciliation_report": sealed, "reconciliation_attestation": attestation}
     return sealed
 
 

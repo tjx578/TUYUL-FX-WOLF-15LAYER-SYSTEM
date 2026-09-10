@@ -45,7 +45,8 @@ jobs:
         run: ruff check . --config pyproject.toml
 
       - name: Ruff format check (hard fail)
-        run: ruff format --check . --config pyproject.toml
+        if: ${{ !cancelled() }}
+        run: ruff format --check --diff . --config pyproject.toml
 
   tests:
     name: Python tests (pytest)
@@ -174,6 +175,9 @@ jobs:
 
       - name: Require supported PostgreSQL upgrade with existing data
         run: python scripts/ci/run_supported_upgrade_acceptance.py
+
+      - name: Require authenticated D0 reconciliation on disposable PostgreSQL
+        run: python scripts/ci/run_d0_reconciliation_acceptance.py
 
       - name: Require distributed mode-owner Redis acceptance
         run: |
