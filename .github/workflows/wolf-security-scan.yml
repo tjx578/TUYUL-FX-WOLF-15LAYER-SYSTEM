@@ -105,8 +105,10 @@ jobs:
           install_dir="${RUNNER_TEMP}/trufflehog-bin"
 
           mkdir -p "${install_dir}"
-          wget -q -O "${RUNNER_TEMP}/${checksums}" "${base_url}/${checksums}"
-          wget -q -O "${RUNNER_TEMP}/${tarball}" "${base_url}/${tarball}"
+          curl --fail --show-error --silent --location --retry 3 --retry-all-errors \
+            --output "${RUNNER_TEMP}/${checksums}" "${base_url}/${checksums}"
+          curl --fail --show-error --silent --location --retry 3 --retry-all-errors \
+            --output "${RUNNER_TEMP}/${tarball}" "${base_url}/${tarball}"
           (
             cd "${RUNNER_TEMP}"
             grep " ${tarball}\$" "${checksums}" | sha256sum -c -
