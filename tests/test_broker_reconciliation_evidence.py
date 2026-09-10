@@ -129,3 +129,30 @@ def test_changing_report_and_recomputing_plain_hash_does_not_forge_mac():
     assert digest(forged) != digest(evidence)
     with pytest.raises(ReconciliationEvidenceError, match="AUTHENTICATION_FAILED"):
         verify_attestation(forged, identity=identity, snapshot=snapshot, now=datetime.now(UTC))
+
+
+@pytest.mark.asyncio
+async def test_collector_child_never_receives_issuer_key_or_auditor_dsn(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from execution.broker_reconciliation_evidence import ISSUER_KEY_ID_ENV
+    from ops.mt5_mcp import account_binding, reconcile
+
+    monkeypatch.setenv("AUDIT_DATABASE_URL", "fixture-only-never-connected")
+    captured = {}
+    monkeypatch.setattr(reconcile, "_collector_command", lambda *args, **kwargs: ["fixture-only"])
+
+    def subprocess_fixture(*args, **kwargs):
+        captured.update(kwargs["env"])
+        return SimpleNamespace(returncode=0, stdout='{"tool_surface_exact": false}')
+
+    monkeypatch.setattr(reconcile.subprocess, "run", subprocess_fixture)
+    now = datetime.now(UTC)
+    await reconcile._broker_snapshot(
+        tmp_path / "unused", window_from=now - timedelta(days=7), window_to=now, cwd=tmp_path
+    )
+    assert ISSUER_KEY_ENV not in captured
+    assert ISSUER_KEY_ID_ENV not in captured
+    assert "AUDIT_DATABASE_URL" not in captured
+    assert account_binding.KEY_ENV in captured
+    assert account_binding.KEY_ID_ENV in captured

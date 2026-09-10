@@ -723,7 +723,12 @@ async def _broker_snapshot(
     config_path: Path, *, window_from: datetime, window_to: datetime, cwd: Path
 ) -> dict[str, Any]:
     environment = os.environ.copy()
-    environment.pop("AUDIT_DATABASE_URL", None)
+    for name in (
+        "AUDIT_DATABASE_URL",
+        "WOLF15_RECONCILIATION_ISSUER_KEY_B64URL",
+        "WOLF15_RECONCILIATION_ISSUER_KEY_ID",
+    ):
+        environment.pop(name, None)
     command = _collector_command(config_path, window_from=window_from, window_to=window_to)
 
     def invoke() -> subprocess.CompletedProcess[str]:

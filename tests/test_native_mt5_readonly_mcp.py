@@ -371,6 +371,9 @@ def _snapshot_harness(monkeypatch, tmp_path, *, configured=None, listed=None):
         + '\n[mcp_servers.native_mt5_readonly.env]\nAUDIT_DATABASE_URL = "fixture-dsn-upper"\naudit_database_url = "fixture-dsn-lower"\nWOLF15_ACCOUNT_BINDING_KEY_B64URL = "config-key-not-authoritative"\n',
         encoding="utf-8",
     )
+    with config.open("a", encoding="utf-8") as output:
+        output.write('WOLF15_RECONCILIATION_ISSUER_KEY_B64URL = "fixture-issuer-key"\n')
+        output.write('wolf15_reconciliation_issuer_key_id = "fixture-issuer-id"\n')
     state = {"launches": 0, "calls": [], "env": None}
 
     def stdio(parameters):
@@ -428,7 +431,12 @@ def test_collector_strips_audit_dsn_and_records_nonsecret_provenance(monkeypatch
     result = run()
     assert result["tool_surface_exact"] is True
     assert {name for name, _ in state["calls"]} == EXPECTED_TOOLS
-    assert all(name.upper() != "AUDIT_DATABASE_URL" for name in state["env"])
+    excluded = {
+        "AUDIT_DATABASE_URL",
+        "WOLF15_RECONCILIATION_ISSUER_KEY_B64URL",
+        "WOLF15_RECONCILIATION_ISSUER_KEY_ID",
+    }
+    assert not excluded.intersection(name.upper() for name in state["env"])
     assert state["env"][account_binding.KEY_ENV] == "session-key-fixture"
     provenance = result["collector_provenance"]
     assert provenance["configured_server_identity"] == "UNVERIFIED"
@@ -475,6 +483,8 @@ MT5_TERMINAL_PATH = "fixture-terminal"
 WOLF15_ACCOUNT_BINDING_KEY_B64URL = "fixture-stored-key"
 wolf15_account_binding_key_id = "fixture-stored-id"
 audit_database_url = "fixture-config-database"
+WOLF15_RECONCILIATION_ISSUER_KEY_B64URL = "fixture-issuer-key"
+wolf15_reconciliation_issuer_key_id = "fixture-issuer-id"
 """
     config.write_text(original, encoding="utf-8")
     expected = {"MT5_TERMINAL_PATH": "fixture-terminal"}
@@ -488,6 +498,8 @@ audit_database_url = "fixture-config-database"
             expected[name] = value
     monkeypatch.setenv("AUDIT_DATABASE_URL", "fixture-parent-database")
     monkeypatch.setenv("UNRELATED_PRIVATE_TOKEN", "fixture-unrelated-token")
+    monkeypatch.setenv("WOLF15_RECONCILIATION_ISSUER_KEY_B64URL", "fixture-parent-issuer-key")
+    monkeypatch.setenv("WOLF15_RECONCILIATION_ISSUER_KEY_ID", "fixture-parent-issuer-id")
     captured = []
 
     def fake_stdio(parameters):
