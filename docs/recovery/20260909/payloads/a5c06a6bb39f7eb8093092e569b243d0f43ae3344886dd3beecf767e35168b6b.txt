@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+from typing import cast
+
+from failure_reconciliation import parse_porcelain_v1, snapshot_evidence
+
+
+def test_01_worktree_modified_prefix_is_exact() -> None:
+    snapshot = parse_porcelain_v1(b" M file.py")
+    assert snapshot.records[0].raw == b" M file.py"
+    assert snapshot.records[0].index_status == b" "
+    assert snapshot.records[0].worktree_status == b"M"
+
+
+def test_02_index_modified_prefix_is_exact() -> None:
+    snapshot = parse_porcelain_v1(b"M  file.py")
+    assert snapshot.records[0].raw == b"M  file.py"
+    assert snapshot.records[0].index_status == b"M"
+    assert snapshot.records[0].worktree_status == b" "
+
+
+def test_03_both_modified_prefix_is_exact() -> None:
+    snapshot = parse_porcelain_v1(b"MM file.py")
+    assert snapshot.records[0].raw == b"MM file.py"
+
+
+def test_04_untracked_prefix_is_exact() -> None:
+    snapshot = parse_porcelain_v1(b"?? file.py")
+    assert snapshot.records[0].raw == b"?? file.py"
+
+
+def test_05_index_added_with_worktree_space_is_exact() -> None:
+    snapshot = parse_porcelain_v1(b" A file.py")
+    assert snapshot.records[0].raw == b" A file.py"
+
+
+def test_06_multiple_lines_preserve_order() -> None:
+    snapshot = parse_porcelain_v1(b"?? z.py\n M a.py")
+    assert [record.raw for record in snapshot.records] == [b"?? z.py", b" M a.py"]
+
+
+def test_07_first_line_leading_space_survives_evidence_conversion() -> None:
+    evidence = snapshot_evidence(parse_porcelain_v1(b" M first.py\n?? second.py\n"))
+    records = cast(list[dict[str, object]], evidence["records"])
+    first = records[0]
+    assert evidence["raw_utf8"] == " M first.py\n?? second.py\n"
+    assert first["raw_utf8"] == " M first.py"
+
+
+def test_08_filename_spaces_are_preserved() -> None:
+    snapshot = parse_porcelain_v1(b" M folder/file name.py")
+    assert snapshot.records[0].path == b"folder/file name.py"
+
+
+def test_09_empty_output_is_clean() -> None:
+    snapshot = parse_porcelain_v1(b"")
+    assert snapshot.clean
+    assert snapshot.records == ()
+
+
+def test_10_newline_termination_is_recorded_without_normalization() -> None:
+    terminated = parse_porcelain_v1(b"?? file.py\n")
+    unterminated = parse_porcelain_v1(b"?? file.py")
+    assert terminated.records == unterminated.records
+    assert terminated.raw != unterminated.raw
+    assert terminated.newline_terminated is True
+    assert unterminated.newline_terminated is False

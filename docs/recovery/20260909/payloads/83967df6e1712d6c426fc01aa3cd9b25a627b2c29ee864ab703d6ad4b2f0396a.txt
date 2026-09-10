@@ -1,0 +1,146 @@
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+
+class ExactDiffMismatch(RuntimeError):
+    """Fail-closed rejection for a non-canonical controller candidate."""
+
+
+@dataclass(frozen=True)
+class ExactDiffResult:
+    status: str
+    historical_sha256: str
+    expected_sha256: str
+    candidate_sha256: str
+    replacement_count: int
+    scope: str
+
+
+AUTHORIZED_SCOPE = (
+    "CONTAINED_VERIFIER_CLEANUP_IMPORT_AND_CALL_PLUS_NONRUNTIME_TYPE_ANNOTATION"
+)
+
+AUTHORIZED_REPLACEMENTS: tuple[tuple[bytes, bytes], ...] = (
+    (
+        b"import re\nimport shutil\nimport subprocess\n",
+        b"import re\nimport subprocess\n",
+    ),
+    (
+        b"from typing import Any\n\n\nROOT =",
+        b"from typing import Any\n\n"
+        b"from rc6l_cleanup import cleanup_disposable_verifier\n\nROOT =",
+    ),
+    (
+        b"""    verifier_resolved = verifier.resolve()
+    if not verifier_resolved.is_relative_to(ROOT.resolve()):
+        raise RuntimeError("BUNDLE_VERIFIER_CLEANUP_CONTAINMENT_FAILED")
+    shutil.rmtree(verifier_resolved)
+    return {
+        "bundle_ref_count": len(head_lines),
+        "content_harness_commit": CONTENT_HARNESS_COMMIT,
+        "content_harness_tree": observed_tree,
+        "git_bundle_verify": "PASS",
+        "bundle_verifier_cleanup": "PASS",
+    }
+""",
+        b"""    cleanup_result = cleanup_disposable_verifier(
+        verifier,
+        ROOT / "temp",
+        protected_paths=(ROOT, EVIDENCE, bundle, Path.cwd()),
+    )
+    if cleanup_result.status != "REMOVED":
+        raise RuntimeError("BUNDLE_VERIFIER_CLEANUP_DID_NOT_REMOVE_TARGET")
+    return {
+        "bundle_ref_count": len(head_lines),
+        "content_harness_commit": CONTENT_HARNESS_COMMIT,
+        "content_harness_tree": observed_tree,
+        "git_bundle_verify": "PASS",
+        "bundle_verifier_cleanup": "PASS",
+        "bundle_verifier_readonly_attributes_cleared": (
+            cleanup_result.readonly_attributes_cleared
+        ),
+    }
+""",
+    ),
+    (
+        b"""    manifest = {
+        "schema": "wolf15.rc6l.remote-readonly-evidence-manifest.v2",
+""",
+        b"""    manifest: dict[str, Any] = {
+        "schema": "wolf15.rc6l.remote-readonly-evidence-manifest.v2",
+""",
+    ),
+)
+
+
+def sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def canonical_expected_bytes(historical: bytes) -> bytes:
+    """Apply only the four byte-exact authorized replacements."""
+    expected = historical
+    for before, after in AUTHORIZED_REPLACEMENTS:
+        if expected.count(before) != 1:
+            raise ExactDiffMismatch("HISTORICAL_ANCHOR_NOT_UNIQUE")
+        expected = expected.replace(before, after, 1)
+    return expected
+
+
+def stale_expected_bytes(historical: bytes) -> bytes:
+    """Reproduce the obsolete extra-blank-line sealer fixture."""
+    canonical = canonical_expected_bytes(historical)
+    anchor = b"from rc6l_cleanup import cleanup_disposable_verifier\n\nROOT ="
+    stale = b"from rc6l_cleanup import cleanup_disposable_verifier\n\n\nROOT ="
+    if canonical.count(anchor) != 1:
+        raise ExactDiffMismatch("CANONICAL_FORMAT_ANCHOR_NOT_UNIQUE")
+    return canonical.replace(anchor, stale, 1)
+
+
+def assert_subject_identity(
+    observed: Mapping[str, str], expected: Mapping[str, str]
+) -> None:
+    if set(observed) != set(expected):
+        raise ExactDiffMismatch("SUBJECT_IDENTITY_FIELD_SET_MISMATCH")
+    for field, expected_value in expected.items():
+        if observed[field] != expected_value:
+            raise ExactDiffMismatch(f"SUBJECT_IDENTITY_MISMATCH:{field}")
+
+
+def assert_exact_controller_delta(
+    historical: bytes,
+    candidate: bytes,
+    *,
+    expected_candidate_sha256: str,
+) -> ExactDiffResult:
+    candidate_sha256 = sha256_bytes(candidate)
+    if candidate_sha256 != expected_candidate_sha256:
+        raise ExactDiffMismatch("CONTROLLER_SCRIPT_HASH_MISMATCH")
+    expected = canonical_expected_bytes(historical)
+    if candidate != expected:
+        raise ExactDiffMismatch("CONTROLLER_EXACT_DIFF_MISMATCH")
+    return ExactDiffResult(
+        status="PASS_EXACT_CANONICAL_BYTES",
+        historical_sha256=sha256_bytes(historical),
+        expected_sha256=sha256_bytes(expected),
+        candidate_sha256=candidate_sha256,
+        replacement_count=len(AUTHORIZED_REPLACEMENTS),
+        scope=AUTHORIZED_SCOPE,
+    )
+
+
+def assert_exact_controller_files(
+    historical_path: Path,
+    candidate_path: Path,
+    *,
+    expected_candidate_sha256: str,
+) -> ExactDiffResult:
+    return assert_exact_controller_delta(
+        historical_path.read_bytes(),
+        candidate_path.read_bytes(),
+        expected_candidate_sha256=expected_candidate_sha256,
+    )

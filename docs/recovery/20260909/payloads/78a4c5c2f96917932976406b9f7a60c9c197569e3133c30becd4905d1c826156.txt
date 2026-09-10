@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import subprocess
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+
+class PorcelainParseError(ValueError):
+    """Raised when Git porcelain-v1 output cannot be parsed exactly."""
+
+
+@dataclass(frozen=True)
+class PorcelainRecord:
+    raw: bytes
+    index_status: bytes
+    worktree_status: bytes
+    path: bytes
+
+
+@dataclass(frozen=True)
+class PorcelainSnapshot:
+    raw: bytes
+    records: tuple[PorcelainRecord, ...]
+    newline_terminated: bool
+
+    @property
+    def clean(self) -> bool:
+        return not self.records
+
+
+def parse_porcelain_v1(raw: bytes) -> PorcelainSnapshot:
+    """Parse porcelain-v1 bytes without discarding either status column."""
+
+    if b"\x00" in raw or b"\r" in raw:
+        raise PorcelainParseError("unsupported porcelain framing")
+    if raw == b"":
+        return PorcelainSnapshot(raw, (), False)
+    newline_terminated = raw.endswith(b"\n")
+    lines = raw.split(b"\n")
+    if newline_terminated:
+        lines.pop()
+    if any(line == b"" for line in lines):
+        raise PorcelainParseError("empty line inside porcelain output")
+
+    records: list[PorcelainRecord] = []
+    for line in lines:
+        if len(line) < 4 or line[2:3] != b" ":
+            raise PorcelainParseError("malformed porcelain-v1 record")
+        index_status = line[0:1]
+        worktree_status = line[1:2]
+        if index_status == b" " and worktree_status == b" ":
+            raise PorcelainParseError("record has no status")
+        records.append(
+            PorcelainRecord(
+                raw=line,
+                index_status=index_status,
+                worktree_status=worktree_status,
+                path=line[3:],
+            )
+        )
+    return PorcelainSnapshot(raw, tuple(records), newline_terminated)
+
+
+Runner = Callable[..., subprocess.CompletedProcess[bytes]]
+
+
+def captured_process_streams(
+    result: subprocess.CompletedProcess[bytes],
+) -> tuple[bytes, bytes]:
+    """Return captured byte streams without fallback, coercion, or decoding."""
+
+    return result.stdout, result.stderr
+
+
+def collect_git_porcelain(
+    repo: Path, *, runner: Runner = subprocess.run
+) -> PorcelainSnapshot:
+    """Collect exact porcelain-v1 bytes for an explicitly bound repository."""
+
+    resolved_repo = repo.resolve(strict=True)
+    completed = runner(
+        [
+            "git",
+            "-C",
+            str(resolved_repo),
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        ],
+        check=False,
+        capture_output=True,
+    )
+    stdout, stderr = captured_process_streams(completed)
+    if completed.returncode != 0 or stderr:
+        raise RuntimeError(
+            f"git porcelain collection failed with exit {completed.returncode}"
+        )
+    return parse_porcelain_v1(stdout)
+
+
+def snapshot_evidence(snapshot: PorcelainSnapshot) -> dict[str, object]:
+    """Return lossless text evidence without normalizing significant prefixes."""
+
+    return {
+        "clean": snapshot.clean,
+        "newline_terminated": snapshot.newline_terminated,
+        "raw_utf8": snapshot.raw.decode("utf-8", errors="strict"),
+        "records": [
+            {
+                "raw_utf8": record.raw.decode("utf-8", errors="strict"),
+                "index_status": record.index_status.decode("ascii"),
+                "worktree_status": record.worktree_status.decode("ascii"),
+                "path_utf8": record.path.decode("utf-8", errors="strict"),
+            }
+            for record in snapshot.records
+        ],
+    }

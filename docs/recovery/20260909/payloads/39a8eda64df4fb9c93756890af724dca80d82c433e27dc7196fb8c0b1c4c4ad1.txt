@@ -1,0 +1,110 @@
+"""Twelve original pure transport cases; campaign subprocess cases excluded."""
+from __future__ import annotations
+
+import base64
+import unittest
+
+from control.spec_schema import SpecValidationError, canonical_json_bytes, strict_json_loads
+from control.spec_transport import TransportError, decode_spec, encode_spec, synthetic_spec
+
+
+class CanonicalTransportTests(unittest.TestCase):
+    def test_false_true_null_semantics(self) -> None:
+        synthetic = synthetic_spec(None)
+        decoded = decode_spec(
+            encode_spec(synthetic).encoded, encode_spec(synthetic).sha256
+        )
+        self.assertIs(decoded["annotation"], None)
+        self.assertIs(
+            decoded["execution_boundary"]["systemd_mutation_authorized"], False
+        )
+        operational = synthetic_spec()
+        operational["execution_boundary"] = {
+            "mode": "OPERATIONAL_RC6Q",
+            "ssh_campaign_limit": 1,
+            "remote_python_invocation_limit": 1,
+            "systemd_mutation_authorized": True,
+            "docker_object_mutation_authorized": False,
+            "package_operations_authorized": False,
+            "automatic_reruns": 0,
+        }
+        encoded = encode_spec(operational)
+        self.assertIs(
+            decode_spec(encoded.encoded, encoded.sha256)["execution_boundary"][
+                "systemd_mutation_authorized"
+            ],
+            True,
+        )
+
+    def test_string_false_remains_string(self) -> None:
+        spec = synthetic_spec("false")
+        encoded = encode_spec(spec)
+        self.assertEqual(
+            decode_spec(encoded.encoded, encoded.sha256)["annotation"], "false"
+        )
+
+    def test_integer_zero_or_one_as_boolean_rejected(self) -> None:
+        for value in (0, 1):
+            spec = synthetic_spec()
+            spec["execution_boundary"]["systemd_mutation_authorized"] = value
+            with self.subTest(value=value), self.assertRaises(SpecValidationError):
+                encode_spec(spec)
+
+    def test_nested_and_unicode_roundtrip_is_exact(self) -> None:
+        spec = synthetic_spec('quotes " slash \\ newline\n Unicode Ω 中文')
+        encoded = encode_spec(spec)
+        self.assertEqual(decode_spec(encoded.encoded, encoded.sha256), spec)
+        self.assertEqual(
+            base64.urlsafe_b64decode(
+                encoded.encoded + "=" * ((4 - len(encoded.encoded) % 4) % 4)
+            ),
+            encoded.canonical_bytes,
+        )
+
+    def test_duplicate_key_rejected(self) -> None:
+        with self.assertRaisesRegex(SpecValidationError, "DUPLICATE_KEY"):
+            strict_json_loads(b'{"schema_version":"x","schema_version":"y"}')
+
+    def test_nan_and_infinity_rejected(self) -> None:
+        for token in (b"NaN", b"Infinity", b"-Infinity"):
+            with (
+                self.subTest(token=token),
+                self.assertRaisesRegex(SpecValidationError, "NON_FINITE_NUMBER"),
+            ):
+                strict_json_loads(b'{"value":' + token + b"}")
+
+    def test_top_level_array_and_string_rejected(self) -> None:
+        for raw in (b"[]", b'"string"'):
+            with (
+                self.subTest(raw=raw),
+                self.assertRaisesRegex(SpecValidationError, "TOP_LEVEL_NOT_OBJECT"),
+            ):
+                strict_json_loads(raw)
+
+    def test_malformed_base64url_rejected(self) -> None:
+        with self.assertRaises(TransportError):
+            decode_spec("@@@", "0" * 64)
+        with self.assertRaises(TransportError):
+            decode_spec("A", "0" * 64)
+
+    def test_digest_mismatch_rejected(self) -> None:
+        encoded = encode_spec(synthetic_spec())
+        with self.assertRaisesRegex(TransportError, "PAYLOAD_DIGEST_MISMATCH"):
+            decode_spec(encoded.encoded, "f" * 64)
+
+    def test_trailing_bytes_rejected(self) -> None:
+        raw = canonical_json_bytes(synthetic_spec()) + b" "
+        with self.assertRaisesRegex(SpecValidationError, "TRAILING_BYTES"):
+            strict_json_loads(raw)
+
+    def test_missing_schema_version_rejected(self) -> None:
+        spec = synthetic_spec()
+        del spec["schema_version"]
+        with self.assertRaises(SpecValidationError):
+            encode_spec(spec)
+
+    def test_disallowed_null_rejected(self) -> None:
+        spec = synthetic_spec()
+        spec["campaign_id"] = None
+        with self.assertRaises(SpecValidationError):
+            encode_spec(spec)

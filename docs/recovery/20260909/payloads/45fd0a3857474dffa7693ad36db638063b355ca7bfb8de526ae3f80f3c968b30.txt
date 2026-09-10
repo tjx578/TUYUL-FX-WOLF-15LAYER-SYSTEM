@@ -1,0 +1,643 @@
+"""
+Hybrid Candle Aggregator v5 — Dual-Zone Dashboard.
+
+Dashboard is a PURE DISPLAY LAYER. It never computes TRQ, pipeline
+scores, or trading decisions. All data comes from Redis.
+
+Data sources:
+  CLOSED bars (ALL TF):  Redis PubSub candle:{SYM}:{TF}
+  FORMING M15:           Redis HGET wolf15:candle:forming:{SYM}:M15
+  FORMING H1:            Redis HGET wolf15:candle:forming:{SYM}:H1
+  FORMING M1/M5:         Local tick aggregation (cosmetic preview)
+  TRQ PRE-MOVE:          Redis HGET wolf15:trq:premove:{SYM}
+  TRQ R3D HISTORY:       Redis LRANGE wolf15:trq:r3d_history:{SYM}
+  ZONE CONFLUENCE:        Redis HGET wolf15:confluence:{SYM}
+
+SSOT verification:
+  H1/H4/D1/W1 closed = Redis (identical to engine)    100% SSOT
+  M15 closed          = Redis (identical to engine)    100% SSOT
+  H1 forming          = Redis (from ingest builder)    100% SSOT
+  M15 forming         = Redis (from ingest builder)    100% SSOT
+  TRQ output          = Redis (from engine compute)    100% SSOT
+  M1/M5 forming       = Local (cosmetic only)          Safe
+
+Zone: api/ (presentation layer). No execution authority.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import time
+from collections import deque
+from datetime import UTC
+from datetime import datetime as _dt
+from typing import Any, TypedDict
+
+from loguru import logger
+from pydantic import BaseModel, ValidationError
+
+from core.redis_keys import (
+    candle_forming,
+    trq_premove,
+    trq_r3d_history,
+    zone_confluence,
+)
+from ingest.candle_builder import CandleBuilder, Timeframe
+from storage.redis_client import redis_client
+
+
+USE_REDIS_FORMING: bool = (
+    os.getenv("USE_REDIS_FORMING", "true").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+
+
+class CandleBar(TypedDict):
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    ts_open: float
+    ts_close: float
+
+
+class FormingBarData(BaseModel):
+    """Validate forming bar from Redis HGET."""
+
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float = 0.0
+    tick_count: int = 0
+    ts_open: float
+    ts_close: float
+    updated_at: float = 0.0
+
+
+FORMING_STALE_SEC: float = 5.0
+
+
+class HybridCandleAggregator:
+    """Dual-zone dashboard aggregator — pure display, zero computation.
+
+    Candle data: Redis SSOT for M15+H1 forming + all closed bars.
+    TRQ data:    Redis SSOT (engine output only).
+    M1/M5:       Local preview (cosmetic, no engine impact).
+    """
+
+    CLOSED_HISTORY_SIZE = 50
+    FORMING_TFS = ("M15", "H1")
+    FORMING_POLL_SEC = 0.5
+    TRQ_POLL_SEC = 1.0
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Closed bars (Redis PubSub)
+        self._closed: dict[str, dict[str, deque[dict[str, Any]]]] = {}
+        self._latest_closed: dict[str, dict[str, dict[str, Any]]] = {}
+
+        # Forming bars (Redis HGET: M15 + H1)
+        self._forming: dict[str, dict[str, dict[str, Any]]] = {}
+
+        # TRQ output (Redis HGET)
+        self._trq_premove: dict[str, dict[str, Any]] = {}
+        self._trq_r3d_history: dict[str, list[dict[str, Any]]] = {}
+
+        # Zone confluence (Redis HGET)
+        self._confluence: dict[str, dict[str, Any]] = {}
+
+        # Local M1/M5 builders (cosmetic preview)
+        self._local_builders: dict[str, dict[str, CandleBuilder]] = {}
+
+        # H1 local fallback (when USE_REDIS_FORMING=false)
+        self._h1_local: dict[str, CandleBuilder] = {}
+        self._m15_local: dict[str, CandleBuilder] = {}
+
+        # Tasks
+        self._tasks: list[asyncio.Task[None]] = []
+        self._running = False
+        self._tracked: set[str] = set()
+
+    # ── Lifecycle ─────────────────────────────────────────────────
+
+    async def start(self, symbols: list[str] | None = None) -> None:
+        """Start all subscriber/poller tasks."""
+        if self._running:
+            return
+        self._running = True
+        if symbols:
+            self._tracked = set(s.upper() for s in symbols)
+
+        self._tasks = [
+            asyncio.create_task(
+                self._closed_bar_sub(), name="Candle-ClosedSub"
+            ),
+            asyncio.create_task(
+                self._forming_poller(), name="Candle-FormingPoll"
+            ),
+            asyncio.create_task(
+                self._trq_poller(), name="Candle-TRQPoll"
+            ),
+        ]
+        mode = "Redis SSOT" if USE_REDIS_FORMING else "local fallback"
+        logger.info(
+            "[HybridAgg-v5] Started (symbols=%d, forming=%s)",
+            len(self._tracked),
+            mode,
+        )
+
+    async def stop(self) -> None:
+        """Stop all tasks."""
+        self._running = False
+        for t in self._tasks:
+            if not t.done():
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+        self._tasks.clear()
+        logger.info("[HybridAgg-v5] Stopped")
+
+    # ── Closed bars: Redis PubSub ─────────────────────────────────
+
+    async def _closed_bar_sub(self) -> None:
+        while self._running:
+            pubsub = None
+            try:
+                pubsub = redis_client.pubsub()
+                pubsub.psubscribe("candle:*")
+                while self._running:
+                    msg = await asyncio.to_thread(
+                        pubsub.get_message,
+                        ignore_subscribe_messages=True,
+                        timeout=1.0,
+                    )
+                    if not msg or msg.get("type") not in (
+                        "pmessage",
+                        "message",
+                    ):
+                        continue
+                    ch = msg.get("channel", b"")
+                    if isinstance(ch, bytes):
+                        ch = ch.decode()
+                    if "forming" in ch:
+                        continue
+                    try:
+                        raw = msg.get("data")
+                        if isinstance(raw, bytes):
+                            raw = raw.decode()
+                        if raw:
+                            c = json.loads(raw)
+                            if isinstance(c, dict):
+                                self._store_closed(c)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.warning("[HybridAgg] Closed sub error: %s", exc)
+                await asyncio.sleep(5)
+            finally:
+                if pubsub:
+                    try:
+                        pubsub.close()
+                    except Exception:
+                        pass
+
+    def _store_closed(self, candle: dict[str, Any]) -> None:
+        sym = str(candle.get("symbol", "")).upper()
+        tf = str(candle.get("timeframe", "")).upper()
+        if not sym or not tf:
+            return
+        tf_sec = {
+            "M1": 60, "M5": 300, "M15": 900, "H1": 3600,
+            "H4": 14400, "D1": 86400, "W1": 604800,
+        }
+        period = tf_sec.get(tf)
+        if not period:
+            return
+        ts_raw = candle.get("timestamp")
+        if isinstance(ts_raw, _dt):
+            tv = ts_raw.timestamp()
+        elif isinstance(ts_raw, str):
+            try:
+                tv = _dt.fromisoformat(ts_raw).timestamp()
+            except (ValueError, TypeError):
+                tv = time.time()
+        elif isinstance(ts_raw, (int, float)):
+            tv = float(ts_raw)
+        else:
+            tv = time.time()
+        ts_o = float(int(tv) // period * period)
+        bar = {
+            "open": float(candle.get("open", 0)),
+            "high": float(candle.get("high", 0)),
+            "low": float(candle.get("low", 0)),
+            "close": float(candle.get("close", 0)),
+            "volume": int(candle.get("volume", 0)),
+            "ts_open": ts_o,
+            "ts_close": ts_o + period,
+            "status": "closed",
+            "source": "redis",
+        }
+        self._closed.setdefault(sym, {})
+        self._closed[sym].setdefault(
+            tf, deque(maxlen=self.CLOSED_HISTORY_SIZE)
+        )
+        self._closed[sym][tf].append(bar)
+        self._latest_closed.setdefault(sym, {})[tf] = bar
+        self._tracked.add(sym)
+
+    # ── Forming bars: Redis HGET (M15 + H1) ───────────────────────
+
+    async def _forming_poller(self) -> None:
+        while self._running:
+            try:
+                for sym in list(self._tracked):
+                    if not self._running:
+                        break
+                    sym_forming: dict[str, dict[str, Any]] = {}
+                    for tf in self.FORMING_TFS:
+                        if not USE_REDIS_FORMING:
+                            continue
+                        key = candle_forming(sym, tf)
+                        try:
+                            raw = redis_client.client.hgetall(key)
+                            if not raw:
+                                continue
+                            data = {
+                                (
+                                    k.decode()
+                                    if isinstance(k, bytes)
+                                    else str(k)
+                                ): (
+                                    v.decode()
+                                    if isinstance(v, bytes)
+                                    else str(v)
+                                )
+                                for k, v in raw.items()
+                            }
+                            try:
+                                v = FormingBarData(
+                                    open=float(data.get("open", "0")),
+                                    high=float(data.get("high", "0")),
+                                    low=float(data.get("low", "0")),
+                                    close=float(data.get("close", "0")),
+                                    volume=float(
+                                        data.get("volume", "0")
+                                    ),
+                                    tick_count=int(
+                                        float(
+                                            data.get("tick_count", "0")
+                                        )
+                                    ),
+                                    ts_open=float(
+                                        data.get("ts_open", "0")
+                                    ),
+                                    ts_close=float(
+                                        data.get("ts_close", "0")
+                                    ),
+                                    updated_at=float(
+                                        data.get("updated_at", "0")
+                                    ),
+                                )
+                            except ValidationError:
+                                continue
+                            age = time.time() - v.updated_at
+                            if age > 120:
+                                continue
+                            sym_forming[tf] = {
+                                "open": v.open,
+                                "high": v.high,
+                                "low": v.low,
+                                "close": v.close,
+                                "volume": v.tick_count,
+                                "ts_open": v.ts_open,
+                                "ts_close": v.ts_close,
+                                "status": "forming",
+                                "source": "ingest",
+                                "stale": age > FORMING_STALE_SEC,
+                                "age_ms": int(age * 1000),
+                            }
+                        except Exception:
+                            pass
+                    if sym_forming:
+                        self._forming[sym] = sym_forming
+                await asyncio.sleep(self.FORMING_POLL_SEC)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(2)
+
+    # ── TRQ output + confluence: Redis HGET ───────────────────────
+
+    async def _trq_poller(self) -> None:
+        while self._running:
+            try:
+                for sym in list(self._tracked):
+                    if not self._running:
+                        break
+                    # TRQ pre-move
+                    try:
+                        raw = redis_client.client.hgetall(
+                            trq_premove(sym)
+                        )
+                        if raw:
+                            data = {
+                                (
+                                    k.decode()
+                                    if isinstance(k, bytes)
+                                    else str(k)
+                                ): (
+                                    v.decode()
+                                    if isinstance(v, bytes)
+                                    else str(v)
+                                )
+                                for k, v in raw.items()
+                            }
+                            self._trq_premove[sym] = data
+                    except Exception:
+                        pass
+                    # R3D history
+                    try:
+                        raw_list = redis_client.client.lrange(
+                            trq_r3d_history(sym), -50, -1
+                        )
+                        if raw_list:
+                            entries = []
+                            for item in raw_list:
+                                s = (
+                                    item.decode()
+                                    if isinstance(item, bytes)
+                                    else str(item)
+                                )
+                                try:
+                                    entries.append(json.loads(s))
+                                except json.JSONDecodeError:
+                                    pass
+                            self._trq_r3d_history[sym] = entries
+                    except Exception:
+                        pass
+                    # Zone confluence
+                    try:
+                        raw = redis_client.client.hgetall(
+                            zone_confluence(sym)
+                        )
+                        if raw:
+                            data = {
+                                (
+                                    k.decode()
+                                    if isinstance(k, bytes)
+                                    else str(k)
+                                ): (
+                                    v.decode()
+                                    if isinstance(v, bytes)
+                                    else str(v)
+                                )
+                                for k, v in raw.items()
+                            }
+                            self._confluence[sym] = data
+                    except Exception:
+                        pass
+                await asyncio.sleep(self.TRQ_POLL_SEC)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(2)
+
+    # ── Local M1/M5 builders (cosmetic preview) ───────────────────
+
+    def ingest_tick(
+        self,
+        symbol: str,
+        bid: float,
+        ask: float,
+        ts: float,
+    ) -> None:
+        """Feed tick for M1/M5 local preview + fallback M15/H1."""
+        sym = symbol.upper()
+        self._tracked.add(sym)
+        mid = round((bid + ask) / 2, 6)
+        timestamp = _dt.fromtimestamp(ts, tz=UTC)
+
+        # M1/M5 always local (cosmetic)
+        if sym not in self._local_builders:
+            self._local_builders[sym] = {
+                "M1": CandleBuilder(sym, Timeframe.M1),
+                "M5": CandleBuilder(sym, Timeframe.M5),
+            }
+        for cb in self._local_builders[sym].values():
+            cb.on_tick(mid, timestamp, volume=1.0)
+
+        # Fallback: M15/H1 local only if Redis disabled
+        if not USE_REDIS_FORMING:
+            if sym not in self._m15_local:
+                self._m15_local[sym] = CandleBuilder(
+                    sym, Timeframe.M15
+                )
+            self._m15_local[sym].on_tick(mid, timestamp, volume=1.0)
+            if sym not in self._h1_local:
+                self._h1_local[sym] = CandleBuilder(
+                    sym, Timeframe.H1
+                )
+            self._h1_local[sym].on_tick(mid, timestamp, volume=1.0)
+
+    # ── Public API: candle data ───────────────────────────────────
+
+    def get_forming_bars(
+        self,
+        symbol: str | None = None,
+    ) -> dict[str, dict[str, dict[str, Any]]]:
+        """Return forming bars: M15+H1 from Redis, M1/M5 local."""
+        result: dict[str, dict[str, dict[str, Any]]] = {}
+        syms = (
+            [symbol.upper()] if symbol
+            else sorted(self._tracked)
+        )
+        for sym in syms:
+            bars: dict[str, dict[str, Any]] = {}
+            # M15+H1 from Redis
+            redis_forming = self._forming.get(sym, {})
+            bars.update(redis_forming)
+            # M1/M5 from local
+            local = self._local_builders.get(sym, {})
+            for tf_name, cb in local.items():
+                p = cb.current_partial
+                if p:
+                    bars[tf_name] = {
+                        "open": p.open,
+                        "high": p.high,
+                        "low": p.low,
+                        "close": p.close,
+                        "volume": p.tick_count,
+                        "ts_open": p.open_time.timestamp(),
+                        "ts_close": p.close_time.timestamp(),
+                        "status": "forming",
+                        "source": "local",
+                        "stale": False,
+                    }
+            # Fallback M15/H1 from local
+            if not USE_REDIS_FORMING:
+                for tf, store in [
+                    ("M15", self._m15_local),
+                    ("H1", self._h1_local),
+                ]:
+                    cb = store.get(sym)
+                    if cb:
+                        p = cb.current_partial
+                        if p:
+                            bars[tf] = {
+                                "open": p.open,
+                                "high": p.high,
+                                "low": p.low,
+                                "close": p.close,
+                                "volume": p.tick_count,
+                                "ts_open": p.open_time.timestamp(),
+                                "ts_close": p.close_time.timestamp(),
+                                "status": "forming",
+                                "source": "local",
+                                "stale": False,
+                            }
+            if bars:
+                result[sym] = bars
+        return result
+
+    def get_closed_bars(
+        self,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, dict[str, list[dict[str, Any]]]]:
+        """Return closed bars from Redis PubSub history."""
+        result: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        syms = (
+            [symbol.upper()] if symbol
+            else list(self._closed.keys())
+        )
+        for sym in syms:
+            sd = self._closed.get(sym)
+            if not sd:
+                continue
+            tfs = (
+                [timeframe.upper()] if timeframe
+                else list(sd.keys())
+            )
+            result[sym] = {}
+            for tf in tfs:
+                bars = sd.get(tf)
+                if bars:
+                    result[sym][tf] = list(bars)[-limit:]
+        return result
+
+    def get_combined_snapshot(
+        self,
+        symbol: str | None = None,
+    ) -> dict[str, dict[str, dict[str, Any]]]:
+        """Combined: closed + forming + TRQ per symbol. Primary WS snapshot."""
+        forming = self.get_forming_bars(symbol)
+        closed = self.get_latest_closed(symbol)
+        all_syms = set(forming.keys()) | set(closed.keys())
+        result: dict[str, dict[str, dict[str, Any]]] = {}
+        for sym in all_syms:
+            sf = forming.get(sym, {})
+            sc = closed.get(sym, {})
+            all_tfs = set(sf.keys()) | set(sc.keys())
+            result[sym] = {}
+            for tf in all_tfs:
+                fb = sf.get(tf)
+                cb = sc.get(tf)
+                combined: dict[str, Any] = {}
+                if cb:
+                    combined["closed"] = cb
+                if fb:
+                    combined["forming"] = fb
+                combined["current"] = {**(fb or cb or {})}
+                result[sym][tf] = combined
+        return result
+
+    def get_latest_closed(
+        self,
+        symbol: str | None = None,
+    ) -> dict[str, dict[str, dict[str, Any]]]:
+        if symbol:
+            return {
+                symbol.upper(): self._latest_closed.get(
+                    symbol.upper(), {}
+                ),
+            }
+        return dict(self._latest_closed)
+
+    # ── Public API: TRQ engine output (display only) ──────────────
+
+    def get_trq_premove(
+        self,
+        symbol: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Return TRQ pre-move state from engine (display only)."""
+        if symbol:
+            data = self._trq_premove.get(symbol.upper())
+            return {symbol.upper(): data} if data else {}
+        return dict(self._trq_premove)
+
+    def get_trq_r3d_history(
+        self,
+        symbol: str,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Return R3D energy history for chart overlay."""
+        return self._trq_r3d_history.get(
+            symbol.upper(), []
+        )[-limit:]
+
+    def get_confluence(
+        self,
+        symbol: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Return dual-zone confluence state (display only)."""
+        if symbol:
+            data = self._confluence.get(symbol.upper())
+            return {symbol.upper(): data} if data else {}
+        return dict(self._confluence)
+
+    # ── Backward compat ───────────────────────────────────────────
+
+    def get_current_bars(
+        self,
+        symbol: str | None = None,
+    ) -> dict[str, dict[str, CandleBar]]:
+        """DEPRECATED: backward-compat with old CandleAggregator."""
+        forming = self.get_forming_bars(symbol)
+        result: dict[str, dict[str, CandleBar]] = {}
+        for sym, tfs in forming.items():
+            result[sym] = {}
+            for tf, bar in tfs.items():
+                result[sym][tf] = {
+                    "open": bar.get("open", 0.0),
+                    "high": bar.get("high", 0.0),
+                    "low": bar.get("low", 0.0),
+                    "close": bar.get("close", 0.0),
+                    "volume": bar.get("volume", 0),
+                    "ts_open": bar.get("ts_open", 0.0),
+                    "ts_close": bar.get("ts_close", 0.0),
+                }
+        return result
+
+    def health(self) -> dict[str, Any]:
+        return {
+            "redis_forming": USE_REDIS_FORMING,
+            "tracked": len(self._tracked),
+            "closed_syms": len(self._closed),
+            "forming_syms": len(self._forming),
+            "trq_syms": len(self._trq_premove),
+            "confluence_syms": len(self._confluence),
+            "local_builders": len(self._local_builders),
+        }
+
+    @property
+    def tracked_symbols(self) -> list[str]:
+        return sorted(self._tracked)

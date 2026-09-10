@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+SCHEMA_VERSION = "wolf15.rc6q.spec.v1"
+MODES = {"OPERATIONAL_RC6Q", "SYNTHETIC_ACCEPTANCE"}
+HEX64 = re.compile(r"[0-9a-f]{64}")
+
+SPEC_REQUIRED = {
+    "schema_version",
+    "campaign_id",
+    "campaign_started_utc",
+    "remediation_lock_packet_sha256",
+    "identities",
+    "execution_boundary",
+}
+SPEC_OPTIONAL = {"annotation"}
+IDENTITY_TYPES: dict[str, type[object]] = {
+    "role": str,
+    "observed_path": str,
+    "canonical_path": str,
+    "path_is_symlink": bool,
+    "file_type": str,
+    "uid": int,
+    "gid": int,
+    "owner_name": str,
+    "group_name": str,
+    "mode_octal": str,
+    "size_bytes": int,
+    "sha256": str,
+    "identity_method": str,
+    "source_capture_role": str,
+    "capture_campaign": str,
+    "capture_receipt_sha256": str,
+}
+BOUNDARY_TYPES: dict[str, type[object]] = {
+    "mode": str,
+    "ssh_campaign_limit": int,
+    "remote_python_invocation_limit": int,
+    "systemd_mutation_authorized": bool,
+    "docker_object_mutation_authorized": bool,
+    "package_operations_authorized": bool,
+    "automatic_reruns": int,
+}
+
+
+class SpecValidationError(ValueError):
+    pass
+
+
+def _reject_constant(value: str) -> Any:
+    raise SpecValidationError(f"NON_FINITE_NUMBER:{value}")
+
+
+def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise SpecValidationError(f"DUPLICATE_KEY:{key}")
+        result[key] = value
+    return result
+
+
+def strict_json_loads(data: bytes) -> dict[str, Any]:
+    try:
+        text = data.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise SpecValidationError("INVALID_UTF8") from exc
+    decoder = json.JSONDecoder(
+        object_pairs_hook=_reject_duplicates, parse_constant=_reject_constant
+    )
+    try:
+        value, end = decoder.raw_decode(text)
+    except (json.JSONDecodeError, SpecValidationError) as exc:
+        if isinstance(exc, SpecValidationError):
+            raise
+        raise SpecValidationError("MALFORMED_JSON") from exc
+    if end != len(text):
+        raise SpecValidationError("TRAILING_BYTES")
+    if type(value) is not dict:
+        raise SpecValidationError("TOP_LEVEL_NOT_OBJECT")
+    return value
+
+
+def _require_exact_type(
+    container: dict[str, Any], key: str, expected: type[object], prefix: str
+) -> None:
+    if key not in container or type(container[key]) is not expected:
+        raise SpecValidationError(f"{prefix}_{key.upper()}_TYPE")
+
+
+def _validate_identity(identity: object, index: int) -> None:
+    if type(identity) is not dict:
+        raise SpecValidationError(f"IDENTITY_{index}_TYPE")
+    typed = identity
+    if set(typed) != set(IDENTITY_TYPES):
+        raise SpecValidationError(f"IDENTITY_{index}_FIELDS")
+    for key, expected in IDENTITY_TYPES.items():
+        _require_exact_type(typed, key, expected, f"IDENTITY_{index}")
+        value = typed[key]
+        if expected is str and not value:
+            raise SpecValidationError(f"IDENTITY_{index}_{key.upper()}_EMPTY")
+        if expected is int and value < 0:
+            raise SpecValidationError(f"IDENTITY_{index}_{key.upper()}_NEGATIVE")
+    if not HEX64.fullmatch(typed["sha256"]):
+        raise SpecValidationError(f"IDENTITY_{index}_SHA256_FORMAT")
+    if not HEX64.fullmatch(typed["capture_receipt_sha256"]):
+        raise SpecValidationError(f"IDENTITY_{index}_CAPTURE_RECEIPT_SHA256_FORMAT")
+
+
+def _validate_boundary(boundary: object) -> None:
+    if type(boundary) is not dict:
+        raise SpecValidationError("EXECUTION_BOUNDARY_TYPE")
+    typed = boundary
+    if set(typed) != set(BOUNDARY_TYPES):
+        raise SpecValidationError("EXECUTION_BOUNDARY_FIELDS")
+    for key, expected in BOUNDARY_TYPES.items():
+        _require_exact_type(typed, key, expected, "EXECUTION_BOUNDARY")
+    mode = typed["mode"]
+    if mode not in MODES:
+        raise SpecValidationError("EXECUTION_BOUNDARY_MODE")
+    expected_limits = (1, 1, True) if mode == "OPERATIONAL_RC6Q" else (0, 0, False)
+    if (
+        typed["ssh_campaign_limit"],
+        typed["remote_python_invocation_limit"],
+        typed["systemd_mutation_authorized"],
+    ) != expected_limits:
+        raise SpecValidationError("EXECUTION_BOUNDARY_MODE_LIMIT_MISMATCH")
+    if typed["docker_object_mutation_authorized"] is not False:
+        raise SpecValidationError("DOCKER_OBJECT_MUTATION_NOT_FALSE")
+    if typed["package_operations_authorized"] is not False:
+        raise SpecValidationError("PACKAGE_OPERATIONS_NOT_FALSE")
+    if typed["automatic_reruns"] != 0:
+        raise SpecValidationError("AUTOMATIC_RERUNS_NOT_ZERO")
+
+
+def validate_spec(spec: object) -> dict[str, Any]:
+    if type(spec) is not dict:
+        raise SpecValidationError("TOP_LEVEL_NOT_OBJECT")
+    typed = spec
+    keys = set(typed)
+    if not SPEC_REQUIRED.issubset(keys) or not keys.issubset(
+        SPEC_REQUIRED | SPEC_OPTIONAL
+    ):
+        raise SpecValidationError("SPEC_FIELDS")
+    for key in (
+        "schema_version",
+        "campaign_id",
+        "campaign_started_utc",
+        "remediation_lock_packet_sha256",
+    ):
+        _require_exact_type(typed, key, str, "SPEC")
+    if typed["schema_version"] != SCHEMA_VERSION:
+        raise SpecValidationError("SCHEMA_VERSION")
+    if not typed["campaign_id"] or not typed["campaign_started_utc"]:
+        raise SpecValidationError("REQUIRED_STRING_EMPTY")
+    if not HEX64.fullmatch(typed["remediation_lock_packet_sha256"]):
+        raise SpecValidationError("LOCK_SHA256_FORMAT")
+    if (
+        "annotation" in typed
+        and typed["annotation"] is not None
+        and type(typed["annotation"]) is not str
+    ):
+        raise SpecValidationError("ANNOTATION_TYPE")
+    if type(typed["identities"]) is not list or not typed["identities"]:
+        raise SpecValidationError("IDENTITIES_TYPE_OR_EMPTY")
+    for index, identity in enumerate(typed["identities"]):
+        _validate_identity(identity, index)
+    _validate_boundary(typed["execution_boundary"])
+    return typed
+
+
+def canonical_json_bytes(spec: object) -> bytes:
+    validated = validate_spec(spec)
+    try:
+        return json.dumps(
+            validated,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise SpecValidationError("CANONICAL_SERIALIZATION_FAILED") from exc

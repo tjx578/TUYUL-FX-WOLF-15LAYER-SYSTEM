@@ -1,0 +1,824 @@
+"""Event-driven analysis loop and per-pair pipeline executor.
+
+Zone: analysis orchestration — runs the 15-layer pipeline on market events.
+
+Triggers immediately on CANDLE_CLOSED events from CandleBuilder,
+with a configurable fallback interval so analysis still runs
+periodically even if no candles close.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import datetime
+import os
+import time
+from typing import Any, Protocol
+from uuid import uuid4
+
+import orjson
+from loguru import logger
+
+from analysis.latency_tracker import LatencyTracker
+from analysis.reflex_rqi import compute_rqi
+from config_loader import CONFIG
+from core.event_bus import Event, EventType, get_event_bus
+from core.metrics import (
+    ENGINE_HEARTBEAT_AGE_SECONDS,
+    ENGINE_HEARTBEAT_READY,
+    INGEST_HEARTBEAT_AGE_SECONDS,
+    INGEST_HEARTBEAT_READY,
+    INGEST_PROCESS_HEARTBEAT_AGE_SECONDS,
+    INGEST_PROVIDER_DEGRADED_TOTAL,
+    INGEST_PROVIDER_HEARTBEAT_AGE_SECONDS,
+    VERDICT_PATH_EVENT_TOTAL,
+)
+from infrastructure.tracing import setup_tracer
+from services.shared.type_coerce import to_float as _to_float
+from state.heartbeat_classifier import (
+    HeartbeatState,
+    IngestHealthState,
+    classify_heartbeat,
+    classify_ingest_health,
+)
+from state.redis_keys import (
+    ENGINE_HEARTBEAT_SIMPLE,
+    HEARTBEAT_ENGINE,
+    HEARTBEAT_INGEST,
+    HEARTBEAT_INGEST_PROCESS,
+    HEARTBEAT_INGEST_PROVIDER,
+)
+from storage.l12_cache import set_verdict
+
+__all__ = ["analysis_loop"]
+
+# Hard deadline for a single pipeline execution.  Prevents indefinite hangs
+# (e.g.  CPU-bound computation or Redis latency spike) from blocking the
+# entire analysis loop.  Override via ``PIPELINE_TIMEOUT_SEC`` env var.
+_PIPELINE_TIMEOUT_SEC = float(os.getenv("PIPELINE_TIMEOUT_SEC", "30"))
+_ANALYSIS_MAX_CONCURRENT_PAIRS_DEFAULT = 4
+_ENGINE_HEARTBEAT_INTERVAL_SEC = float(os.getenv("ENGINE_HEARTBEAT_INTERVAL_SEC", "10"))
+_engine_tracer = setup_tracer("wolf-engine-loop")
+_ERROR_LOG_WINDOW_SEC = float(os.getenv("PIPELINE_ERROR_LOG_WINDOW_SEC", "30"))
+_error_log_state: dict[str, dict[str, float | int]] = {}
+
+
+class PipelineExecutor(Protocol):
+    """Structural contract used by the engine loop."""
+
+    def execute(self, symbol: str, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        """Run one symbol through the analysis pipeline."""
+        ...
+
+
+def _log_pipeline_exception(pair: str, exc: BaseException, *, kind: str) -> None:
+    """Rate-limit repeated pipeline exceptions to prevent log floods."""
+    now = time.time()
+    signature = f"{kind}:{type(exc).__name__}:{exc}"
+    state = _error_log_state.get(signature)
+
+    # Emit full traceback at most once per window for each unique signature.
+    if state is None or (now - float(state["last_emit"])) >= _ERROR_LOG_WINDOW_SEC:
+        suppressed = int(state["suppressed"]) if state else 0
+        if suppressed > 0:
+            logger.warning(
+                "[Pipeline] {} repeating signature={} (suppressed={} over {}s)",
+                kind,
+                signature,
+                suppressed,
+                int(_ERROR_LOG_WINDOW_SEC),
+            )
+        logger.exception("[Pipeline] {} for {}: {}", kind, pair, exc)
+        _error_log_state[signature] = {"last_emit": now, "suppressed": 0}
+        return
+
+    state["suppressed"] = int(state["suppressed"]) + 1
+
+
+def _analysis_max_concurrent_pairs(total_symbols: int) -> int:
+    """Bound per-cycle pair fan-out so advisory engines cannot exhaust workers.
+
+    Each pair runs the full pipeline in a worker thread and Phase 2.5 can spawn
+    its own enrichment worker pool. Running the entire universe at once can
+    multiply into hundreds of live threads. The cap is analysis-only: it changes
+    scheduling, never L12/execution semantics.
+    """
+    total = max(1, int(total_symbols or 1))
+    raw = os.getenv("ANALYSIS_MAX_CONCURRENT_PAIRS")
+    if raw is None or not str(raw).strip():
+        return min(total, _ANALYSIS_MAX_CONCURRENT_PAIRS_DEFAULT)
+    try:
+        configured = int(float(str(raw).strip()))
+    except (TypeError, ValueError):
+        configured = _ANALYSIS_MAX_CONCURRENT_PAIRS_DEFAULT
+    return max(1, min(total, configured))
+
+
+async def _run_analysis_batch(
+    symbols: list[str],
+    pipeline: PipelineExecutor,
+) -> list[Any]:
+    max_concurrent = _analysis_max_concurrent_pairs(len(symbols))
+    if max_concurrent >= len(symbols):
+        return await asyncio.gather(
+            *(_analyze_pair(pair, pipeline) for pair in symbols),
+            return_exceptions=True,
+        )
+
+    logger.info(
+        "[AnalysisLoop] Pair concurrency limited: running {} symbol(s) with max_concurrent={}",
+        len(symbols),
+        max_concurrent,
+    )
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def _guarded(pair: str) -> Any:
+        async with semaphore:
+            return await _analyze_pair(pair, pipeline)
+
+    return await asyncio.gather(
+        *(_guarded(pair) for pair in symbols),
+        return_exceptions=True,
+    )
+
+
+def _normalize_boundary_direction(
+    exec_direction: Any | None,
+    l12_direction: Any | None,
+    verdict: Any | None = None,
+) -> str | None:
+    """Normalize direction for verdict cache boundary (signal contract safe).
+
+    Internal pipeline uses HOLD/NEUTRAL as direction, but signal contract
+    only accepts BUY, SELL, or None.  This helper resolves the first
+    valid executable direction from the available sources.
+    """
+    from schemas.direction import normalize_direction  # noqa: PLC0415
+
+    verdict_text = str(verdict) if verdict else None
+
+    # L12 verdict is the authority.  If it is executable, infer direction
+    # from verdict first so stale/raw execution.direction cannot invert BUY/SELL.
+    result = normalize_direction(None, verdict_text)
+    if result is not None or verdict_text:
+        return result
+
+    for raw in (l12_direction, exec_direction):
+        result = normalize_direction(str(raw) if raw else None)
+        if result is not None:
+            return result
+    return None
+
+
+def _build_degraded_verdict(pair: str, reason: str) -> dict[str, Any]:
+    """Build a minimal HOLD/DEGRADED payload so the dashboard always has data."""
+    return {
+        "symbol": pair,
+        "signal_id": f"DEG-{pair}-{uuid4().hex[:8].upper()}",
+        "verdict": "HOLD",
+        "confidence": 0.0,
+        "wolf_status": "DEGRADED",
+        "direction": None,
+        "scores": {
+            "wolf_score": 0,
+            "wolf_30_point": 0,
+            "tii_score": 0.0,
+            "frpc_score": 0.0,
+            "f_score": 0,
+            "t_score": 0,
+            "fta_score": 0.0,
+            "exec_score": 0,
+            "regime": "UNKNOWN",
+            "session": "",
+        },
+        "gates": [
+            {"gate_id": f"gate_{i}_{n}", "name": n.replace("_", " ").title(), "passed": False, "value": "FAIL"}
+            for i, n in enumerate(
+                ["tii", "montecarlo", "frpc", "conf12", "rr", "integrity", "propfirm", "drawdown", "latency"],
+                start=1,
+            )
+        ],
+        "layers": {},
+        "execution": {},
+        "system": {"latency_ms": 0.0, "degraded": True, "degraded_reason": reason},
+        "timestamp": time.time(),
+        "errors": [reason],
+        "last_hold_block_reason": reason,
+    }
+
+
+def _extract_last_hold_block_reason(result: dict[str, Any]) -> str | None:
+    governance = result.get("governance")
+    if isinstance(governance, dict):
+        action = str(governance.get("action") or "").upper()
+        reasons_raw = governance.get("reasons")
+        reasons = [str(r) for r in reasons_raw] if isinstance(reasons_raw, list) else []
+        if action in {"HOLD", "BLOCK"}:
+            return f"{action}:{','.join(reasons) if reasons else 'governance'}"
+
+    errors_raw = result.get("errors")
+    errors = [str(e) for e in errors_raw] if isinstance(errors_raw, list) else []
+    for prefix in ("GOVERNANCE_BLOCK:", "GOVERNANCE_HOLD:", "WARMUP_INSUFFICIENT:"):
+        matched = next((e for e in errors if e.startswith(prefix)), None)
+        if matched:
+            return matched
+    return None
+
+
+def _extract_mta_diagnostics(result: dict[str, Any]) -> dict[str, Any] | None:
+    raw = result.get("mta_diagnostics")
+    if isinstance(raw, dict):
+        return dict(raw)
+
+    diagnostics = result.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        nested = diagnostics.get("mta_diagnostics")
+        if isinstance(nested, dict):
+            return dict(nested)
+
+    l2 = result.get("l2")
+    if isinstance(l2, dict):
+        constitutional = l2.get("constitutional")
+        if isinstance(constitutional, dict):
+            nested = constitutional.get("mta_diagnostics")
+            if isinstance(nested, dict):
+                return dict(nested)
+
+    return None
+
+
+# (layer_key, diagnostic_key) mapping for constitutional diagnostics export.
+_CONSTITUTIONAL_DIAGNOSTIC_KEYS: tuple[tuple[str, str], ...] = (
+    ("l1", "context_diagnostics"),
+    ("l7", "edge_diagnostics"),
+    ("l8", "integrity_diagnostics"),
+    ("l9", "structure_diagnostics"),
+)
+
+
+def _extract_constitutional_diagnostic(result: dict[str, Any], layer_key: str, diag_key: str) -> dict[str, Any] | None:
+    """Extract a constitutional diagnostic payload from a pipeline result.
+
+    Preference order:
+      1. top-level ``result[diag_key]`` (exported by pipeline)
+      2. ``result["diagnostics"][diag_key]`` (legacy compat)
+      3. ``result[layer_key]["constitutional"][diag_key]`` (raw layer payload)
+    """
+    raw = result.get(diag_key)
+    if isinstance(raw, dict):
+        return dict(raw)
+
+    diagnostics = result.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        nested = diagnostics.get(diag_key)
+        if isinstance(nested, dict):
+            return dict(nested)
+
+    layer = result.get(layer_key)
+    if isinstance(layer, dict):
+        constitutional = layer.get("constitutional")
+        if isinstance(constitutional, dict):
+            nested = constitutional.get(diag_key)
+            if isinstance(nested, dict):
+                return dict(nested)
+
+    return None
+
+
+def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str, Any]:
+    synthesis = dict(result.get("synthesis") or {})
+    l12 = dict(result.get("l12_verdict") or {})
+    execution_map = dict(result.get("execution_map") or {})
+    governance = dict(result.get("governance") or {})
+
+    confidence_raw = l12.get("confidence", 0.0)
+    if isinstance(confidence_raw, str):
+        conf_map = {"LOW": 0.25, "MEDIUM": 0.50, "HIGH": 0.75, "VERY_HIGH": 0.95}
+        confidence = float(conf_map.get(confidence_raw.upper(), 0.0))
+    else:
+        confidence = float(confidence_raw or 0.0)
+
+    execution = dict(synthesis.get("execution") or {})
+    scores = dict(synthesis.get("scores") or {})
+    layers = dict(synthesis.get("layers") or {})
+    fusion_frpc = dict(synthesis.get("fusion_frpc") or {})
+    system = dict(synthesis.get("system") or {})
+
+    # ── Dashboard-expected field aliases ────────────────────────────
+    # Pipeline synthesis uses wolf_30_point / L8_tii_sym / conf12 but
+    # the dashboard L12Scores type expects wolf_score / tii_score / frpc_score.
+    # Inject aliases so the verdict cache matches the frontend contract.
+    if "wolf_score" not in scores:
+        scores["wolf_score"] = scores.get("wolf_30_point", 0)
+    if "tii_score" not in scores:
+        scores["tii_score"] = layers.get("L8_tii_sym", 0.0)
+    if "frpc_score" not in scores:
+        scores["frpc_score"] = fusion_frpc.get("conf12", layers.get("conf12", 0.0))
+    if "regime" not in scores:
+        cognitive = dict(synthesis.get("cognitive") or {})
+        scores["regime"] = cognitive.get("regime", "UNKNOWN")
+    if "session" not in scores:
+        scores["session"] = ""
+
+    timestamp = time.time()
+    hold_block_reason = _extract_last_hold_block_reason(result)
+
+    _normalized_direction = _normalize_boundary_direction(
+        execution.get("direction"),
+        l12.get("direction"),
+        l12.get("verdict"),
+    )
+    errors = list(result.get("errors") or [])
+    throttled_from = l12.get("throttled_from")
+    effective_reason = l12.get("effective_reason")
+    if not effective_reason and (throttled_from or "SIGNAL_THROTTLED" in errors):
+        effective_reason = "SIGNAL_THROTTLED"
+
+    payload: dict[str, Any] = {
+        "symbol": pair,
+        "signal_id": str(l12.get("signal_id") or f"SIG-{pair}-{uuid4().hex[:12].upper()}"),
+        "verdict": str(l12.get("verdict") or "HOLD"),
+        "confidence": confidence,
+        "wolf_status": str(l12.get("wolf_status") or "NO_HUNT"),
+        "direction": _normalized_direction,
+        "scores": scores,
+        "gates": dict(l12.get("gates") or {}),
+        "layers": layers,
+        "execution": execution,
+        "system": {
+            **system,
+            "latency_ms": float(result.get("latency_ms") or system.get("latency_ms") or 0.0),
+        },
+        "timestamp": timestamp,
+        "entry_price": execution.get("entry_price") or None,
+        "stop_loss": execution.get("stop_loss") or None,
+        "take_profit_1": execution.get("take_profit_1") or None,
+        "risk_reward_ratio": execution.get("rr_ratio"),
+        "execution_map": execution_map,
+        "governance": governance,
+        "errors": errors,
+        "last_hold_block_reason": hold_block_reason,
+    }
+
+    if throttled_from:
+        payload["throttled_from"] = str(throttled_from)
+    if effective_reason:
+        payload["effective_reason"] = str(effective_reason)
+
+    mta_diagnostics = _extract_mta_diagnostics(result)
+    if mta_diagnostics is not None:
+        payload["mta_diagnostics"] = mta_diagnostics
+
+    for _layer_key, _diag_key in _CONSTITUTIONAL_DIAGNOSTIC_KEYS:
+        _diag = _extract_constitutional_diagnostic(result, _layer_key, _diag_key)
+        if _diag is not None:
+            payload[_diag_key] = _diag
+
+    gates_v74 = l12.get("gates_v74")
+    if isinstance(gates_v74, dict):
+        payload["gates"] = {
+            **payload["gates"],
+            **dict(gates_v74),
+        }
+
+    # ── Transform gates dict → GateCheck[] array for dashboard ──
+    # Backend gates use {total_passed, total_gates, gate_1_tii: "PASS", ...}
+    # Dashboard expects [{gate_id, name, passed, value, threshold, message}, ...]
+    raw_gates = payload.get("gates")
+    if isinstance(raw_gates, dict):
+        gate_array: list[dict[str, Any]] = []
+        _GATE_NAMES = {  # noqa: N806
+            "gate_1_tii": "TII Symmetry",
+            "gate_2_montecarlo": "Monte Carlo Win %",
+            "gate_3_frpc": "FRPC Sync",
+            "gate_4_conf12": "CONF12 Threshold",
+            "gate_5_rr": "Risk/Reward",
+            "gate_6_integrity": "Integrity Index",
+            "gate_7_propfirm": "Prop-Firm Compliance",
+            "gate_8_drawdown": "Drawdown Limit",
+            "gate_9_latency": "Latency Threshold",
+        }
+        for key in sorted(_GATE_NAMES):
+            status = raw_gates.get(key, "FAIL")
+            gate_array.append(
+                {
+                    "gate_id": key,
+                    "name": _GATE_NAMES[key],
+                    "passed": status == "PASS",
+                    "value": status,
+                }
+            )
+        payload["gates"] = gate_array
+
+    return payload
+
+
+async def _analyze_pair(
+    pair: str,
+    pipeline: PipelineExecutor,
+) -> dict[str, Any] | None:
+    """Run pipeline for a single pair with timeout + thread offload."""
+    _lt = LatencyTracker()
+    with _engine_tracer.start_as_current_span("pipeline_full") as span:
+        span.set_attribute("pair", pair)
+        span.set_attribute("pipeline.timeout_sec", _PIPELINE_TIMEOUT_SEC)
+        try:
+            from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+
+            _bus = LiveContextBus()
+            _latest: dict[str, Any] | None = _bus.get_latest_tick(pair)
+            _tick_ts: float | None = (
+                float(_latest.get("local_ts") or _latest.get("timestamp") or 0.0) if _latest else None
+            )
+            if _tick_ts:
+                span.set_attribute("tick.timestamp", _tick_ts)
+
+            _lt.record_analysis_start(pair)
+            result = await asyncio.wait_for(
+                asyncio.to_thread(lambda: pipeline.execute(pair, None, tick_ts=_tick_ts)),
+                timeout=_PIPELINE_TIMEOUT_SEC,
+            )
+
+            if result:
+                # ABORT: pipeline explicitly set result["verdict"] = None to signal
+                # that no analysis was performed (e.g., warmup rejection).
+                # Never persist a verdict in this case — it would pollute Redis with
+                # stale/empty payloads while candle history is still warming up.
+                if "verdict" in result and result["verdict"] is None:
+                    logger.debug(
+                        "[VerdictPath] Pipeline ABORTED for {} — skipping verdict persist (will retry next cycle)",
+                        pair,
+                    )
+                    return None  # pair will be re-scheduled next cycle
+
+                try:
+                    verdict_payload = _build_verdict_cache_payload(pair, result)
+                    set_verdict(pair, verdict_payload)
+                except Exception as persist_exc:
+                    VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="error").inc()
+                    logger.warning("[VerdictPath] persist failed | pair={} error={}", pair, persist_exc)
+                    # Fallback: write a degraded verdict so the dashboard is never empty
+                    try:
+                        set_verdict(pair, _build_degraded_verdict(pair, f"PERSIST_ERROR:{type(persist_exc).__name__}"))
+                    except Exception:
+                        logger.warning("[VerdictPath] degraded fallback also failed | pair={}", pair)
+
+                _lt.record_verdict_emit(pair)
+                synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
+                l12: dict[str, Any] = dict(result.get("l12_verdict") or {})
+                span.set_attribute("l12.verdict", str(l12.get("verdict", "")))
+                span.set_attribute("l12.confidence", str(l12.get("confidence", "")))
+                try:
+                    from journal.builders import build_j1  # noqa: PLC0415
+
+                    j1 = build_j1(pair, synthesis)
+                    logger.debug(f"[J1] Context journal created for {pair}: {j1.market_regime}")
+                except Exception as j1_exc:
+                    logger.warning(f"[J1] Failed to build context journal for {pair}: {j1_exc}")
+                if l12:
+                    try:
+                        from journal.builders import build_j2  # noqa: PLC0415
+
+                        j2 = build_j2(pair, synthesis, l12)
+                        logger.debug(f"[J2] Decision journal created for {pair}: verdict={j2.verdict}")
+                    except Exception as j2_exc:
+                        logger.warning(f"[J2] Failed to build decision journal for {pair}: {j2_exc}")
+
+            return result
+        except TimeoutError as exc:
+            span.record_exception(exc)
+            _log_pipeline_exception(pair, exc, kind="TIMEOUT")
+            try:
+                set_verdict(pair, _build_degraded_verdict(pair, f"PIPELINE_TIMEOUT:{_PIPELINE_TIMEOUT_SEC}s"))
+            except Exception:
+                logger.warning("[VerdictPath] degraded persist failed | pair={}", pair)
+            return None
+        except Exception as exc:
+            span.record_exception(exc)
+            _log_pipeline_exception(pair, exc, kind="ERROR")
+            try:
+                set_verdict(pair, _build_degraded_verdict(pair, f"PIPELINE_ERROR:{type(exc).__name__}"))
+            except Exception:
+                logger.warning("[VerdictPath] degraded persist failed | pair={}", pair)
+            return None
+
+
+_INGEST_HEARTBEAT_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_INGEST_MAX_AGE_SEC", "30"))
+_INGEST_HEARTBEAT_LOG_INTERVAL_SEC = 60.0  # rate-limit repeated warnings
+_last_ingest_heartbeat_log_ts: float = 0.0
+
+
+def _heartbeat_last_ts_iso(last_ts: float | None) -> str | None:
+    if last_ts is None:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(float(last_ts), tz=datetime.UTC).isoformat()
+    except (OverflowError, OSError, ValueError, TypeError):
+        return None
+
+
+def _build_ingest_health_detail(
+    health: IngestHealthState,
+    process_status: Any,
+    provider_status: Any,
+    process_payload: dict[str, Any] | None = None,
+    provider_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    detail = {
+        "event": "ingest_health_degraded",
+        "health": health.value,
+        "process_state": process_status.state.value,
+        "provider_state": provider_status.state.value,
+        "process_age_seconds": process_status.age_seconds,
+        "provider_age_seconds": provider_status.age_seconds,
+        "process_producer": process_status.producer,
+        "provider_producer": provider_status.producer,
+        "process_last_ts": _heartbeat_last_ts_iso(process_status.last_ts),
+        "provider_last_ts": _heartbeat_last_ts_iso(provider_status.last_ts),
+        "threshold_seconds": _INGEST_HEARTBEAT_MAX_AGE_SEC,
+    }
+    if process_payload:
+        for key in (
+            "ingest_state",
+            "market_data_mode",
+            "startup_mode",
+            "ready",
+            "degraded",
+            "ws_connected",
+            "rest_fallback_active",
+            "producer_fresh",
+            "symbols_ready",
+            "symbols_total",
+        ):
+            if key in process_payload:
+                detail[key] = process_payload.get(key)
+        if "last_ws_disconnect_reason" in process_payload:
+            detail["last_ws_disconnect_reason"] = process_payload.get("last_ws_disconnect_reason")
+    if provider_payload and "last_disconnect_reason" in provider_payload:
+        detail["last_ws_disconnect_reason"] = provider_payload.get("last_disconnect_reason")
+    return detail
+
+
+def _parse_heartbeat_payload(payload_raw: Any) -> dict[str, Any]:
+    if payload_raw is None:
+        return {}
+    import orjson as _orjson  # noqa: PLC0415
+
+    try:
+        data = _orjson.loads(payload_raw)
+    except (_orjson.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _check_ingest_heartbeat(redis_client: Any) -> None:
+    """Read the split ingest heartbeat keys and update metrics/logging.
+
+    Uses the sync Redis client already available in the engine heartbeat loop.
+    Reads both process and provider keys to distinguish weekend-idle from dead.
+    """
+    global _last_ingest_heartbeat_log_ts  # noqa: PLW0603
+
+    # Try split keys first; fall back to legacy combined key
+    try:
+        raw_process = redis_client.get(HEARTBEAT_INGEST_PROCESS)
+        raw_provider = redis_client.get(HEARTBEAT_INGEST_PROVIDER)
+    except Exception as exc:
+        logger.debug("[EngineHeartbeat] Failed to read ingest heartbeat: {}", exc)
+        INGEST_HEARTBEAT_READY.set(0.0)
+        return
+
+    process_status = classify_heartbeat(raw_process, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest_process")
+    provider_status = classify_heartbeat(raw_provider, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest_provider")
+    process_payload = _parse_heartbeat_payload(raw_process)
+    provider_payload = _parse_heartbeat_payload(raw_provider)
+
+    # If split keys not yet populated, fall back to legacy combined key
+    if process_status.state == HeartbeatState.MISSING and provider_status.state == HeartbeatState.MISSING:
+        try:
+            raw_legacy = redis_client.get(HEARTBEAT_INGEST)
+        except Exception:
+            raw_legacy = None
+        legacy = classify_heartbeat(raw_legacy, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest")
+        if legacy.age_seconds is not None:
+            INGEST_HEARTBEAT_AGE_SECONDS.set(legacy.age_seconds)
+        INGEST_HEARTBEAT_READY.set(1.0 if legacy.state == HeartbeatState.ALIVE else 0.0)
+        return
+
+    health = classify_ingest_health(process_status, provider_status)
+
+    # Use provider age for metrics when available, otherwise process age
+    display_age = provider_status.age_seconds if provider_status.age_seconds is not None else process_status.age_seconds
+    if display_age is not None:
+        INGEST_HEARTBEAT_AGE_SECONDS.set(display_age)
+    if process_status.age_seconds is not None:
+        INGEST_PROCESS_HEARTBEAT_AGE_SECONDS.set(process_status.age_seconds)
+    if provider_status.age_seconds is not None:
+        INGEST_PROVIDER_HEARTBEAT_AGE_SECONDS.set(provider_status.age_seconds)
+
+    # HEALTHY or DEGRADED both mean the process is alive
+    INGEST_HEARTBEAT_READY.set(1.0 if health.state != IngestHealthState.NO_PRODUCER else 0.0)
+
+    now = time.time()
+    if health.state != IngestHealthState.HEALTHY:  # noqa: SIM102
+        if (now - _last_ingest_heartbeat_log_ts) >= _INGEST_HEARTBEAT_LOG_INTERVAL_SEC:
+            _last_ingest_heartbeat_log_ts = now
+            detail = _build_ingest_health_detail(
+                health.state,
+                process_status,
+                provider_status,
+                process_payload,
+                provider_payload,
+            )
+            if health.state == IngestHealthState.DEGRADED:
+                INGEST_PROVIDER_DEGRADED_TOTAL.labels(provider_state=provider_status.state.value).inc()
+            logger.warning(
+                "[EngineHeartbeat] Ingest health {} | process={} provider={} | detail={}",
+                health.state.value,
+                process_status.state.value,
+                provider_status.state.value,
+                detail,
+            )
+
+
+async def _engine_heartbeat_loop(
+    shutdown_event: asyncio.Event | None = None,
+) -> None:
+    """Publish engine heartbeat and consume ingest heartbeat for cross-service health."""
+
+    _redis_client = None
+    try:
+        from storage.redis_client import RedisClient  # noqa: PLC0415
+
+        _redis_client = RedisClient()
+    except Exception:
+        logger.warning("[EngineHeartbeat] Redis client unavailable — heartbeat disabled")
+        return
+
+    while not (shutdown_event and shutdown_event.is_set()):
+        try:
+            payload = orjson.dumps({"producer": "engine_analysis", "ts": time.time()}).decode("utf-8")
+            _redis_client.set(HEARTBEAT_ENGINE, payload)
+            # Also write a simple UTC ISO timestamp for external monitors / dashboard
+            utc_ts = datetime.datetime.now(datetime.UTC).isoformat()
+            _redis_client.set(ENGINE_HEARTBEAT_SIMPLE, utc_ts)
+            ENGINE_HEARTBEAT_AGE_SECONDS.set(0.0)
+            ENGINE_HEARTBEAT_READY.set(1.0)
+        except Exception as exc:
+            logger.debug("[EngineHeartbeat] Failed to write heartbeat: {}", exc)
+
+        # Consume ingest heartbeat — detect no-producer independently of transport
+        _check_ingest_heartbeat(_redis_client)
+
+        await asyncio.sleep(_ENGINE_HEARTBEAT_INTERVAL_SEC)
+
+
+async def analysis_loop(
+    pairs: list[str],
+    pipeline: PipelineExecutor,
+    shutdown_event: asyncio.Event | None = None,
+    on_first_cycle: asyncio.Event | None = None,
+) -> None:
+    """Event-driven analysis loop.
+
+    Args:
+        pairs: List of trading pair symbols.
+        pipeline: The constitutional pipeline instance.
+        shutdown_event: Set to trigger graceful shutdown.
+        on_first_cycle: Set after the first successful analysis cycle (readiness).
+    """
+    env_interval = os.getenv("ANALYSIS_LOOP_INTERVAL_SEC")
+    loop_interval = int(env_interval) if env_interval else CONFIG["settings"].get("loop_interval_sec", 60)
+    rqi_sigma_sec = float(os.getenv("ANALYSIS_RQI_SIGMA_SEC", str(max(1, loop_interval))))
+    rqi_retrigger_threshold = max(
+        0.0,
+        min(1.0, float(os.getenv("ANALYSIS_RQI_RETRIGGER_THRESHOLD", "0.72"))),
+    )
+    rqi_force_stale_sec = float(os.getenv("ANALYSIS_RQI_FORCE_STALE_SEC", str(max(1, loop_interval * 2))))
+    logger.info(f"Analysis loop started (event-driven, fallback interval={loop_interval}s)")
+
+    _candle_signal = asyncio.Event()
+    _pending_symbols: set[str] = set()
+    _candle_latency_tracker = LatencyTracker()
+
+    def _on_candle_closed(event: Event) -> None:
+        data: dict[str, object] = dict(event.data)
+        symbol = data.get("symbol")
+        if isinstance(symbol, str) and symbol:
+            _pending_symbols.add(symbol)
+            _candle_latency_tracker.record_candle_complete(symbol)
+        _candle_signal.set()
+
+    bus = get_event_bus()
+    bus.subscribe(EventType.CANDLE_CLOSED, _on_candle_closed)
+
+    # Launch engine heartbeat as a background task so readyz/dashboard
+    # can detect whether the analysis loop is alive.
+    _heartbeat_task = asyncio.create_task(_engine_heartbeat_loop(shutdown_event))
+
+    _symbol_reflex_inputs: dict[str, tuple[float, float]] = {}
+    _symbol_last_analysis_ts: dict[str, float] = {}
+
+    _first_cycle_done = False
+
+    while True:
+        if shutdown_event and shutdown_event.is_set():
+            logger.info("Analysis loop shutting down...")
+            break
+
+        try:  # noqa: SIM105
+            await asyncio.wait_for(_candle_signal.wait(), timeout=loop_interval)
+        except TimeoutError:
+            pass
+
+        _candle_signal.clear()
+
+        symbols_to_run: list[str] = []
+        if _pending_symbols:
+            symbols_to_run = [s for s in pairs if s in _pending_symbols]
+            _pending_symbols.clear()
+            if not symbols_to_run:
+                symbols_to_run = list(pairs)
+            logger.info(f"[EVENT] Candle close triggered analysis for {symbols_to_run}")
+        else:
+            if not _symbol_last_analysis_ts:
+                symbols_to_run = list(pairs)
+                logger.debug("[TIMER] Fallback sweep (cold-start) - analysing all pairs")
+            else:
+                now_ts = time.time()
+                symbols_to_run = list[str]()
+                for pair in pairs:
+                    last_ts = _symbol_last_analysis_ts.get(pair)
+                    if last_ts is None:
+                        symbols_to_run.append(pair)
+                        continue
+
+                    age_sec = max(0.0, now_ts - last_ts)
+                    if age_sec >= rqi_force_stale_sec:
+                        symbols_to_run.append(pair)
+                        continue
+
+                    coherence, emotion_delta = _symbol_reflex_inputs.get(pair, (1.0, 0.0))
+                    projected_rqi = compute_rqi(
+                        delta_t_sec=age_sec,
+                        coherence=coherence,
+                        emotion_delta=emotion_delta,
+                        sigma_sec=rqi_sigma_sec,
+                    )
+                    if projected_rqi <= rqi_retrigger_threshold:
+                        symbols_to_run.append(pair)
+
+                logger.debug(
+                    '[TIMER] Selective fallback - analysing {:d}/{:d} pair(s), threshold={:.2f}',
+                    len(symbols_to_run),
+                    len(pairs),
+                    rqi_retrigger_threshold,
+                )
+
+                if not symbols_to_run:
+                    continue
+
+        cycle_start_time = time.time()
+        results = await _run_analysis_batch(symbols_to_run, pipeline)
+        verdicts_generated = 0
+        for pair, result in zip(symbols_to_run, results, strict=False):
+            if isinstance(result, Exception):
+                logger.error(f"[ERROR] {pair} | {result}")
+                with contextlib.suppress(Exception):
+                    set_verdict(pair, _build_degraded_verdict(pair, f"GATHER_ERROR:{type(result).__name__}"))
+                continue
+
+            # Only mark as analyzed when a real result was produced.
+            # Failed pairs (result is None) will be retried next cycle.
+            if result is None:
+                continue
+
+            verdicts_generated += 1
+            _symbol_last_analysis_ts[pair] = time.time()
+            if isinstance(result, dict):
+                synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
+                layers: dict[str, Any] = dict(synthesis.get("layers") or {})
+                discipline: dict[str, Any] = dict(synthesis.get("wolf_discipline") or {})
+
+                coherence = _to_float(layers.get("L2_reflex_coherence"), 0.0)
+                emotion_delta = _to_float(discipline.get("polarity_deviation"), 0.0)
+                _symbol_reflex_inputs[pair] = (coherence, emotion_delta)
+
+        logger.info(
+            "[VerdictPath] cycle complete | pairs_analyzed={:d} verdicts_generated={:d} latency_ms={:.0f}",
+            len(symbols_to_run),
+            verdicts_generated,
+            (time.time() - cycle_start_time) * 1000.0,
+        )
+
+        if not _first_cycle_done:
+            _first_cycle_done = True
+            if on_first_cycle:
+                on_first_cycle.set()
+            logger.info("Engine readiness: READY (first analysis cycle complete)")
+
+    # Clean up heartbeat task on shutdown
+    _heartbeat_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await _heartbeat_task
