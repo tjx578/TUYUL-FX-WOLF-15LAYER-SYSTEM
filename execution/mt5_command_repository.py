@@ -1015,7 +1015,7 @@ class MT5CommandRepository:
                 )
             except Exception as exc:
                 message = str(exc)
-                if "uq_engineering_demo_canary_single_open" in message or "unique" in message.lower():
+                if "uq_engineering_demo_canary_single_open" in message:
                     raise CommandConflictError("another engineering canary window is already open") from exc
                 raise
         return command
