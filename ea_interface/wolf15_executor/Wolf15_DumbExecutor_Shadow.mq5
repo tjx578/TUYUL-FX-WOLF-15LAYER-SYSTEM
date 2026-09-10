@@ -61,13 +61,27 @@ string W15_BROKER_SYMBOLS[W15_SYMBOL_COUNT] =
    "CADJPY", "CADCHF", "CHFJPY", "GOLD", "SILVER"
 };
 
-datetime g_last_poll = 0;
-datetime g_last_heartbeat = 0;
+ulong    g_last_poll_ms = 0;
+ulong    g_last_heartbeat_ms = 0;
 bool     g_registered = false;
 string   g_last_command_id = "";
 string   g_quarantined_command_id = "";
-datetime g_last_recovery = 0;
+ulong    g_last_recovery_ms = 0;
 bool     g_recovery_blocked = false;
+
+//+------------------------------------------------------------------+
+// Shared by both active OnInit handlers. The DEMO build renames this
+// file's OnInit to *Unused, so validation placed only there would not
+// run in the DEMO artifact and the two artifacts could drift apart.
+bool ValidateSchedulerIntervals()
+{
+   if(InpPollIntervalSeconds < 1 || InpHeartbeatSeconds < 1 || InpRecoveryRetrySeconds < 1)
+   {
+      Print("[W15] Scheduler intervals must be at least one second.");
+      return false;
+   }
+   return true;
+}
 
 struct PendingReportState
 {
@@ -1753,11 +1767,8 @@ int OnInit()
       Print("[W15] This build is SHADOW ONLY. Set InpExecutionEnabled=false.");
       return INIT_PARAMETERS_INCORRECT;
    }
-   if(InpRecoveryRetrySeconds < 1)
-   {
-      Print("[W15] Recovery retry interval must be positive.");
+   if(!ValidateSchedulerIntervals())
       return INIT_PARAMETERS_INCORRECT;
-   }
    const bool https_endpoint = (StringFind(InpBaseUrl, "https://") == 0);
    const int executor_id_length = StringLen(InpExecutorId);
    const int executor_token_length = StringLen(InpExecutorToken);
@@ -1830,33 +1841,33 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnTimer()
 {
-   datetime now = TimeCurrent();
+   const ulong now_ms = GetTickCount64();
    if(!g_registered)
    {
       g_registered = RegisterExecutor();
       return;
    }
-   if(now - g_last_heartbeat >= InpHeartbeatSeconds)
+   if(now_ms - g_last_heartbeat_ms >= (ulong)InpHeartbeatSeconds * 1000ULL)
    {
       SendHeartbeat();
-      g_last_heartbeat = now;
+      g_last_heartbeat_ms = now_ms;
    }
    if(g_recovery_blocked)
       return;
    if(PendingReportExists())
    {
-      if(now - g_last_recovery >= InpRecoveryRetrySeconds)
+      if(now_ms - g_last_recovery_ms >= (ulong)InpRecoveryRetrySeconds * 1000ULL)
       {
          RecoverPendingReport();
-         g_last_recovery = now;
+         g_last_recovery_ms = now_ms;
       }
       if(g_recovery_blocked || PendingReportExists())
          return;
    }
-   if(now - g_last_poll >= InpPollIntervalSeconds)
+   if(now_ms - g_last_poll_ms >= (ulong)InpPollIntervalSeconds * 1000ULL)
    {
       PollOneCommand();
-      g_last_poll = now;
+      g_last_poll_ms = now_ms;
    }
 }
 
