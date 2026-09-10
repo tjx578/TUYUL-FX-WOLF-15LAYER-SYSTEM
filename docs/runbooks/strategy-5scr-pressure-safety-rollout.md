@@ -130,6 +130,44 @@ corresponding pressure payload with a deterministic SHA-256 hash. With the
 existing radar write gate enabled, `pressure_radar_events.payload` is the
 durable audit record. A rejected admission never creates an outbox row.
 
+Interpret admission coverage from the symbol-scoped fields, not from advisory
+block duration or the fleet-wide monitoring counters:
+
+| Field/value | Meaning |
+| --- | --- |
+| `pair_admission_evaluation_coverage_status=EVALUATED` | A canonical raw-authority block for this symbol was evaluated. |
+| `NOT_APPLICABLE_NO_RAW_AUTHORITY_BLOCK` | The symbol has no `SignalThrottle` raw-authority block in retention. A mature CANARY/advisory block is not a missed admission. |
+| `MISSING_EVALUATION_INCIDENT` | A raw-authority block exists for the symbol but no matching evaluation exists; emit `WARNING` and replay the raw ledger. |
+
+## Mature advisory analysis admission (V3.1 candidate)
+
+PairAdmission remains raw-only. A mature CANARY/derived pressure episode may
+instead receive `StrategyAnalysisAdmissionV1/MATURE_ADVISORY`, which opens or
+attaches to the durable StrategyLifecycleV2 shadow path. This path is isolated
+from canonical pressure outbox authority and is permanently pinned to
+`risk_authority=false` and `execution_authority=false`.
+
+Enable only after migration `20260826_01` and a successful worker preflight:
+
+```text
+STRATEGY_5SCR_ANALYSIS_ADMISSION_V1_ENABLED=true
+STRATEGY_5SCR_ANALYSIS_ADMISSION_V1_SHADOW_ONLY=true
+```
+
+The worker refuses activation while any execution/risk/command plane flag is
+active. `PRICE_FROZEN` becomes `ADVISORY_WAITING_PRICE_QUALITY`; it blocks
+entry, not historical evidence prefetch or lifecycle retention. See
+`docs/strategy/strategy-5scr-ssot-v3.1-candidate.md` for the normative contract.
+| `pair_admission_advisory_pressure_is_authority=false` | Derived pressure never substitutes for Pair Admission authority. |
+
+`pressure_resolution_direction` remains a compatibility observation. On a
+same-side rejection, its opposite direction is a counter-reaction only;
+`pressure_resolution_direction_authorized=false` and
+`opposite_strategy_direction_authorized=false` remain mandatory until H1/M15
+strategy proof creates a legal direction. Consumers should use
+`strategy_next_required_stage`; the top-level `next_required_stage` on legacy
+pressure telemetry remains a producer/transport stage.
+
 ## Phase 2 — Lifecycle V2 shadow validation
 
 Before live outbox rows exist, validate Lifecycle V2 through deterministic replay. Once published pressure rows exist in later phases, the same observer can run in the worker.

@@ -8,9 +8,9 @@
 
 input string InpBaseUrl             = "https://replace-me.up.railway.app";
 input string InpExecutorId          = "";
-input string InpExecutorToken       = "";
+input string InpCredentialFile      = "";
+input string InpExpectedAccountReferenceSha256 = "";
 input string InpCommandVerificationKeyId = "";
-input string InpCommandVerificationKey   = "";
 input string InpExpectedAccountId   = "";
 input string InpLoginHash           = "";
 input string InpExpectedBrokerServer= "";
@@ -40,6 +40,9 @@ input bool   InpRestartDrillHoldAfterDurableSave = false;
 #define W15_GOLDEN_SIGNATURE "base64url:TYmshMY5I9eQhq7Qyi-UlIl7Q0j4e3ZfkribNBwxKIg"
 #define W15_SYMBOL_COUNT 30
 #define W15_SYMBOL_UNIVERSE "WOLF15_XM_30_V1"
+#define W15_CREDENTIAL_SCHEMA "wolf15.runtime_credentials.v1"
+#define W15_CREDENTIAL_HEADER_BYTES 8
+#define W15_CREDENTIAL_MAX_BYTES 4096
 
 string W15_CANONICAL_SYMBOLS[W15_SYMBOL_COUNT] =
 {
@@ -68,6 +71,9 @@ string   g_last_command_id = "";
 string   g_quarantined_command_id = "";
 datetime g_last_recovery = 0;
 bool     g_recovery_blocked = false;
+string   g_executor_token = "";
+string   g_command_verification_key_id = "";
+string   g_command_verification_key = "";
 
 struct PendingReportState
 {
@@ -450,6 +456,155 @@ bool IsSafeWireIdentifier(const string value)
 }
 
 //+------------------------------------------------------------------+
+bool IsLowerHexExact(const string value, const int exact_length)
+{
+   if(StringLen(value) != exact_length)
+      return false;
+   for(int index = 0; index < exact_length; index++)
+   {
+      ushort ch = StringGetCharacter(value, index);
+      if(!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')))
+         return false;
+   }
+   return true;
+}
+
+//+------------------------------------------------------------------+
+void ClearRuntimeCredentials()
+{
+   g_executor_token = "";
+   g_command_verification_key_id = "";
+   g_command_verification_key = "";
+}
+
+//+------------------------------------------------------------------+
+bool LoadRuntimeCredentials(string &reason)
+{
+   ClearRuntimeCredentials();
+   reason = "";
+   if(StringFind(InpCredentialFile, "\\\\.\\pipe\\") != 0)
+   {
+      reason = "CREDENTIAL_PIPE_UNAVAILABLE";
+      return false;
+   }
+   if(!IsSafeWireIdentifier(InpExecutorId) ||
+      !IsLowerHexExact(InpExpectedAccountReferenceSha256, 64) ||
+      !IsSafeWireIdentifier(InpCommandVerificationKeyId))
+   {
+      reason = "CREDENTIAL_BINDING_INVALID";
+      return false;
+   }
+
+   ResetLastError();
+   int handle = FileOpen(InpCredentialFile, FILE_READ | FILE_BIN | FILE_ANSI, 0, CP_UTF8);
+   if(handle == INVALID_HANDLE)
+   {
+      reason = "CREDENTIAL_PIPE_UNAVAILABLE";
+      return false;
+   }
+
+   uchar header[];
+   ArrayResize(header, W15_CREDENTIAL_HEADER_BYTES);
+   uint header_read = FileReadArray(handle, header, 0, W15_CREDENTIAL_HEADER_BYTES);
+   if(header_read != W15_CREDENTIAL_HEADER_BYTES)
+   {
+      FileClose(handle);
+      reason = "CREDENTIAL_SCHEMA_INVALID";
+      return false;
+   }
+   string header_text = CharArrayToString(header, 0, W15_CREDENTIAL_HEADER_BYTES, CP_UTF8);
+   for(int index = 0; index < W15_CREDENTIAL_HEADER_BYTES; index++)
+   {
+      ushort ch = StringGetCharacter(header_text, index);
+      if(ch < '0' || ch > '9')
+      {
+         FileClose(handle);
+         reason = "CREDENTIAL_SCHEMA_INVALID";
+         return false;
+      }
+   }
+   int payload_length = (int)StringToInteger(header_text);
+   if(payload_length < 1 || payload_length > W15_CREDENTIAL_MAX_BYTES)
+   {
+      FileClose(handle);
+      reason = "CREDENTIAL_PAYLOAD_OVERSIZE";
+      return false;
+   }
+
+   uchar payload[];
+   ArrayResize(payload, payload_length);
+   uint payload_read = FileReadArray(handle, payload, 0, payload_length);
+   if(payload_read != payload_length)
+   {
+      FileClose(handle);
+      reason = "CREDENTIAL_SCHEMA_INVALID";
+      return false;
+   }
+   uchar trailing[];
+   ArrayResize(trailing, 1);
+   uint trailing_read = FileReadArray(handle, trailing, 0, 1);
+   FileClose(handle);
+   if(trailing_read != 0)
+   {
+      reason = "CREDENTIAL_SCHEMA_INVALID";
+      return false;
+   }
+
+   string payload_json = CharArrayToString(payload, 0, payload_length, CP_UTF8);
+   if(StringLen(payload_json) != payload_length)
+   {
+      reason = "CREDENTIAL_SCHEMA_INVALID";
+      return false;
+   }
+   string schema = JsonValue(payload_json, "schema");
+   string executor_id = JsonValue(payload_json, "executor_id");
+   string account_reference_sha256 = JsonValue(payload_json, "account_reference_sha256");
+   string verification_key_id = JsonValue(payload_json, "verification_key_id");
+   string executor_token = JsonValue(payload_json, "executor_token");
+   string verification_material = JsonValue(payload_json, "verification_material");
+   string canonical = "{\"schema\":\"" + schema +
+                      "\",\"executor_id\":\"" + executor_id +
+                      "\",\"account_reference_sha256\":\"" + account_reference_sha256 +
+                      "\",\"verification_key_id\":\"" + verification_key_id +
+                      "\",\"executor_token\":\"" + executor_token +
+                      "\",\"verification_material\":\"" + verification_material + "\"}";
+   if(canonical != payload_json || schema != W15_CREDENTIAL_SCHEMA)
+   {
+      reason = "CREDENTIAL_SCHEMA_INVALID";
+      return false;
+   }
+   if(executor_id != InpExecutorId)
+   {
+      reason = "EXECUTOR_BINDING_MISMATCH";
+      return false;
+   }
+   if(account_reference_sha256 != InpExpectedAccountReferenceSha256 ||
+      !IsLowerHexExact(account_reference_sha256, 64))
+   {
+      reason = "ACCOUNT_BINDING_MISMATCH";
+      return false;
+   }
+   if(verification_key_id != InpCommandVerificationKeyId ||
+      !IsSafeWireIdentifier(verification_key_id))
+   {
+      reason = "KEY_ID_MISMATCH";
+      return false;
+   }
+   uchar verification_key[];
+   if(!IsLowerHexExact(executor_token, 64) ||
+      !TaggedHexToBytes(verification_material, "hex:", 32, verification_key))
+   {
+      reason = "CREDENTIAL_SCHEMA_INVALID";
+      return false;
+   }
+
+   g_executor_token = executor_token;
+   g_command_verification_key_id = verification_key_id;
+   g_command_verification_key = verification_material;
+   return true;
+}
+
+//+------------------------------------------------------------------+
 string SignedEnvelopePreimage(const string key_id,
                               const string executor_id,
                               const string payload_sha256,
@@ -535,7 +690,7 @@ bool VerifySignedEnvelope(const string response_json,
       reason = "SIGNED_WIRE_VERSION_REJECTED";
       return false;
    }
-   if(key_id != InpCommandVerificationKeyId || !IsSafeWireIdentifier(key_id))
+   if(key_id != g_command_verification_key_id || !IsSafeWireIdentifier(key_id))
    {
       reason = "SIGNED_WIRE_KEY_ID_REJECTED";
       return false;
@@ -557,7 +712,7 @@ bool VerifySignedEnvelope(const string response_json,
    uchar signature_bytes[];
    uchar preimage_bytes[];
    uchar calculated_signature[];
-   if(!TaggedHexToBytes(InpCommandVerificationKey, "hex:", 32, verification_key) ||
+   if(!TaggedHexToBytes(g_command_verification_key, "hex:", 32, verification_key) ||
       StringFind(signature, "base64url:") != 0 ||
       !Base64UrlToBytes(StringSubstr(signature, 10), signature_bytes) ||
       ArraySize(signature_bytes) != 32)
@@ -718,7 +873,7 @@ int HttpRequest(const string method,
 {
    string request_id = MakeUuid();
    string headers = "Content-Type: application/json\r\n"
-                    "Authorization: Bearer " + InpExecutorToken + "\r\n"
+                    "Authorization: Bearer " + g_executor_token + "\r\n"
                     "X-Executor-Id: " + InpExecutorId + "\r\n"
                     "X-Request-Id: " + request_id + "\r\n";
    if(StringLen(claim_token) > 0)
@@ -882,7 +1037,7 @@ bool ComputePendingIntegrityTag(const PendingReportState &pending,
                      "request_hash=" + pending.request_hash + "\n" +
                      "claim_token=" + pending.claim_token + "\n" +
                      "report_body=" + pending.report_body;
-   if(!TaggedHexToBytes(InpCommandVerificationKey,
+   if(!TaggedHexToBytes(g_command_verification_key,
                         "hex:",
                         32,
                         verification_key) ||
@@ -1760,45 +1915,59 @@ int OnInit()
    }
    const bool https_endpoint = (StringFind(InpBaseUrl, "https://") == 0);
    const int executor_id_length = StringLen(InpExecutorId);
-   const int executor_token_length = StringLen(InpExecutorToken);
-   const int verification_key_id_length = StringLen(InpCommandVerificationKeyId);
-   const int verification_key_length = StringLen(InpCommandVerificationKey);
    const int login_hash_length = StringLen(InpLoginHash);
-   uchar verification_key[];
-   if(!https_endpoint ||
-      executor_id_length < 30 ||
-      executor_token_length < 32 ||
-      !IsSafeWireIdentifier(InpCommandVerificationKeyId) ||
-      !TaggedHexToBytes(InpCommandVerificationKey, "hex:", 32, verification_key) ||
-      login_hash_length != 71)
+   if(!https_endpoint || executor_id_length < 30 || login_hash_length != 71)
    {
       PrintFormat(
-         "[W15] Invalid endpoint/credential shape: https=%s "
-         "executor_id_length=%d token_length=%d verification_key_id_length=%d "
-         "verification_key_length=%d login_hash_length=%d",
+         "[W15] Invalid endpoint/binding shape: https=%s "
+         "executor_id_length=%d login_hash_length=%d",
          https_endpoint ? "true" : "false",
          executor_id_length,
-         executor_token_length,
-         verification_key_id_length,
-         verification_key_length,
          login_hash_length
       );
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   string credential_reason = "";
+   if(!LoadRuntimeCredentials(credential_reason))
+   {
+      PrintFormat("[W15] Credential loading rejected reason=%s", credential_reason);
+      return INIT_FAILED;
+   }
+   const int executor_token_length = StringLen(g_executor_token);
+   const int verification_key_id_length = StringLen(g_command_verification_key_id);
+   const int verification_key_length = StringLen(g_command_verification_key);
+   uchar verification_key[];
+   if(executor_token_length != 64 ||
+      !IsSafeWireIdentifier(g_command_verification_key_id) ||
+      !TaggedHexToBytes(g_command_verification_key, "hex:", 32, verification_key))
+   {
+      PrintFormat(
+         "[W15] Invalid runtime credential shape: token_length=%d "
+         "verification_key_id_length=%d verification_key_length=%d",
+         executor_token_length,
+         verification_key_id_length,
+         verification_key_length
+      );
+      ClearRuntimeCredentials();
       return INIT_PARAMETERS_INCORRECT;
    }
    if(!RunSignedWireCryptoSelfTest())
    {
       Print("[W15] Signed-wire cryptographic self-test failed.");
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
    const string actual_account_id = (string)AccountInfoInteger(ACCOUNT_LOGIN);
    if(actual_account_id != InpExpectedAccountId)
    {
       Print("[W15] MT5 account binding mismatch.");
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
    if(AccountInfoString(ACCOUNT_SERVER) != InpExpectedBrokerServer)
    {
       Print("[W15] Broker server binding mismatch.");
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
    string symbol_universe_reason = "";
@@ -1806,6 +1975,7 @@ int OnInit()
    {
       PrintFormat("[W15] 30-symbol universe rejected reason=%s",
                   symbol_universe_reason);
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
    FolderCreate("Wolf15Executor", 0);
@@ -1815,6 +1985,7 @@ int OnInit()
    if(!LoadPendingReport(pending, pending_error))
    {
       PrintFormat("[W15] Durable pending state rejected reason=%s", pending_error);
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
    if(StringLen(pending.command_id) > 0)
@@ -1879,4 +2050,5 @@ void OnDeinit(const int reason)
 {
    EventKillTimer();
    AppendLedger("-", "STOPPED", IntegerToString(reason));
+   ClearRuntimeCredentials();
 }

@@ -196,6 +196,8 @@ class MarketContext:
     near_recent_high_low_without_breakout_close: bool | None = None
     structure_candle_strong_close: bool | None = None
     continuation_context: bool | None = None
+    # Timestamp from the same immutable tick snapshot as bid/ask; never a candle heartbeat.
+    tick_snapshot_timestamp_epoch: float | None = None
 
 
 @dataclass(frozen=True)

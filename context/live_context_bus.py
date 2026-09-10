@@ -32,7 +32,6 @@ from typing import Any
 
 from loguru import logger
 
-from config.pip_values import get_pip_multiplier
 from state.data_freshness import (
     FreshnessClass,
     classify_feed_freshness,
@@ -82,7 +81,9 @@ def _h1_close_time(candle: dict[str, Any]) -> datetime | None:
         return open_time + timedelta(hours=1)
 
     semantics = str(candle.get("provider_timestamp_semantics", "")).strip().upper()
-    provider_time = _as_utc_datetime(candle.get("provider_timestamp") or candle.get("timestamp") or candle.get("time"))
+    provider_time = _as_utc_datetime(
+        candle.get("provider_timestamp") or candle.get("timestamp") or candle.get("time")
+    )
     if provider_time is None:
         return None
     if semantics == "PERIOD_END":
@@ -251,6 +252,8 @@ class LiveContextBus:
 
     def update_tick(self, tick: dict[str, Any]) -> None:
         """Store latest tick for a symbol. Tick must contain 'symbol' key."""
+        # Own the scalar price/time snapshot; callers may reuse their input dict.
+        tick = dict(tick)
         symbol = tick.get("symbol")
         if symbol:
             sym = str(symbol)
@@ -554,8 +557,10 @@ class LiveContextBus:
         return self._candle_history.get(key, [])
 
     def get_latest_tick(self, symbol: str) -> dict[str, Any] | None:
-        """Return latest tick for symbol, or None if not yet received."""
-        return self._ticks.get(symbol)
+        """Return one copied price/time snapshot, or None if not yet received."""
+        with self._lock:
+            tick = self._ticks.get(symbol)
+            return dict(tick) if tick is not None else None
 
     def get_tick_timestamp(self, symbol: str) -> float | None:
         """Return the observation time of the cached tick, independent of candle freshness."""
@@ -665,131 +670,12 @@ class LiveContextBus:
         return {"symbols": symbols}
 
     def check_price_drift(self, symbol: str, max_drift_pips: float = 5.0) -> dict[str, Any]:
-        """Compare time-aligned REST and WS-built closed H1 candles.
+        """Compare only explicit, fresh, same-period REST/WS closed H1 evidence."""
+        from context.price_drift import compare_closed_h1
 
-        The latest live WS mid is retained as observational context, but is
-        never treated as comparable to a historical H1 close. A drift verdict
-        requires two explicitly closed H1 candles with the same close time.
-
-        Args:
-            symbol:         Trading symbol (e.g. ``EURUSD``).
-            max_drift_pips: Maximum acceptable drift in pips.
-
-        Returns:
-            Stable dict consumed by ``H1RefreshScheduler``::
-
-                {
-                    "comparable":             bool,
-                    "reason":                 str,
-                    "drifted":                bool,
-                    "drift_pips":             float,
-                    "observed_live_gap_pips": float | None,
-                    "rest_close":             float | None,
-                    "ws_h1_close":            float | None,
-                    "ws_mid":                 float | None,
-                }
-        """
-        h1_candles = self.get_candles(symbol, "H1")
-        rest_candle = next((c for c in reversed(h1_candles) if not _is_ws_built_h1(c)), None)
-        rest_close = float(rest_candle["close"]) if rest_candle and rest_candle.get("close") is not None else None
-        rest_close_time = _h1_close_time(rest_candle) if rest_candle else None
-
-        # Latest WS tick mid-price
-        tick = self.get_latest_tick(symbol)
-        ws_mid: float | None = None
-        if tick:
-            bid = tick.get("bid") or tick.get("price")
-            ask = tick.get("ask") or tick.get("price")
-            if bid is not None and ask is not None:
-                ws_mid = (float(bid) + float(ask)) / 2.0
-            elif bid is not None:
-                ws_mid = float(bid)
-
-        try:
-            multiplier = get_pip_multiplier(symbol)
-        except LookupError:
-            multiplier = 10_000.0
-
-        observed_live_gap_pips = (
-            abs(rest_close - ws_mid) * multiplier if rest_close is not None and ws_mid is not None else None
+        return compare_closed_h1(
+            symbol, self.get_candles(symbol, "H1"), self.get_latest_tick(symbol), max_drift_pips
         )
-
-        ws_h1_candle = None
-        if rest_close_time is not None:
-            for candidate in reversed(h1_candles):
-                candidate_close_time = _h1_close_time(candidate)
-                if (
-                    _is_ws_built_h1(candidate)
-                    and candidate.get("complete") is True
-                    and candidate_close_time is not None
-                    and abs((candidate_close_time - rest_close_time).total_seconds()) < 1.0
-                ):
-                    ws_h1_candle = candidate
-                    break
-
-        reason = "ALIGNED_CLOSED_H1"
-        if rest_candle is None:
-            reason = "MISSING_REST_H1"
-        elif rest_candle.get("complete") is not True:
-            reason = "REST_H1_NOT_EXPLICITLY_CLOSED"
-        elif rest_close is None:
-            reason = "MISSING_REST_H1_CLOSE"
-        elif rest_close_time is None:
-            reason = "MISSING_REST_H1_CLOSE_TIME"
-        elif ws_h1_candle is None:
-            reason = "MISSING_ALIGNED_WS_CLOSED_H1"
-
-        comparable = reason == "ALIGNED_CLOSED_H1"
-        ws_h1_close = (
-            float(ws_h1_candle["close"]) if ws_h1_candle is not None and ws_h1_candle.get("close") is not None else None
-        )
-        if comparable and ws_h1_close is None:
-            comparable = False
-            reason = "MISSING_WS_H1_CLOSE"
-
-        if comparable:
-            assert rest_close is not None and ws_h1_close is not None
-            drift_pips = abs(rest_close - ws_h1_close) * multiplier
-        else:
-            drift_pips = 0.0
-        drifted = comparable and drift_pips > max_drift_pips
-
-        if drifted:
-            logger.warning(
-                "Price drift alert: {} REST_H1_close={:.5f} WS_H1_close={:.5f} "
-                "drift={:.1f} pips (max={:.1f}) close_time={}",
-                symbol,
-                rest_close,
-                ws_h1_close,
-                drift_pips,
-                max_drift_pips,
-                rest_close_time.isoformat() if rest_close_time is not None else None,
-            )
-        elif not comparable and observed_live_gap_pips is not None and observed_live_gap_pips > max_drift_pips:
-            logger.warning(
-                "Price drift not evaluated: {} REST_H1_close={:.5f} WS_live_mid={:.5f} "
-                "observed_gap={:.1f} pips (max={:.1f}) reason={}",
-                symbol,
-                rest_close,
-                ws_mid,
-                observed_live_gap_pips,
-                max_drift_pips,
-                reason,
-            )
-
-        ws_close_time = _h1_close_time(ws_h1_candle) if ws_h1_candle is not None else None
-        return {
-            "comparable": comparable,
-            "reason": reason,
-            "drifted": drifted,
-            "drift_pips": drift_pips,
-            "observed_live_gap_pips": observed_live_gap_pips,
-            "rest_close": rest_close,
-            "rest_close_time": rest_close_time.isoformat() if rest_close_time is not None else None,
-            "ws_h1_close": ws_h1_close,
-            "ws_close_time": ws_close_time.isoformat() if ws_close_time is not None else None,
-            "ws_mid": ws_mid,
-        }
 
     def get_warmup_bar_count(self, symbol: str, timeframe: str) -> int:
         """Return number of bars currently stored for symbol/timeframe."""

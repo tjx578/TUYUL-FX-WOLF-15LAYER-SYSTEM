@@ -66,6 +66,22 @@ def _env_float(key: str, default: float, *, minimum: float = 0.05) -> float:
         return default
 
 
+def _assert_api_only_orchestrator_ownership() -> None:
+    """Reject the removed embedded-orchestrator compatibility switch.
+
+    The API may read the standalone orchestrator's durable state, but it must
+    never construct an autonomous ``StateManager``. Failing at API startup is
+    intentional: accepting the old switch could recreate one writer per
+    Gunicorn worker.
+    """
+
+    if _env_bool("WOLF15_EMBED_ORCHESTRATOR", False):
+        raise RuntimeError(
+            "WOLF15_EMBED_ORCHESTRATOR is no longer supported: "
+            "wolf15-orchestrator is the sole runtime orchestration owner"
+        )
+
+
 async def _await_bool(value: Awaitable[bool] | bool) -> bool:
     if isinstance(value, bool):
         return value
@@ -160,7 +176,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     outbox_task: asyncio.Task[None] | None = None
     if not read_only_startup:
         try:
-            outbox_worker = TradeOutboxWorker(consumer_name="api-1")
+            # This is API projection delivery, not compliance orchestration or an
+            # execution consumer. A per-process identity avoids aliasing Redis
+            # consumer state across Gunicorn workers and rolling replicas.
+            projection_consumer = f"api-projection-{os.getenv('RAILWAY_REPLICA_ID') or os.getpid()}"
+            outbox_worker = TradeOutboxWorker(consumer_name=projection_consumer)
             outbox_task = supervisor.start("trade_outbox", outbox_worker.run())
         except Exception:
             supervisor.fail("trade_outbox", "bootstrap_failed")

@@ -7,8 +7,12 @@ import time
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
+from core.redis_keys import HEARTBEAT_ORCHESTRATOR
 from services.orchestrator.execution_mode import ExecutionMode
-from services.orchestrator.state_manager import StateManager
+from services.orchestrator.ownership import LeaseIdentity, OwnershipLostError
+from services.orchestrator.state_manager import RuntimeSupervisor, StateManager
 
 
 def _sign_payload(payload: dict[str, Any], secret: str) -> str:
@@ -102,8 +106,39 @@ class _FakeRedis:
         return _FakePipeline(self)
 
 
+class _AlwaysOwner:
+    def __init__(self, redis: _FakeRedis) -> None:
+        self._redis = redis
+        self.identity = LeaseIdentity(owner_id="unit-test", generation=1)
+        self.held = True
+
+    def fenced_value_write(self, *, key: str, value: str) -> None:
+        self._redis.set(key, value)
+
+    def fenced_state_write(
+        self,
+        *,
+        state_key: str,
+        state_payload: str,
+        heartbeat_key: str,
+        heartbeat_payload: str,
+        channel: str,
+    ) -> None:
+        self._redis.set(state_key, state_payload)
+        self._redis.set(heartbeat_key, heartbeat_payload)
+        self._redis.publish(channel, state_payload)
+
+    def release(self) -> bool:
+        self.held = False
+        self.identity = None  # type: ignore[assignment]
+        return True
+
+    def renew(self) -> bool:
+        return self.held
+
+
 def _new_manager(redis_client: _FakeRedis) -> StateManager:
-    manager = StateManager(redis_client=redis_client)  # type: ignore[arg-type]
+    manager = StateManager(redis_client=redis_client, ownership=_AlwaysOwner(redis_client))  # type: ignore[arg-type]
     manager.configure_intervals(compliance_interval_sec=1.0, heartbeat_interval_sec=300.0)
     return manager
 
@@ -132,6 +167,82 @@ def test_compliance_critical_sets_kill_switch() -> None:
     assert len(redis.published) == 1
     event = json.loads(redis.published[0][1])
     assert event["event"] == "MODE_CHANGED"
+    assert event["owner_id"] == "unit-test"
+    assert event["fence_generation"] == 1
+
+    heartbeat = json.loads(redis.values[HEARTBEAT_ORCHESTRATOR])
+    assert heartbeat["owner_id"] == "unit-test"
+    assert heartbeat["fence_generation"] == 1
+
+
+def test_kill_switch_write_propagates_ownership_loss() -> None:
+    redis = _FakeRedis()
+    ownership = _AlwaysOwner(redis)
+    manager = StateManager(redis_client=redis, ownership=ownership)  # type: ignore[arg-type]
+
+    def reject_write(*, key: str, value: str) -> None:
+        del key, value
+        ownership.held = False
+        ownership.identity = None  # type: ignore[assignment]
+        raise OwnershipLostError("stale orchestrator owner")
+
+    ownership.fenced_value_write = reject_write  # type: ignore[method-assign]
+
+    with pytest.raises(OwnershipLostError, match="stale orchestrator owner"):
+        manager._sync_kill_switch(ExecutionMode.KILL_SWITCH)  # noqa: SLF001
+
+
+def test_kill_switch_storage_failure_is_fail_closed() -> None:
+    redis = _FakeRedis()
+    ownership = _AlwaysOwner(redis)
+    manager = StateManager(redis_client=redis, ownership=ownership)  # type: ignore[arg-type]
+
+    def reject_write(*, key: str, value: str) -> None:
+        del key, value
+        raise ConnectionError("redis unavailable")
+
+    ownership.fenced_value_write = reject_write  # type: ignore[method-assign]
+
+    with pytest.raises(ConnectionError, match="redis unavailable"):
+        manager._sync_kill_switch(ExecutionMode.KILL_SWITCH)  # noqa: SLF001
+
+
+def test_process_once_rejects_non_owner_before_evaluation() -> None:
+    redis = _FakeRedis()
+    ownership = _AlwaysOwner(redis)
+    ownership.held = False
+    ownership.identity = None  # type: ignore[assignment]
+    manager = StateManager(redis_client=redis, ownership=ownership)  # type: ignore[arg-type]
+
+    with pytest.raises(OwnershipLostError, match="requires an active ownership lease"):
+        manager.process_once(now=10.0)
+
+    assert redis.published == []
+
+
+def test_evaluator_exception_marks_runtime_fatal_and_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    redis = _FakeRedis()
+    ownership = _AlwaysOwner(redis)
+    supervisor = RuntimeSupervisor(stall_timeout_sec=30)
+    supervisor.mark_owner()
+    manager = StateManager(
+        redis_client=redis,  # type: ignore[arg-type]
+        ownership=ownership,  # type: ignore[arg-type]
+        supervisor=supervisor,
+    )
+
+    def fail_evaluator() -> None:
+        raise RuntimeError("evaluator failed")
+
+    monkeypatch.setattr(manager, "process_once", fail_evaluator)
+
+    with pytest.raises(RuntimeError, match="evaluator failed"):
+        manager.run_forever()
+
+    assert supervisor.state == "FATAL"
+    assert supervisor.is_alive() is False
+    assert supervisor.is_ready() is False
+    assert supervisor.details()["fatal_error"] == "RuntimeError"
 
 
 def test_compliance_warning_sets_safe() -> None:
@@ -420,7 +531,7 @@ def test_requested_stop_publishes_shutdown_then_releases_owner():
     events = [json.loads(payload)["event"] for _, payload in store.published]
     assert events == ["BOOT", "SHUTDOWN"]
     assert store._pubsub.closed
-    assert not store._mode_lease_tokens
+    assert manager._ownership.held is False  # noqa: SLF001
 
 
 def test_process_signal_stops_owner_and_restores_handlers(monkeypatch):
@@ -437,6 +548,9 @@ def test_process_signal_stops_owner_and_restores_handlers(monkeypatch):
         return previous
 
     class Manager:
+        def __init__(self, *args, **kwargs):
+            del args, kwargs
+
         def run_forever(self, on_started):
             on_started()
             callbacks[signal.SIGTERM](signal.SIGTERM, None)

@@ -3,10 +3,8 @@
 **Status:** Canonical current-state deployment policy
 **Scope:** Deployment target classification, support expectations, and operational truth hierarchy for TUYUL FX
 **Audience:** Architecture, DevOps, runtime operators, maintainers
-**Last Verified:** 2026-04-15
-**Source of Truth:** `docker-compose.yml`, `railway-*.toml`, `services/*/Dockerfile`, `dashboard/nextjs/railway.toml`, `dashboard/nextjs/Dockerfile`
-> Dashboard revision 2026-09-09: the selected frontend is `https://wolf15-dashboard-frontend-production.up.railway.app` (port `8080`), with server-only direct core calls to `https://wolf15-api-production.up.railway.app`. Public `/login` still shows `VIEWER JWT`; repository password-login/direct-core changes are not a production deployment. Production acceptance remains HOLD. Other service sections retain their earlier evidence dates and do not authorize engine, broker, database or provider mutations.
-
+**Last Verified:** 2026-09-06 against repository deployment definitions (not production)
+**Source of Truth:** `docker-compose.yml`, `railway-*.toml`, `services/*/Dockerfile`, `dashboard/nextjs/vercel.json`
 
 ---
 
@@ -45,22 +43,27 @@ Setiap deployment target harus diklasifikasikan sebagai salah satu dari tiga sta
 
 Alasan:
 
-* repo memiliki 13 Railway toml configs (10 active, 3 deprecated/rollback)
-* Railway topology sudah mengalami **consolidation wave** — bukan pure per-service lagi:
-  * `railway.toml` = API + embedded Orchestrator (`WOLF15_EMBED_ORCHESTRATOR=true`)
+* repo memiliki Railway definitions for independently owned runtime roles
+* Railway topology keeps selected consolidated roles while enforcing a separate
+  orchestration owner:
+  * `railway.toml` = API-only; both API start scripts reject an enabled
+    `WOLF15_EMBED_ORCHESTRATOR`
+  * `railway-orchestrator.toml` = standalone orchestration and compliance owner
   * `railway-execution.toml` = Allocation + Execution consolidated via `services/trade/runner.py`
   * `railway-engine.toml` = Engine-only (`RUN_MODE=engine-only`)
 * dedicated service entrypoints (`services/api/main.py`, `services/engine/runner.py`, `services/trade/runner.py`, `services/dashboard_bff/main.py`) menegaskan arah service-oriented runtime
 * startup scripts di `deploy/railway/` sudah lengkap (14 scripts)
 
-**Active Railway services (10):**
+**Active Railway definitions:**
 
 | Config | Start Script | Purpose | Lifecycle |
 | ------ | ----------- | ------- | --------- |
-| `railway.toml` | `start_api_consolidated.sh` | API + embedded Orchestrator | ON_FAILURE (5 retries) |
+| `railway.toml` | `start_api.sh` | API-only, including read/WebSocket projections | provider/default policy |
+| `railway-orchestrator.toml` | `start_orchestrator.sh` | Standalone orchestration and compliance owner | ON_FAILURE (5 retries) |
+| `railway-ingestor.toml` | `start_ingest.sh` | Standalone market-data ingest | ON_FAILURE (5 retries) |
 | `railway-engine.toml` | `start_engine_consolidated.sh` | Engine-only pipeline | ON_FAILURE (5 retries) |
 | `railway-execution.toml` | `start_trade_consolidated.sh` | Allocation + Execution consolidated | ON_FAILURE (5 retries) |
-| `railway-dashboard-bff.toml` | `start_dashboard_bff.sh` | Legacy standalone BFF; disconnected from selected frontend | ON_FAILURE (5 retries) |
+| `railway-dashboard-bff.toml` | `start_dashboard_bff.sh` | Dashboard BFF aggregation | ON_FAILURE (5 retries) |
 | `railway-ea-bridge.toml` | `start_ea_bridge.sh` | SHADOW MT5 command bridge | ON_FAILURE (5 retries) |
 | `railway-pressure-outbox.toml` | `start_pressure_outbox.sh` | Durable pressure dispatcher/inbox worker | ON_FAILURE (5 retries) |
 | `railway-migrator.toml` | `start_migrator.sh` | One-shot DB migration (alembic) | NEVER restart |
@@ -68,18 +71,20 @@ Alasan:
 | `railway-worker-backtest.toml` | `start_worker.sh` | Nightly backtest cron (daily 1:30 UTC) | NEVER restart |
 | `railway-worker-regime.toml` | `start_worker.sh` | Regime recalibration cron (Sunday 2:00 UTC) | NEVER restart |
 
-**Deprecated Railway tomls (3, kept for rollback):**
+**Compatibility/consolidation definitions:**
 
 | Config | Original Purpose | Status |
 | ------ | --------------- | ------ |
-| `railway-ingestor.toml` | Standalone ingest | DEPRECATED — ingest embedded in engine |
-| `railway-orchestrator.toml` | Standalone orchestrator | DEPRECATED — orchestrator embedded in API |
+| `railway-ingestor.toml` | Standalone ingest | Active source contract; deployment status requires external evidence |
 | `railway-allocation.toml` | Standalone allocation | DEPRECATED — consolidated into trade service |
 
 **Implikasi:**
 
-* ketika terjadi konflik antar deployment mode, Railway cloud topology menjadi acuan utama untuk current service separation
+* ketika terjadi konflik antar deployment mode, active Railway definitions and
+  executable start scripts are the repository-level source for service separation
 * semua evolusi runtime topology baru harus terlebih dulu kompatibel dengan jalur canonical ini
+* repository classification does not prove provider deployment, replica count,
+  image identity, or effective environment
 
 ### 3.2 Canonical local / integration deployment — Docker Compose
 
@@ -125,19 +130,21 @@ Compose file berisi **two stacks** yang coexist selama transisi:
 * Compose tidak boleh diperlakukan sebagai file opsional kecil
 * sebelum Compose dipensiunkan, harus ada pengganti yang setara untuk local full-stack reproducibility
 
-### 3.3 Canonical frontend deployment — Railway
+### 3.3 Supported frontend deployment — Vercel
 
-The selected frontend is the existing Railway dashboard service. Its Next.js source is `dashboard/nextjs/`, with Docker/standalone runtime and port `8080`. The previous frontend deployment adapter and obsolete design surface are removed from the selected frontend source.
+**Vercel** diklasifikasikan sebagai **supported deployment target** untuk dashboard frontend.
 
-Required repository contract:
+Alasan:
 
-- `DASHBOARD_MODE=viewer`.
-- `DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app`.
-- Server-only `INTERNAL_API_URL=https://wolf15-api-production.up.railway.app`.
-- Three exact GET projections call existing core routes; no BFF dependency or public API/WS credential path.
-- The selected API must use an API-only entrypoint with embedded orchestrator disabled. The legacy consolidated API configuration in the earlier inventory is not a deployment instruction for owner-login.
+* `dashboard/nextjs/vercel.json` aktif, region = SIN1 (Singapore)
+* `next.config.js` mengatur API base URL dan WebSocket origin dari env
+* dashboard frontend tidak mengandung constitutional logic, sehingga deployability-nya terpisah dari backend
 
-Local source/build evidence, provider service identity and production login acceptance must be recorded separately. See [direct API topology](dashboard-hybrid-topology.md).
+**Implikasi:**
+
+* Vercel hanya relevan untuk dashboard frontend, bukan backend services
+* Vercel deploy berjalan independen dari Railway/Compose backend
+* perubahan backend API contract harus divalidasi terhadap dashboard build
 
 ### 3.4 Removed deployment — Hostinger VPS
 
@@ -160,9 +167,9 @@ Fakta:
 
 | Deployment target | Status | Primary purpose | Source of truth scope | Notes |
 | ----------------- | ------ | --------------- | -------------------- | ----- |
-| Railway | **Canonical** | Cloud runtime (consolidated services) | Current service-oriented runtime topology | 10 active + 3 deprecated tomls |
+| Railway | **Canonical** | Cloud runtime (separate orchestration owner) | Repository deployment contract only | Provider state requires external observation |
 | Docker Compose | **Canonical** | Local/integration full-stack | Local reproducibility, integration validation | 14 services (hybrid transitional) |
-| Railway dashboard | **Canonical** | Viewer frontend deployment | Direct core API, same-origin HttpOnly auth | Selected service port 8080; production revision acceptance HOLD |
+| Vercel | **Supported** | Dashboard frontend deployment | Frontend deployment only | SIN1 region, `dashboard/nextjs/` |
 | Hostinger VPS | **Removed** | (formerly bare-metal ops) | N/A | `deploy/hostinger/` deleted from repo |
 | Nginx reverse proxy | **Artifact** | Reverse proxy config reference | Ops convenience only | `deploy/nginx/`, placeholder domain |
 
@@ -176,8 +183,8 @@ Fakta:
 | Engine | `services/engine/runner.py` | Analysis pipeline + health probe on :8081 | `engine` |
 | Trade | `services/trade/runner.py` | Consolidated allocation + execution; dual Prometheus ports | `trade` |
 | Ingest | `services/ingest/ingest_worker.py` | Market data acquisition; lightweight health probe first | `ingest` |
-| Orchestrator | `services/orchestrator/coordinator.py` | Coordination-only, never verdict synthesis | `orchestrator` |
-| Legacy Dashboard BFF | `services/dashboard_bff/main.py` | Standalone legacy service, disconnected from selected frontend | `dashboard-bff` |
+| Orchestrator | `services/orchestrator/state_manager.py` | Sole orchestration/compliance runtime, never strategy or broker authority | `orchestrator` |
+| Dashboard BFF | `services/dashboard_bff/main.py` | Non-authoritative BFF aggregation for dashboard | `dashboard-bff` |
 | Worker | `services/worker/` | Dispatched by `WOLF15_WORKER_ENTRY` env var | (per job) |
 | Legacy monolith | `main.py` | Logical flow reference; still functions as combined entrypoint | N/A |
 
@@ -199,7 +206,7 @@ Untuk urusan deployment, gunakan hierarchy berikut:
 1. **Current runtime topology docs** (`runtime-topology-current.md`)
 2. **Service entrypoints aktif** (tabel Section 5)
 3. **Canonical deployment definitions** (Railway tomls, `docker-compose.yml`)
-4. **Selected frontend deployment definition** (Railway Docker/standalone config)
+4. **Supported deployment adapters** (Vercel config)
 5. **Reference architecture docs** (`reference-architecture.md`)
 
 Dalam praktiknya:
@@ -226,12 +233,11 @@ Dalam praktiknya:
 * jalur debug lintas-service yang cukup dekat dengan runtime production mindset
 * kemampuan memvalidasi integrasi tanpa bergantung pada provider cloud
 
-### 8.3 Railway frontend must guarantee
+### 8.3 Vercel must guarantee
 
-* Strict build and matching core auth/read contracts.
-* Exact canonical browser origin, server-only HTTPS core origin and port 8080.
-* HttpOnly viewer session, three GET projections, server-side response filtering and no machine credential exposure.
-* Separate production acceptance evidence before promotion.
+* dashboard frontend build yang konsisten dengan backend API contract
+* environment variables untuk API base URL dan WS origin yang benar
+* region deployment yang sesuai (currently SIN1)
 
 ---
 
@@ -252,7 +258,7 @@ Supported targets:
 
 * boleh tetap ada dan didukung
 * diprioritaskan setelah canonical targets
-* harus jelas scope-nya; selected dashboard frontend remains Railway-only
+* harus jelas scope-nya (Vercel = frontend only)
 
 ### 9.3 Removed targets
 
@@ -270,7 +276,7 @@ Setiap perubahan baru yang menyentuh runtime harus dievaluasi menurut urutan ini
 
 1. Apakah perubahan ini kompatibel dengan **Railway** sebagai canonical cloud deployment?
 2. Apakah perubahan ini tetap bisa direproduksi di **Docker Compose** sebagai canonical local/integration deployment?
-3. Jika menyentuh dashboard, apakah build, login dan direct-core containment cocok dengan **Railway dashboard** yang dipilih?
+3. Jika menyentuh dashboard, apakah perubahan ini kompatibel dengan **Vercel** deployment?
 
 Jika jawaban nomor 1 dan 2 tidak jelas, perubahan belum siap dipromosikan.
 
@@ -297,11 +303,15 @@ Railway sebagai canonical cloud target hanya boleh diganti jika sudah ada canoni
 
 ### Untuk deprecated Railway tomls
 
-`railway-ingestor.toml`, `railway-orchestrator.toml`, `railway-allocation.toml` dan startup scripts terkait (`start_api.sh`, `start_ingest.sh`, `start_engine.sh`, `start_execution.sh`, `start_allocation.sh`, `start_orchestrator.sh`) boleh dihapus jika:
+`railway-allocation.toml` and superseded compatibility scripts may be removed only if:
 
-* consolidated services sudah stabil di production
-* rollback ke per-service mode tidak lagi dibutuhkan
-* tidak ada operator yang masih bergantung pada per-service mode
+* consolidated ownership has verified runtime evidence;
+* exact rollback targets no longer depend on them; and
+* removal cannot restore embedded orchestration or create a second writer.
+
+`railway-orchestrator.toml` and `start_orchestrator.sh` are canonical, not
+deprecation candidates. `railway-ingestor.toml` remains listed by the service
+ownership contract until a separately approved topology change says otherwise.
 
 ---
 
@@ -323,7 +333,9 @@ Jika gejala di atas muncul, canonical target harus dipakai sebagai pembanding pe
 
 * `deploy/hostinger/` — removed, no longer part of deployment surface
 * `RUN_MODE=all|engine-only|ingest-only` — legacy monolith mode selector; being superseded by per-service Dockerfiles and Railway consolidated services
-* `railway-ingestor.toml`, `railway-orchestrator.toml`, `railway-allocation.toml` — deprecated, kept for rollback only
+* `railway-orchestrator.toml` — canonical standalone orchestration definition
+* `railway-ingestor.toml` — standalone ingest definition; runtime deployment is not inferred from its presence
+* `railway-allocation.toml` — compatibility definition superseded by the trade service
 
 ---
 
@@ -354,19 +366,18 @@ Tidak ada deployment target yang boleh diam-diam menciptakan perilaku runtime ba
 
 ---
 
-## 16. Historical Changelog
-
-The entries below preserve earlier classification history; section 3.3 supersedes the historical frontend target.
+## 16. Changelog
 
 ```text
 v1.0 — Initial deployment classification (flat inventory format)
 v2.0 — Rewritten with 3-tier classification model
-       - Railway: canonical cloud (10 active + 3 deprecated tomls)
+v2.1 — Corrected API-only/standalone-orchestrator ownership; removed the stale embedded-orchestrator classification
+       - Railway: canonical repository definitions with a separate orchestrator owner
        - Docker Compose: canonical local/integration (14 services)
        - Vercel: supported (dashboard frontend, SIN1)
        - Hostinger: removed (deploy/hostinger/ deleted from repo)
        - Added: service entrypoints incl. trade, dashboard_bff, ingest_worker
-       - Added: Railway consolidation state (API+Orchestrator, Trade=Alloc+Exec)
+       - Corrected: API-only plus standalone orchestrator; Trade=Alloc+Exec remains consolidated
        - Added: operational truth hierarchy, change management, decommission rules
        - Added: anti-drift policy, support policy per tier
        - Added: WOLF15_SERVICE_ROLE mapping

@@ -59,6 +59,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import math
 import os
 import time
 
@@ -451,10 +452,7 @@ class WolfConstitutionalPipeline:
             throttle_intel_max_events = max(100, int(os.getenv("SIGNAL_THROTTLE_INTEL_MAX_EVENTS", "20000")))
         except (TypeError, ValueError):
             throttle_intel_max_events = 20000
-        from analysis.strategy_5scr_activity_service import activity_runtime_from_environment
-
         self._signal_throttle_live_analyzer = SignalThrottleLiveAnalyzer(
-            pair_activity_runtime=activity_runtime_from_environment(),
             latest_window_minutes=int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_LATEST_WINDOW_MINUTES", 60.0)),
             retention_seconds=int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_RETENTION_SECONDS", 7200.0)),
             max_events=throttle_intel_max_events,
@@ -3463,6 +3461,9 @@ class WolfConstitutionalPipeline:
         )
         latest_tick = self._context_bus.get_latest_tick(symbol)
         latest_tick = latest_tick if isinstance(latest_tick, dict) else {}
+        tick_timestamp = _coerce_timestamp_to_epoch(
+            latest_tick.get("last_seen_ts") or latest_tick.get("timestamp") or latest_tick.get("ts")
+        )
         bid = self._coerce_positive_float(latest_tick.get("bid") or latest_tick.get("price"))
         ask = self._coerce_positive_float(latest_tick.get("ask") or latest_tick.get("price"))
         tick_mid = (bid + ask) / 2.0 if bid is not None and ask is not None else bid or ask
@@ -3494,6 +3495,7 @@ class WolfConstitutionalPipeline:
             raw_allowed_direction=direction,
             bid=bid,
             ask=ask,
+            tick_snapshot_timestamp_epoch=tick_timestamp,
             pip_value=pip_value,
             price_at_signal_start=entry_price or latest_m15_close or latest_h1_close or tick_mid,
             price_at_5m_confirm=latest_m15_close or tick_mid,
@@ -6569,18 +6571,24 @@ class WolfConstitutionalPipeline:
         source = str(lineage.get("price_source") or "UNKNOWN").upper()
         snapshot_time = lineage.get("price_snapshot_time_utc")
         age_seconds = lineage.get("price_age_seconds")
-        freshness = str(lineage.get("price_freshness_status") or "UNKNOWN").upper()
+        # Feed activity and the quote's own provenance are independent evidence.
+        feed_freshness = str(lineage.get("price_freshness_status") or "UNKNOWN").upper()
         is_observed_source = source.startswith("LIVE_TICK") or source.endswith("_CLOSE")
-        reference_is_live = bool(lineage.get("reference_price_is_live"))
+        reference_is_live = bool(lineage.get("reference_price_is_live")) and feed_freshness == "LIVE"
         if price is None:
             reference_status = "MISSING"
         elif reference_is_live:
             reference_status = "LIVE"
-        elif "STALE" in freshness or freshness == "NO_PRODUCER":
+        elif "STALE" in feed_freshness or feed_freshness in {"NO_PRODUCER", "NO_TRANSPORT", "CONFIG_ERROR"}:
             reference_status = "STALE"
         else:
             reference_status = "AVAILABLE"
         snapshot_epoch = _coerce_timestamp_to_epoch(snapshot_time)
+        if snapshot_epoch is not None and (not math.isfinite(snapshot_epoch) or snapshot_epoch <= 0):
+            snapshot_epoch = None
+        snapshot_status = str(lineage.get("price_snapshot_status") or "").upper()
+        if source.startswith("LIVE_TICK") and snapshot_epoch is None:
+            snapshot_status = "MISSING"
         quote_observed_at = (
             datetime.fromtimestamp(snapshot_epoch, tz=UTC) if snapshot_epoch is not None else datetime.now(UTC)
         )
@@ -6605,26 +6613,41 @@ class WolfConstitutionalPipeline:
                 ),
             )
             self._frozen_quote_detector = detector
-        quote_health = detector.observe(
-            symbol=symbol or str(lineage.get("symbol") or "UNKNOWN"),
-            price=price,
-            observed_at=quote_observed_at,
-            source=source,
-        )
-        if quote_health.status == "PRICE_FROZEN":
+        if source.startswith("LIVE_TICK") and snapshot_status in {"MISSING", "STALE", "FUTURE"}:
+            # Do not warm up or poison quote state with an unproven timestamp.
+            quote_health_payload: dict[str, Any] = {
+                "quote_health_status": "INSUFFICIENT_HISTORY",
+                "quote_health_observed_at_utc": snapshot_time,
+                "quote_unchanged_seconds": 0.0,
+                "quote_consecutive_unchanged": 0,
+                "quote_observation_count": 0,
+                "quote_warmup_elapsed_seconds": 0.0,
+                "quote_health_execution_blocked": True,
+                "quote_health_reason": f"QUOTE_SNAPSHOT_TIMESTAMP_{snapshot_status}",
+                "quote_health_rule_version": "frozen-quote.v2-restart-warmup",
+            }
+        else:
+            quote_health_payload = detector.observe(
+                symbol=symbol or str(lineage.get("symbol") or "UNKNOWN"),
+                price=price,
+                observed_at=quote_observed_at,
+                source=source,
+            ).to_payload()
+        quote_status = quote_health_payload["quote_health_status"]
+        if quote_status == "PRICE_FROZEN":
             reference_status = "PRICE_FROZEN"
             reference_is_live = False
-            freshness = "PRICE_FROZEN"
-        elif quote_health.status == "MARKET_CLOSED":
+        elif quote_status == "MARKET_CLOSED":
             reference_status = "MARKET_CLOSED"
             reference_is_live = False
-        elif quote_health.status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
+        elif quote_status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
             reference_is_live = False
-            # Detector warmup does not erase an already observed stale feed.
-            # Quote quality is exposed separately and still blocks execution.
-            if reference_status != "STALE":
-                reference_status = quote_health.status
-                freshness = quote_health.status
+            if reference_status not in {"MISSING", "STALE"}:
+                reference_status = quote_status
+        elif quote_health_payload["quote_health_execution_blocked"]:
+            reference_is_live = False
+            if reference_status != "MISSING":
+                reference_status = quote_status
         payload = {
             "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
             "reference_price_used_for_decision_update": price,
@@ -6643,10 +6666,11 @@ class WolfConstitutionalPipeline:
             "price_context_field": lineage.get("price_context_field"),
             "price_snapshot_time_utc": snapshot_time,
             "price_age_seconds": age_seconds,
-            "price_freshness_status": freshness,
+            "price_freshness_status": feed_freshness,
+            "price_snapshot_status": snapshot_status or None,
             "reference_price_is_live": reference_is_live,
             "price_lineage_version": 2,
-            **quote_health.to_payload(),
+            **quote_health_payload,
         }
         return payload
 
@@ -6664,11 +6688,20 @@ class WolfConstitutionalPipeline:
         ask = self._coerce_positive_float(context.ask)
         tick_mid = (bid + ask) / 2.0 if bid is not None and ask is not None else None
         if tick_mid is not None and self._same_reference_price(price, tick_mid):
-            return {"price_source": "LIVE_TICK_MID"}
+            return {
+                "price_source": "LIVE_TICK_MID",
+                "price_source_timestamp_epoch": context.tick_snapshot_timestamp_epoch,
+            }
         if field_name == "bid":
-            return {"price_source": "LIVE_TICK_BID"}
+            return {
+                "price_source": "LIVE_TICK_BID",
+                "price_source_timestamp_epoch": context.tick_snapshot_timestamp_epoch,
+            }
         if field_name == "ask":
-            return {"price_source": "LIVE_TICK_ASK"}
+            return {
+                "price_source": "LIVE_TICK_ASK",
+                "price_source_timestamp_epoch": context.tick_snapshot_timestamp_epoch,
+            }
         if self._matches_execution_entry_price(price, synthesis=synthesis, l12_verdict=l12_verdict):
             return {"price_source": "EXECUTION_ENTRY"}
         if candle_source := self._matching_candle_reference(symbol=symbol, price=price, timeframes=("M15", "H1")):
@@ -6764,44 +6797,51 @@ class WolfConstitutionalPipeline:
         source: str,
         source_timestamp: Any | None = None,
     ) -> dict[str, Any]:
+        from state.data_freshness import FRESHNESS_LIVE_MAX_AGE_SEC  # noqa: PLC0415
+
         symbol_key = str(symbol or "").upper()
         bus = getattr(self, "_context_bus", None)
         feed_status = "UNKNOWN"
-        feed_age: float | None = None
-        feed_timestamp: float | None = None
         if symbol_key and bus is not None:
             try:
                 if hasattr(bus, "get_feed_status"):
                     feed_status = str(bus.get_feed_status(symbol_key) or "UNKNOWN").upper()
             except Exception:  # noqa: BLE001 - diagnostics must not break decision payloads.
                 feed_status = "UNKNOWN"
-            try:
-                if hasattr(bus, "get_feed_age"):
-                    raw_age = bus.get_feed_age(symbol_key)
-                    feed_age = None if raw_age is None else round(max(0.0, float(raw_age)), 3)
-            except Exception:  # noqa: BLE001
-                feed_age = None
-            try:
-                if hasattr(bus, "get_feed_timestamp"):
-                    raw_ts = bus.get_feed_timestamp(symbol_key)
-                    feed_timestamp = None if raw_ts is None else float(raw_ts)
-            except Exception:  # noqa: BLE001
-                feed_timestamp = None
         is_tick_source = str(source or "").upper().startswith("LIVE_TICK")
         source_timestamp_epoch = self._coerce_float_or_none(source_timestamp)
+        if (
+            isinstance(source_timestamp, bool)
+            or source_timestamp_epoch is None
+            or not math.isfinite(source_timestamp_epoch)
+            or source_timestamp_epoch <= 0
+        ):
+            source_timestamp_epoch = None
         if source_timestamp_epoch is not None and source_timestamp_epoch > 10_000_000_000:
             source_timestamp_epoch /= 1000.0
-        source_age = (
+        snapshot_time = self._epoch_to_utc_iso(source_timestamp_epoch)
+        signed_age = (
             None
-            if source_timestamp_epoch is None
-            else round(max(0.0, datetime.now(UTC).timestamp() - source_timestamp_epoch), 3)
+            if snapshot_time is None or source_timestamp_epoch is None
+            else datetime.now(UTC).timestamp() - source_timestamp_epoch
         )
-        snapshot_timestamp = feed_timestamp if is_tick_source else source_timestamp_epoch
+        source_age = None if signed_age is None else round(max(0.0, signed_age), 3)
+        snapshot_status = "AVAILABLE"
+        if is_tick_source:
+            if signed_age is None:
+                snapshot_status = "MISSING"
+            elif signed_age < -max(0.0, self._parse_env_float("SIGNAL_PRICE_MAX_FUTURE_SKEW_SECONDS", 1.0)):
+                snapshot_status = "FUTURE"
+            elif signed_age > FRESHNESS_LIVE_MAX_AGE_SEC:
+                snapshot_status = "STALE"
+            else:
+                snapshot_status = "LIVE"
         return {
-            "price_snapshot_time_utc": self._epoch_to_utc_iso(snapshot_timestamp),
-            "price_age_seconds": feed_age if is_tick_source else source_age,
+            "price_snapshot_time_utc": snapshot_time,
+            "price_age_seconds": source_age,
+            "price_snapshot_status": snapshot_status,
             "price_freshness_status": feed_status,
-            "reference_price_is_live": is_tick_source and feed_status == "LIVE",
+            "reference_price_is_live": is_tick_source and feed_status == "LIVE" and snapshot_status == "LIVE",
         }
 
     @staticmethod
@@ -7010,10 +7050,6 @@ class WolfConstitutionalPipeline:
     ) -> dict[str, Any]:
         """Expose block/window metrics without changing legacy pressure gating."""
 
-        from analysis.strategy_5scr_pair_activity_report import (
-            pair_activity_observability_fields,
-        )
-
         symbol_key = str(symbol or "").upper()
         symbol_activity_raw = report.get("symbol_activity")
         symbol_activity = symbol_activity_raw if isinstance(symbol_activity_raw, dict) else {}
@@ -7076,6 +7112,13 @@ class WolfConstitutionalPipeline:
             if activity.get("latest_block_effective_density_per_minute") is not None
             else lineage.get("effective_density_per_minute") or lineage.get("density_per_minute")
         )
+        admission_coverage = self._pair_admission_coverage_fields(
+            symbol=symbol_key,
+            report=report,
+            admission_evaluation=admission_evaluation,
+            advisory_block_duration_seconds=block_duration,
+            advisory_block_effective_ticks=effective_ticks,
+        )
 
         pressure_count_scope = "ANALYZER_TOTAL_EVENTS"
         if activity.get("latest_block_effective_ticks") is not None:
@@ -7086,7 +7129,6 @@ class WolfConstitutionalPipeline:
             pressure_count_scope = "ANALYZER_WINDOW_SYMBOL_EVENTS"
 
         return {
-            **pair_activity_observability_fields(symbol=symbol_key, report=report),
             "pair_eligible_for_analysis": bool(admission),
             "pair_admission_id": admission.get("pair_admission_id"),
             "pair_admission_status": admission.get("status") if admission else "NOT_GRANTED",
@@ -7115,6 +7157,7 @@ class WolfConstitutionalPipeline:
                 "rejection_counts": admission_summary.get("rejection_counts", {}),
                 "execution_authority": False,
             },
+            **admission_coverage,
             "pressure_event_count_scope": pressure_count_scope,
             "current_snapshot_events": session_symbol_events,
             "current_block_events": current_block_events,
@@ -7135,6 +7178,114 @@ class WolfConstitutionalPipeline:
             "pair_interruption_count_scope": activity.get("pair_interruption_count_scope")
             or "ANALYZER_RETENTION_WINDOW",
             "legacy_pressure_event_count": pressure_event_count,
+        }
+
+    @staticmethod
+    def _pair_admission_coverage_fields(
+        *,
+        symbol: str,
+        report: dict[str, Any],
+        admission_evaluation: dict[str, Any],
+        advisory_block_duration_seconds: float | None,
+        advisory_block_effective_ticks: int | None,
+    ) -> dict[str, Any]:
+        """Explain whether PairAdmission evaluation applies to this symbol.
+
+        Advisory/CANARY pressure blocks and canonical raw-authority blocks are
+        intentionally separate populations. The legacy ``NOT_EVALUATED``
+        value did not expose that distinction, making a mature advisory block
+        look like a skipped raw evaluation. These fields make the coverage
+        state explicit without allowing derived pressure to grant admission.
+        """
+
+        symbol_key = str(symbol or "").upper()
+        raw_blocks_value = report.get("raw_admission_blocks")
+        raw_blocks = raw_blocks_value if isinstance(raw_blocks_value, (list, tuple)) else []
+        symbol_raw_blocks = [
+            item
+            for item in raw_blocks
+            if isinstance(item, dict) and str(item.get("symbol") or "").upper() == symbol_key
+        ]
+        latest_raw_block = max(
+            symbol_raw_blocks,
+            key=lambda item: (
+                str(item.get("end") or ""),
+                str(item.get("start") or ""),
+                str(item.get("raw_block_id") or ""),
+            ),
+            default={},
+        )
+
+        summary_value = report.get("pair_admission_summary")
+        summary = summary_value if isinstance(summary_value, dict) else {}
+        evaluations_value = summary.get("evaluations")
+        evaluations = evaluations_value if isinstance(evaluations_value, (list, tuple)) else []
+        symbol_evaluations = [
+            item
+            for item in evaluations
+            if isinstance(item, dict) and str(item.get("symbol") or "").upper() == symbol_key
+        ]
+        granted_count = sum(1 for item in symbol_evaluations if item.get("decision") == "GRANTED")
+        rejected_count = sum(1 for item in symbol_evaluations if item.get("decision") == "REJECTED")
+
+        evaluation_required = bool(symbol_raw_blocks)
+        evaluation_present = bool(admission_evaluation)
+        if evaluation_present:
+            coverage_status = "EVALUATED"
+            coverage_reason = str(
+                admission_evaluation.get("rejection_reason")
+                or admission_evaluation.get("decision")
+                or "RAW_AUTHORITY_BLOCK_EVALUATED"
+            )
+        elif evaluation_required:
+            coverage_status = "MISSING_EVALUATION_INCIDENT"
+            coverage_reason = "RAW_AUTHORITY_BLOCK_PRESENT_WITHOUT_EVALUATION"
+        else:
+            coverage_status = "NOT_APPLICABLE_NO_RAW_AUTHORITY_BLOCK"
+            coverage_reason = "NO_SYMBOL_RAW_AUTHORITY_BLOCK_IN_RETENTION"
+
+        runtime_value = report.get("runtime_config")
+        runtime = runtime_value if isinstance(runtime_value, dict) else {}
+        try:
+            maturity_seconds = max(1.0, float(runtime.get("min_clean_block_minutes", 5.0)) * 60.0)
+        except (TypeError, ValueError):
+            maturity_seconds = 300.0
+        duration = float(advisory_block_duration_seconds or 0.0)
+        ticks = int(advisory_block_effective_ticks or 0)
+        advisory_mature = duration >= maturity_seconds and ticks >= 3
+        if advisory_mature and not evaluation_required:
+            advisory_status = "MATURE_ADVISORY_ONLY_NON_AUTHORITATIVE"
+        elif advisory_mature:
+            advisory_status = "MATURE_WITH_RAW_AUTHORITY_BLOCK"
+        else:
+            advisory_status = "OBSERVED_BELOW_ADVISORY_MATURITY"
+
+        population_value = report.get("raw_admission_population")
+        population = population_value if isinstance(population_value, dict) else {}
+        return {
+            "pair_admission_authority_population": "RAW_SIGNAL_THROTTLE_ONLY",
+            "pair_admission_advisory_pressure_is_authority": False,
+            "pair_admission_advisory_block_status": advisory_status,
+            "pair_admission_advisory_maturity_seconds": maturity_seconds,
+            "pair_admission_evaluation_required": evaluation_required,
+            "pair_admission_evaluation_complete": not evaluation_required or evaluation_present,
+            "pair_admission_evaluation_coverage_status": coverage_status,
+            "pair_admission_evaluation_coverage_reason": coverage_reason,
+            "pair_admission_evaluation_missing_incident": evaluation_required and not evaluation_present,
+            "pair_admission_raw_replay_required": evaluation_required and not evaluation_present,
+            "pair_admission_symbol_raw_block_count": len(symbol_raw_blocks),
+            "pair_admission_latest_raw_block_id": latest_raw_block.get("raw_block_id"),
+            "pair_admission_latest_raw_block_state": latest_raw_block.get("evaluation_state"),
+            "pair_admission_latest_raw_block_duration_seconds": latest_raw_block.get("duration_seconds"),
+            "pair_admission_latest_raw_block_effective_ticks": latest_raw_block.get("effective_ticks"),
+            "pair_admission_symbol_monitoring": {
+                "evaluated_blocks": len(symbol_evaluations),
+                "granted_blocks": granted_count,
+                "rejected_blocks": rejected_count,
+                "execution_authority": False,
+            },
+            "pair_admission_raw_population_status": population.get("population_status"),
+            "pair_admission_raw_authority_event_count": population.get("raw_authority_event_count", 0),
         }
 
     @staticmethod
@@ -7756,6 +7907,7 @@ class WolfConstitutionalPipeline:
         pressure_payload = convert_to_signal_pressure_state(payload)
         if "next_required_stage" in payload:
             pressure_payload["next_required_stage"] = payload["next_required_stage"]
+            pressure_payload["producer_next_required_stage"] = payload["next_required_stage"]
         pressure_payload["signal_pressure_state_emit_result"] = self._emit_signal_pressure_state_payload(
             pressure_payload
         )

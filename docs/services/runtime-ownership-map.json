@@ -1,0 +1,21 @@
+{
+  "schema": "wolf15.runtime-ownership-map.v2",
+  "identityBinding": "external-release-attestation",
+  "productionDeploymentVerified": false,
+  "runtimeOrchestrationOwner": "wolf15-orchestrator",
+  "services": [
+    {"name":"wolf15-api","manifest":"railway.toml","startCommand":"bash deploy/railway/start_api.sh","module":"app:app","owns":["http_api","authentication","read_models","trade_outbox_websocket_projection"],"mustNotOwn":["orchestrator_state_manager","compliance_scheduler","command_claim","broker_execution"],"notes":["TradeOutboxWorker is WebSocket projection delivery only"]},
+    {"name":"wolf15-orchestrator","manifest":"railway-orchestrator.toml","startCommand":"bash deploy/railway/start_orchestrator.sh","module":"services.orchestrator.state_manager","owns":["orchestrator_state_manager","compliance_scheduler","orchestrator_heartbeat","orchestrator_fenced_lease"],"mustNotOwn":["strategy_analysis","trade_outbox_websocket_projection","broker_execution"]},
+    {"name":"wolf15-ingest","manifest":"railway-ingestor.toml","startCommand":"bash deploy/railway/start_ingest.sh","module":"services.ingest.ingest_worker","owns":["provider_ingest","market_context_publication"],"mustNotOwn":["orchestrator_state_manager"]},
+    {"name":"wolf15-engine","manifest":"railway-engine.toml","startCommand":"bash deploy/railway/start_engine_consolidated.sh","module":"services.engine.runner","owns":["analysis_pipeline","pressure_production"],"mustNotOwn":["orchestrator_state_manager","broker_execution"]},
+    {"name":"wolf15-pressure-outbox","manifest":"railway-pressure-outbox.toml","startCommand":"bash deploy/railway/start_pressure_outbox.sh","module":"services.pressure_outbox.runner","owns":["pressure_delivery","evidence_workers","outcome_workers"],"mustNotOwn":["orchestrator_state_manager","risk_authority"]},
+    {"name":"wolf15-execution","manifest":"railway-execution.toml","startCommand":"bash deploy/railway/start_trade_consolidated.sh","module":"services.trade.runner","owns":["allocation_worker","guarded_execution_worker"],"mustNotOwn":["orchestrator_state_manager","trade_outbox_websocket_projection","implicit_execution_authority"]},
+    {"name":"wolf15-ea-bridge","manifest":"railway-ea-bridge.toml","startCommand":"bash deploy/railway/start_ea_bridge.sh","module":"services.ea_bridge.main:app","owns":["executor_transport","claim_report_protocol","executor_readiness"],"mustNotOwn":["strategy","orchestrator_state_manager"]}
+  ],
+  "infrastructureAuthority": {
+    "redis": ["orchestrator_lease", "monotonic_fence_generation", "fenced_runtime_projection", "heartbeat"],
+    "postgresql": ["durable_journal", "audit", "ledger", "recovery_snapshot"],
+    "rule": "Redis ownership fencing and PostgreSQL durable history are complementary; PostgreSQL is not a second orchestrator lock."
+  },
+  "runtimeAcceptance": "NOT_EXECUTED"
+}

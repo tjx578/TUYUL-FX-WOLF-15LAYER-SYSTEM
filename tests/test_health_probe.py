@@ -71,6 +71,35 @@ async def test_healthz_dead(probe_server):
     assert body["status"] == "dead"
 
 
+@pytest.mark.asyncio()
+async def test_healthz_uses_dynamic_liveness_check(probe_server):
+    probe, port = probe_server
+    runtime_alive = True
+    probe.set_liveness_check(lambda: runtime_alive)
+
+    status, _ = await asyncio.to_thread(_get, port, "/healthz")
+    assert status == 200
+
+    runtime_alive = False
+    status, body = await asyncio.to_thread(_get, port, "/healthz")
+    assert status == 503
+    assert body["status"] == "dead"
+
+
+@pytest.mark.asyncio()
+async def test_runtime_state_is_visible_without_exposing_fatal_detail(probe_server):
+    probe, port = probe_server
+    probe._details_provider = lambda: {  # noqa: SLF001
+        "runtime_state": "STANDBY",
+        "fatal_error": "RuntimeError: secret-value",
+    }
+
+    status, body = await asyncio.to_thread(_get, port, "/healthz")
+    assert status == 200
+    assert body["runtime_state"] == "STANDBY"
+    assert "fatal_error" not in body
+
+
 # ── Readiness ───────────────────────────────────────────────────
 
 

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+import pipeline.wolf_constitutional_pipeline as pipeline_module
 from analysis.frozen_quote_detector import FrozenQuoteDetector
 from analysis.market_context_validator import MarketContext
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
@@ -122,9 +123,18 @@ def test_allowed_quorum_uses_symbol_market_context_price_not_execution_fallback(
 
 
 @pytest.mark.parametrize("warmed_up", [False, True])
-def test_allowed_quorum_labels_stale_live_tick_reference_price(warmed_up: bool) -> None:
+def test_allowed_quorum_labels_stale_live_tick_reference_price(
+    monkeypatch: pytest.MonkeyPatch, warmed_up: bool
+) -> None:
     pipeline = _pipeline()
     tick_ts = datetime(2026, 7, 3, 2, 13, 15, tzinfo=UTC).timestamp()
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls.fromtimestamp(tick_ts, tz=tz) + timedelta(seconds=382.125)
+
+    monkeypatch.setattr(pipeline_module, "datetime", FixedDateTime)
     if warmed_up:
         # Establish two earlier, changing quotes; the tested quote is the
         # third observation. A cold detector must retain its warmup block.
@@ -147,6 +157,7 @@ def test_allowed_quorum_labels_stale_live_tick_reference_price(warmed_up: bool) 
         bid=1.1500,
         ask=1.1502,
         price_at_signal_end=1.1501,
+        tick_snapshot_timestamp_epoch=tick_ts,
     )
 
     payload = pipeline._allowed_quorum_decision_update_payload(
@@ -167,8 +178,8 @@ def test_allowed_quorum_labels_stale_live_tick_reference_price(warmed_up: bool) 
     assert payload["price_age_seconds"] == 382.125
     # Stale feed lineage remains stale even while quote quality warms up.
     assert payload["price_freshness_status"] == "STALE_PRESERVED"
-    assert payload["quote_health_status"] == ("LIVE" if warmed_up else "PRICE_QUALITY_WARMING_UP")
-    assert payload["quote_health_execution_blocked"] is (not warmed_up)
+    assert payload["quote_health_status"] == "INSUFFICIENT_HISTORY"
+    assert payload["quote_health_execution_blocked"] is True
     assert payload["reference_price_is_live"] is False
     assert payload["valid_for_execution"] is False
     assert payload["observed_price"] == 1.1501

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.middleware.auth import verify_token
 from api.middleware.governance import GovernanceContext, enforce_write_policy
 from contracts.mt5_execution_protocol import ExecutorMode
+from contracts.mt5_mode_transition_authority import ModeTransitionAuthorityPacket
 from execution.mt5_executor_governance import (
     ExecutorGovernanceError,
     GovernanceConflictError,
@@ -38,6 +39,9 @@ class ModeTransitionRequest(BaseModel):
     target_mode: ExecutorMode
     expected_mode: ExecutorMode | None = None
     expected_version: int | None = Field(default=None, ge=1)
+    authority_packet: ModeTransitionAuthorityPacket | None = None
+    observed_configuration_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    observed_final_shadow_receipt_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
 
 
 RepositoryDep = Annotated[
@@ -113,6 +117,9 @@ async def update_execution_mode(
             reason=context.reason,
             expected_mode=body.expected_mode,
             expected_version=body.expected_version,
+            authority_packet=body.authority_packet,
+            observed_configuration_sha256=body.observed_configuration_sha256,
+            observed_final_shadow_receipt_sha256=body.observed_final_shadow_receipt_sha256,
         )
         return repository_snapshot(snapshot)
     except ExecutorGovernanceError as exc:

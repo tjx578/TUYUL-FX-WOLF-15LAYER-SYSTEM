@@ -126,11 +126,13 @@ def test_invalid_credentials_are_diagnosed_without_printing_values() -> None:
     on_init = _on_init(_source())
 
     assert "executor_id_length = StringLen(InpExecutorId)" in on_init
-    assert "executor_token_length = StringLen(InpExecutorToken)" in on_init
+    assert "LoadRuntimeCredentials(credential_reason)" in on_init
+    assert "executor_token_length = StringLen(g_executor_token)" in on_init
     assert "login_hash_length = StringLen(InpLoginHash)" in on_init
-    assert "executor_id_length=%d token_length=%d" in on_init
+    assert "executor_id_length=%d login_hash_length=%d" in on_init
+    assert "Invalid runtime credential shape: token_length=%d" in on_init
     assert "login_hash_length=%d" in on_init
-    assert 'PrintFormat("%s", InpExecutorToken)' not in on_init
+    assert 'PrintFormat("%s", g_executor_token)' not in on_init
     assert 'PrintFormat("%s", InpLoginHash)' not in on_init
 
 
@@ -138,13 +140,14 @@ def test_signed_wire_credentials_are_required_without_logging_values() -> None:
     source = _source()
     on_init = _on_init(source)
 
+    assert 'input string InpCredentialFile      = "";' in source
     assert 'input string InpCommandVerificationKeyId = "";' in source
-    assert 'input string InpCommandVerificationKey   = "";' in source
-    assert 'TaggedHexToBytes(InpCommandVerificationKey, "hex:", 32, verification_key)' in on_init
-    assert "IsSafeWireIdentifier(InpCommandVerificationKeyId)" in on_init
+    assert 'input string InpCommandVerificationKey   = "";' not in source
+    assert 'TaggedHexToBytes(g_command_verification_key, "hex:", 32, verification_key)' in on_init
+    assert "IsSafeWireIdentifier(g_command_verification_key_id)" in on_init
     assert "verification_key_id_length=%d" in on_init
     assert "verification_key_length=%d" in on_init
-    assert 'PrintFormat("%s", InpCommandVerificationKey)' not in on_init
+    assert 'PrintFormat("%s", g_command_verification_key)' not in on_init
 
 
 def test_signed_wire_crypto_self_test_matches_the_public_golden_vector() -> None:
@@ -368,8 +371,8 @@ def test_http_diagnostics_correlate_requests_and_leave_success_path_quiet() -> N
 
     assert request_id < request_header < request_log
     assert healthy_return < response_classification
-    assert '"Authorization: Bearer " + InpExecutorToken' in http
-    assert "InpExecutorToken" not in http[http.index("if(code == -1)") :]
+    assert '"Authorization: Bearer " + g_executor_token' in http
+    assert "g_executor_token" not in http[http.index("if(code == -1)") :]
 
 
 def test_http_diagnostics_distinguish_transport_non_http_and_http_results() -> None:

@@ -19,17 +19,16 @@ import os
 import signal
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from time import monotonic
 from typing import Any, cast
 
 import redis.client
 from loguru import logger
 
 from config.logging_bootstrap import configure_loguru_logging
-from core.health_probe import HealthProbe
 from core.redis_keys import (
     ACCOUNT_STATE,
     HEARTBEAT_INGEST,
@@ -40,7 +39,7 @@ from core.redis_keys import (
 )
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
-from services.orchestrator.mode_owner import ModeOwnerLease
+from services.orchestrator.ownership import OwnershipLostError, RedisFencedOwnership
 from services.orchestrator.redis_commands import CommandParseError, parse_set_mode_command
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
 from storage.redis_client import RedisClient
@@ -48,6 +47,8 @@ from utils.market_hours import is_forex_market_open
 
 ORCHESTRATOR_SOURCE = "wolf15-orchestrator"
 _ORCHESTRATOR_READY = threading.Event()
+_STATE_SCHEMA = "wolf15.orchestrator.state/v2"
+_COMMITTED_STATE_MARKER = "COMMITTED"
 
 # Redis key for manual news lock (set by API /news-lock/enable endpoint)
 _NEWS_LOCK_STATE_KEY = "NEWS_LOCK:STATE"
@@ -114,17 +115,80 @@ class OrchestratorState:
     updated_at: str = ""
 
 
+class StateHydrationError(RuntimeError):
+    """Raised when persisted orchestrator state is unsafe to resume."""
+
+
+class RuntimeSupervisor:
+    """Thread-safe runtime truth consumed by liveness/readiness probes."""
+
+    def __init__(self, *, stall_timeout_sec: float) -> None:
+        if stall_timeout_sec <= 0:
+            raise ValueError("stall timeout must be positive")
+        self._stall_timeout_sec = stall_timeout_sec
+        self._lock = threading.Lock()
+        self._state = "STARTING"
+        self._last_progress = time.monotonic()
+        self._fatal_reason = ""
+
+    @property
+    def state(self) -> str:
+        with self._lock:
+            return self._state
+
+    def mark_standby(self) -> None:
+        self._set_state("STANDBY")
+
+    def mark_owner(self) -> None:
+        self._set_state("OWNER")
+
+    def mark_progress(self) -> None:
+        with self._lock:
+            self._last_progress = time.monotonic()
+
+    def mark_fatal(self, exc: BaseException) -> None:
+        with self._lock:
+            self._state = "FATAL"
+            self._fatal_reason = type(exc).__name__
+
+    def mark_stopped(self) -> None:
+        self._set_state("STOPPED")
+
+    def is_alive(self) -> bool:
+        with self._lock:
+            if self._state in {"FATAL", "STOPPED"}:
+                return False
+            return (time.monotonic() - self._last_progress) <= self._stall_timeout_sec
+
+    def is_ready(self) -> bool:
+        with self._lock:
+            if self._state != "OWNER":
+                return False
+            return (time.monotonic() - self._last_progress) <= self._stall_timeout_sec
+
+    def details(self) -> dict[str, str]:
+        with self._lock:
+            return {"runtime_state": self._state, "fatal_error": self._fatal_reason}
+
+    def _set_state(self, state: str) -> None:
+        with self._lock:
+            self._state = state
+            self._last_progress = time.monotonic()
+
+
 class StateManager:
-    def __init__(self, redis_client: RedisClient | None = None) -> None:
+    def __init__(
+        self,
+        redis_client: RedisClient | None = None,
+        *,
+        ownership: RedisFencedOwnership | None = None,
+        supervisor: RuntimeSupervisor | None = None,
+    ) -> None:
         super().__init__()
         self._state = OrchestratorState(updated_at=_utc_now_iso())
         self._redis: RedisClient = redis_client or RedisClient()
         self._pubsub: redis.client.PubSub | None = None
         self._stop_requested = threading.Event()
-        lease_client = self._redis.client if isinstance(self._redis, RedisClient) else self._redis
-        ttl_ms = int(os.getenv("ORCHESTRATOR_OWNER_LEASE_MS", "30000"))
-        self._mode_owner = ModeOwnerLease(lease_client, key=KILL_SWITCH + ":mode-owner", ttl_ms=ttl_ms)
-        self._next_owner_renewal = 0.0
 
         self._channel = os.getenv("ORCHESTRATOR_CHANNEL", ORCHESTRATOR_COMMANDS)
         self._state_key = os.getenv("ORCHESTRATOR_STATE_KEY", ORCHESTRATOR_STATE)
@@ -135,10 +199,52 @@ class StateManager:
         self._compliance_interval_sec = max(1.0, float(os.getenv("ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC", "5")))
         self._heartbeat_interval_sec = max(5.0, float(os.getenv("ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC", "30")))
 
+        lease_ttl_sec = float(os.getenv("ORCHESTRATOR_LEASE_TTL_SEC", "15"))
+        self._lease_renew_interval_sec = float(
+            os.getenv("ORCHESTRATOR_LEASE_RENEW_INTERVAL_SEC", str(lease_ttl_sec / 3))
+        )
+        if self._lease_renew_interval_sec <= 0 or self._lease_renew_interval_sec >= lease_ttl_sec / 2:
+            raise ValueError("lease renewal interval must be positive and less than half the lease ttl")
+        owner_prefix = (
+            os.getenv("ORCHESTRATOR_OWNER_ID")
+            or ":".join(
+                filter(
+                    None,
+                    (
+                        os.getenv("RAILWAY_DEPLOYMENT_ID"),
+                        os.getenv("RAILWAY_REPLICA_ID"),
+                    ),
+                )
+            )
+            or "local"
+        )
+        # Always append a process nonce. Even a mistakenly shared configured
+        # owner label must never let two processes renew each other's lease.
+        owner_id = f"{owner_prefix}:{uuid.uuid4().hex}"
+        self._ownership = ownership or RedisFencedOwnership(
+            self._redis,
+            owner_id=owner_id,
+            lease_key=os.getenv("ORCHESTRATOR_LEASE_KEY", "wolf15:orchestrator:owner"),
+            generation_key=os.getenv("ORCHESTRATOR_FENCE_COUNTER_KEY", "wolf15:orchestrator:fence_generation"),
+            ttl_seconds=lease_ttl_sec,
+        )
+        stall_timeout_sec = float(
+            os.getenv(
+                "ORCHESTRATOR_STALL_TIMEOUT_SEC",
+                str(max(30.0, self._compliance_interval_sec * 3)),
+            )
+        )
+        self._supervisor = supervisor or RuntimeSupervisor(stall_timeout_sec=stall_timeout_sec)
+
         self._account_state: dict[str, Any] = {}
         self._trade_risk: dict[str, Any] = {}
         self._last_compliance_check = 0.0
         self._last_heartbeat = 0.0
+        self._state_revision: int = 0
+        self._legacy_import: dict[str, Any] | None = None
+        # Recovery progress intentionally remains process-local.  It is a
+        # debounce counter, not compliance authority; carrying partial
+        # progress across a restart could clear SAFE/KILL_SWITCH too early.
         self._recovery_count: int = 0
 
     def configure_intervals(self, compliance_interval_sec: float, heartbeat_interval_sec: float) -> None:
@@ -176,27 +282,13 @@ class StateManager:
         )
         return self._state
 
-    def _require_mode_owner(self) -> None:
-        if not self._mode_owner.attempted:
-            self._mode_owner.acquire()
-            self._next_owner_renewal = monotonic() + self._mode_owner.ttl_ms / 3000
-        elif monotonic() >= self._next_owner_renewal:
-            self._mode_owner.renew()
-            self._next_owner_renewal = monotonic() + self._mode_owner.ttl_ms / 3000
-
     def start_listener(self) -> None:
-        self._require_mode_owner()
         pubsub = self._redis.pubsub()
         pubsub.subscribe(self._channel)
         self._pubsub = pubsub
         logger.info("orchestrator subscribed to channel {}", self._channel)
 
     def close(self) -> None:
-        if self._mode_owner.attempted:
-            try:
-                self._mode_owner.release()
-            except Exception:
-                logger.warning("Mode owner release unavailable or already expired")
         pubsub = self._pubsub
         if pubsub is None:
             return
@@ -207,16 +299,47 @@ class StateManager:
 
     def _sync_kill_switch(self, mode: ExecutionMode) -> None:
         """Persist kill switch state to Redis so other services can read it."""
-        self._require_mode_owner()
-        payload = {"active": mode == ExecutionMode.KILL_SWITCH, "source": ORCHESTRATOR_SOURCE}
-        if mode == ExecutionMode.KILL_SWITCH:
-            payload.update(reason=self._state.reason, activated_at=_utc_now_iso())
-        else:
-            payload["cleared_at"] = _utc_now_iso()
-        self._mode_owner.write([(KILL_SWITCH, json.dumps(payload))])
+        try:
+            if mode == ExecutionMode.KILL_SWITCH:
+                self._ownership.fenced_value_write(
+                    key=KILL_SWITCH,
+                    value=json.dumps(
+                        {
+                            "active": True,
+                            "source": ORCHESTRATOR_SOURCE,
+                            "reason": self._state.reason,
+                            "activated_at": _utc_now_iso(),
+                        }
+                    ),
+                )
+            else:
+                self._ownership.fenced_value_write(
+                    key=KILL_SWITCH,
+                    value=json.dumps(
+                        {
+                            "active": False,
+                            "source": ORCHESTRATOR_SOURCE,
+                            "cleared_at": _utc_now_iso(),
+                        }
+                    ),
+                )
+        except OwnershipLostError:
+            raise
+        except Exception as exc:
+            logger.error("Failed to sync kill switch to Redis: {}", exc)
+            raise
 
     def publish_state(self, event: str, details: dict[str, Any] | None = None) -> None:
+        from services.orchestrator.legacy_import_contract import validate_provenance
+
+        identity = self._ownership.identity
+        if identity is None:
+            raise OwnershipLostError("state publication requires an active ownership lease")
+        next_revision = self._state_revision + 1
         payload: dict[str, Any] = {
+            "schema": _STATE_SCHEMA,
+            "commit_marker": _COMMITTED_STATE_MARKER,
+            "state_revision": next_revision,
             "source": ORCHESTRATOR_SOURCE,
             "event": event,
             "channel": self._channel,
@@ -225,18 +348,128 @@ class StateManager:
             "compliance_code": self._state.compliance_code,
             "updated_at": self._state.updated_at,
             "timestamp": int(time.time()),
+            "owner_id": identity.owner_id,
+            "fence_generation": identity.generation,
         }
         if details:
             payload["details"] = details
+        if self._legacy_import is not None:
+            payload["legacy_import"] = validate_provenance(
+                self._legacy_import, owner=identity.owner_id, generation=identity.generation
+            )
 
         encoded = json.dumps(payload)
-        heartbeat_payload = json.dumps({"producer": ORCHESTRATOR_SOURCE, "ts": time.time()})
-        self._require_mode_owner()
-        self._mode_owner.write(
-            [(self._state_key, encoded), (HEARTBEAT_ORCHESTRATOR, heartbeat_payload)],
-            channel=self._channel,
-            event=encoded,
+        heartbeat_payload = json.dumps(
+            {
+                "producer": ORCHESTRATOR_SOURCE,
+                "ts": time.time(),
+                "owner_id": identity.owner_id,
+                "fence_generation": identity.generation,
+            }
         )
+        self._ownership.fenced_state_write(
+            state_key=self._state_key,
+            state_payload=encoded,
+            heartbeat_key=HEARTBEAT_ORCHESTRATOR,
+            heartbeat_payload=heartbeat_payload,
+            channel=self._channel,
+        )
+        # The fenced Redis operation is the commit boundary.  Never advance
+        # the in-process watermark before Redis confirms the atomic write.
+        self._state_revision = next_revision
+
+    def hydrate_committed_state(self) -> bool:
+        """Restore the last atomically committed state before publishing BOOT.
+
+        A prior state is eligible only when it is a v2 committed envelope
+        produced by this orchestrator and its fence generation predates the
+        lease currently held by this process.  Missing state is a valid first
+        start; malformed, uncommitted, or mismatched state fails closed.
+        """
+        from services.orchestrator.legacy_import_contract import ImportHoldError, strict_json, validate_provenance
+
+        identity = self._ownership.identity
+        if identity is None:
+            raise OwnershipLostError("state hydration requires an active ownership lease")
+
+        raw = self._redis.get(self._state_key)
+        if raw is None:
+            self._state_revision = 0
+            self._recovery_count = 0
+            self._legacy_import = None
+            return False
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="strict")
+        if not isinstance(raw, str):
+            raise StateHydrationError("persisted orchestrator state is not text")
+
+        try:
+            payload = strict_json(raw)
+        except (TypeError, ValueError) as exc:
+            raise StateHydrationError("persisted orchestrator state is not valid JSON") from exc
+        if not isinstance(payload, dict):
+            raise StateHydrationError("persisted orchestrator state is not an object")
+        if payload.get("schema") != _STATE_SCHEMA:
+            raise StateHydrationError("persisted orchestrator state schema mismatch")
+        if payload.get("commit_marker") != _COMMITTED_STATE_MARKER:
+            raise StateHydrationError("persisted orchestrator state is not committed")
+        if payload.get("source") != ORCHESTRATOR_SOURCE or payload.get("channel") != self._channel:
+            raise StateHydrationError("persisted orchestrator state authority mismatch")
+
+        prior_generation = payload.get("fence_generation")
+        prior_revision = payload.get("state_revision")
+        if (
+            not isinstance(prior_generation, int)
+            or isinstance(prior_generation, bool)
+            or not isinstance(prior_revision, int)
+            or isinstance(prior_revision, bool)
+        ):
+            raise StateHydrationError("persisted orchestrator state watermark is invalid")
+        prior_owner_id = payload.get("owner_id")
+        if not isinstance(prior_owner_id, str) or not prior_owner_id or prior_owner_id == identity.owner_id:
+            raise StateHydrationError("persisted orchestrator owner identity is stale or mismatched")
+        if prior_generation < 1 or prior_generation >= identity.generation:
+            raise StateHydrationError("persisted orchestrator state fence generation is stale or mismatched")
+        if prior_revision < 1:
+            raise StateHydrationError("persisted orchestrator state revision is invalid")
+
+        try:
+            mode = ExecutionMode(str(payload["mode"]))
+        except (KeyError, ValueError) as exc:
+            raise StateHydrationError("persisted orchestrator mode is invalid") from exc
+        reason = payload.get("reason")
+        compliance_code = payload.get("compliance_code")
+        updated_at = payload.get("updated_at")
+        if not isinstance(reason, str) or not reason:
+            raise StateHydrationError("persisted orchestrator state fields are incomplete")
+        if not isinstance(compliance_code, str) or not compliance_code:
+            raise StateHydrationError("persisted orchestrator state fields are incomplete")
+        if not isinstance(updated_at, str) or not updated_at:
+            raise StateHydrationError("persisted orchestrator state fields are incomplete")
+        try:
+            datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise StateHydrationError("persisted orchestrator updated_at is invalid") from exc
+
+        provenance = None
+        if "legacy_import" in payload:
+            try:
+                provenance = validate_provenance(
+                    payload["legacy_import"], owner=prior_owner_id, generation=prior_generation
+                )
+            except ImportHoldError as exc:
+                raise StateHydrationError("persisted legacy import provenance is invalid") from exc
+
+        self._state = OrchestratorState(
+            mode=mode,
+            reason=reason,
+            compliance_code=compliance_code,
+            updated_at=updated_at,
+        )
+        self._state_revision = prior_revision
+        self._recovery_count = 0
+        self._legacy_import = provenance
+        return True
 
     def _refresh_snapshots_from_redis(self) -> None:
         raw_values = self._redis.mget([self._account_state_key, self._trade_risk_key])
@@ -431,7 +664,8 @@ class StateManager:
             )
 
     def process_once(self, now: float | None = None) -> None:
-        self._require_mode_owner()
+        if not self._ownership.held:
+            raise OwnershipLostError("compliance evaluation requires an active ownership lease")
         now_ts = now if now is not None else time.time()
         self._poll_channel()
         self._refresh_snapshots_from_redis()
@@ -448,36 +682,102 @@ class StateManager:
         self._stop_requested.set()
 
     def run_forever(self, on_started: Callable[[], None] | None = None) -> None:
-        try:
+        last_renewal = 0.0
+        started_callback_sent = False
+        hydration_completed = False
+
+        def activate_owner() -> None:
+            nonlocal hydration_completed, last_renewal, started_callback_sent
+            hydrated = self.hydrate_committed_state()
+            hydration_completed = True
             self.start_listener()
-            self.publish_state("BOOT")
-            logger.info("wolf15-orchestrator started in {}", self.snapshot().mode)
-
-            if on_started is not None:
+            self._supervisor.mark_owner()
+            self.publish_state(
+                "BOOT",
+                {
+                    "hydrated": hydrated,
+                    "prior_state_revision": self._state_revision,
+                },
+            )
+            logger.info(
+                "wolf15-orchestrator acquired ownership generation={} mode={}",
+                self._ownership.identity.generation if self._ownership.identity else "unknown",
+                self.snapshot().mode,
+            )
+            last_renewal = time.monotonic()
+            if on_started is not None and not started_callback_sent:
                 on_started()
+                started_callback_sent = True
 
+        try:
             while not self._stop_requested.is_set():
-                self.process_once()
+                if not self._ownership.held:
+                    hydration_completed = False
+                    self._supervisor.mark_standby()
+                    if not self._ownership.acquire():
+                        self._stop_requested.wait(self._loop_sleep_sec)
+                        continue
+                    activate_owner()
+                elif not hydration_completed:
+                    activate_owner()
+
+                if self._stop_requested.is_set():
+                    break
+
+                if time.monotonic() - last_renewal >= self._lease_renew_interval_sec:
+                    if not self._ownership.renew():
+                        logger.warning("orchestrator ownership renewal rejected; entering standby")
+                        self.close()
+                        self._supervisor.mark_standby()
+                        continue
+                    last_renewal = time.monotonic()
+
+                try:
+                    self.process_once()
+                except OwnershipLostError:
+                    logger.warning("orchestrator fenced write rejected; entering standby")
+                    self.close()
+                    self._supervisor.mark_standby()
+                    continue
+                self._supervisor.mark_progress()
                 self._stop_requested.wait(self._loop_sleep_sec)
+        except Exception as exc:
+            self._supervisor.mark_fatal(exc)
+            raise
         finally:
-            # Persist SHUTDOWN state so other services see orchestrator went down
-            try:
-                self.publish_state("SHUTDOWN")
-                logger.info("orchestrator published SHUTDOWN state to Redis")
-            except Exception as exc:
-                logger.error("orchestrator failed to publish SHUTDOWN state: {}", exc)
+            if self._ownership.held:
+                # A rejected hydration must preserve the stored bytes, including
+                # after reacquisition; uninitialized state cannot settle them.
+                if hydration_completed:
+                    try:
+                        self.publish_state("SHUTDOWN")
+                        logger.info("orchestrator published SHUTDOWN state to Redis")
+                    except Exception as exc:
+                        logger.error("orchestrator failed to publish fenced SHUTDOWN state: {}", exc)
+                try:
+                    self._ownership.release()
+                except Exception as exc:
+                    logger.error("orchestrator ownership release failed: {}", exc)
             self.close()
+            if self._supervisor.state != "FATAL":
+                self._supervisor.mark_stopped()
 
 
-def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> HealthProbe:
+def _start_health_probe_in_thread(
+    readiness_check: Callable[[], bool] | None = None,
+    liveness_check: Callable[[], bool] | None = None,
+    details_provider: Callable[[], dict[str, str]] | None = None,
+) -> None:
     """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
     from services.shared.health_probe_launcher import start_probe_in_thread
 
     port = int(os.getenv("ORCHESTRATOR_HEALTH_PORT", os.getenv("PORT", "8083")))
-    return start_probe_in_thread(
+    start_probe_in_thread(
         port=port,
         service_name="orchestrator",
         readiness_check=readiness_check,
+        liveness_check=liveness_check,
+        details_provider=details_provider,
         extra_details={
             "service_role": "orchestrator",
             "source": ORCHESTRATOR_SOURCE,
@@ -487,35 +787,28 @@ def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = N
 
 def run() -> None:
     _ORCHESTRATOR_READY.clear()
-    manager = None
-    health_probe = None
-    previous_handlers = {}
-    health_probe = _start_health_probe_in_thread(
-        readiness_check=lambda: bool(
-            _ORCHESTRATOR_READY.is_set() and manager is not None and manager._mode_owner.is_current()
-        )
+    compliance_interval = max(1.0, float(os.getenv("ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC", "5")))
+    stall_timeout = float(os.getenv("ORCHESTRATOR_STALL_TIMEOUT_SEC", str(max(30.0, compliance_interval * 3))))
+    supervisor = RuntimeSupervisor(stall_timeout_sec=stall_timeout)
+    manager = StateManager(supervisor=supervisor)
+    previous_handlers: dict[signal.Signals, Any] = {}
+    _start_health_probe_in_thread(
+        readiness_check=supervisor.is_ready,
+        liveness_check=supervisor.is_alive,
+        details_provider=supervisor.details,
     )
     try:
-        manager = StateManager()
-
-        def request_stop(signum, frame):
+        def request_stop(signum: int, frame: Any) -> None:
+            del frame
             _ORCHESTRATOR_READY.clear()
+            logger.info("orchestrator received signal {} — stopping", signum)
             manager.request_stop()
 
         for signum in (signal.SIGTERM, signal.SIGINT):
             previous_handlers[signum] = signal.signal(signum, request_stop)
         manager.run_forever(on_started=_ORCHESTRATOR_READY.set)
     except Exception:
-        _ORCHESTRATOR_READY.clear()
-        if health_probe is not None:
-            health_probe.set_alive(False)
-        logger.exception("Orchestrator fatal error — holding alive for health probe diagnostics")
-        from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
-
-        hold_alive_sync(
-            service_name="Orchestrator",
-            timeout_sec=int(os.getenv("ORCHESTRATOR_FATAL_DIAGNOSTIC_HOLD_SEC", "30")),
-        )
+        logger.exception("Orchestrator fatal error — exiting for bounded platform restart")
         raise
     finally:
         _ORCHESTRATOR_READY.clear()

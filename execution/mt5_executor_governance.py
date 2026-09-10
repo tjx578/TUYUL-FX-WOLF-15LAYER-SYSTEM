@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from contracts.mt5_execution_protocol import ExecutorMode
+from contracts.mt5_mode_transition_authority import ModeTransitionAuthorityError, ModeTransitionAuthorityPacket
 from storage.postgres_client import PostgresClient, pg_client
 
 
@@ -49,6 +51,32 @@ def _required_text(value: str, field: str) -> str:
 
 def _json(value: dict[str, Any]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+async def acquire_executor_advisory_locks(connection: Any, executor_ids: Any) -> tuple[str, ...]:
+    """Serialize executor lifecycle mutations before any row lock is taken."""
+
+    normalized = tuple(sorted({str(UUID(str(executor_id))) for executor_id in executor_ids}))
+    for executor_id in normalized:
+        await connection.execute(
+            """
+            SELECT pg_advisory_xact_lock(
+                hashtextextended('wolf15:mt5-executor:' || $1::text, 0)
+            )
+            """,
+            executor_id,
+        )
+    return normalized
+
+
+async def acquire_canary_lifecycle_advisory_locks(
+    connection: Any,
+    executor_ids: Any = (),
+) -> tuple[str, ...]:
+    """Take the global canary lock before deterministic executor locks."""
+
+    await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('wolf15:mt5-canary-lifecycle', 0))")
+    return await acquire_executor_advisory_locks(connection, executor_ids)
 
 
 class MT5ExecutorGovernanceRepository:
@@ -151,6 +179,7 @@ class MT5ExecutorGovernanceRepository:
         actor = _required_text(actor, "actor")
         reason = _required_text(reason, "reason")
         async with self._pg.transaction() as connection:
+            await acquire_canary_lifecycle_advisory_locks(connection)
             row = await connection.fetchrow(
                 """
                 SELECT kill_switch_active, kill_switch_reason, governance_version
@@ -190,8 +219,14 @@ class MT5ExecutorGovernanceRepository:
                     WITH changed AS (
                         UPDATE execution_commands
                         SET state = 'EXPIRED', terminal_at = now(), updated_at = now()
-                        WHERE state = 'QUEUED'
-                          AND payload #>> '{executor_binding,execution_mode}' <> 'SHADOW'
+                        WHERE (
+                                state = 'QUEUED'
+                                AND payload #>> '{executor_binding,execution_mode}' <> 'SHADOW'
+                              )
+                           OR (
+                                state = 'CLAIMED'
+                                AND source_event = 'ENGINEERING_DEMO_CANARY'
+                              )
                         RETURNING 1
                     )
                     SELECT count(*) AS count FROM changed
@@ -205,15 +240,52 @@ class MT5ExecutorGovernanceRepository:
                       AND payload #>> '{executor_binding,execution_mode}' <> 'SHADOW'
                     """
                 )
+                canary_table = await connection.fetchval("SELECT to_regclass('public.engineering_demo_canary_windows')")
+                if canary_table is not None:
+                    reconciliation = await connection.fetchrow(
+                        """
+                        WITH changed AS (
+                            UPDATE engineering_demo_canary_windows AS w
+                            SET state='RECONCILIATION_REQUIRED', terminal_at=NULL, updated_at=now()
+                            FROM execution_commands AS c
+                            WHERE c.command_id=w.command_id
+                              AND c.state IN ('SUBMITTING','BROKER_ACCEPTED','ACTIVE','AMBIGUOUS')
+                              AND w.state IN ('ARMED','RECONCILIATION_REQUIRED')
+                            RETURNING 1
+                        )
+                        SELECT count(*) AS count FROM changed
+                        """
+                    )
+                    expired_windows = await connection.fetchrow(
+                        """
+                        WITH changed AS (
+                            UPDATE engineering_demo_canary_windows AS w
+                            SET state='EXPIRED', terminal_at=now(), updated_at=now()
+                            FROM execution_commands AS c
+                            WHERE c.command_id=w.command_id
+                              AND c.state IN ('QUEUED','CLAIMED','EXPIRED')
+                              AND w.state IN ('QUEUED','ARMED')
+                            RETURNING 1
+                        )
+                        SELECT count(*) AS count FROM changed
+                        """
+                    )
+                else:
+                    reconciliation = {"count": 0}
+                    expired_windows = {"count": 0}
             else:
                 expired = {"count": 0}
                 claimed = {"count": 0}
+                reconciliation = {"count": 0}
+                expired_windows = {"count": 0}
             new_state = {
                 "kill_switch_active": bool(updated["kill_switch_active"]),
                 "kill_switch_reason": str(updated["kill_switch_reason"]),
                 "governance_version": int(updated["governance_version"]),
                 "queued_commands_expired": int(expired["count"]),
                 "claimed_commands_outstanding": int(claimed["count"]),
+                "canary_windows_expired": int(expired_windows["count"]),
+                "canary_windows_requiring_reconciliation": int(reconciliation["count"]),
             }
             await connection.execute(
                 """
@@ -242,6 +314,9 @@ class MT5ExecutorGovernanceRepository:
         reason: str,
         expected_mode: ExecutorMode | str | None = None,
         expected_version: int | None = None,
+        authority_packet: ModeTransitionAuthorityPacket | None = None,
+        observed_configuration_sha256: str | None = None,
+        observed_final_shadow_receipt_sha256: str | None = None,
     ) -> GovernanceSnapshot:
         self._require_database()
         actor = _required_text(actor, "actor")
@@ -249,9 +324,11 @@ class MT5ExecutorGovernanceRepository:
         target = ExecutorMode(str(target_mode))
         expected = ExecutorMode(str(expected_mode)) if expected_mode is not None else None
         async with self._pg.transaction() as connection:
+            await acquire_canary_lifecycle_advisory_locks(connection, (executor_id,))
             row = await connection.fetchrow(
                 """
-                SELECT e.executor_id, e.execution_mode, e.mode_version, e.revoked_at,
+                SELECT e.executor_id, e.account_id, e.broker_server,
+                       e.execution_mode, e.mode_version, e.revoked_at,
                        a.execution_mode::text AS agent_execution_mode,
                        a.ea_subtype::text AS ea_subtype, a.locked,
                        g.kill_switch_active, g.kill_switch_reason, g.governance_version
@@ -281,13 +358,148 @@ class MT5ExecutorGovernanceRepository:
                 raise ModeTransitionError("LIVE promotion is blocked by the B2 rollout contract")
             if current is ExecutorMode.SHADOW and target is ExecutorMode.DEMO and not bool(row["kill_switch_active"]):
                 raise ModeTransitionError("SHADOW to DEMO requires the global kill switch to remain engaged")
+            if current is ExecutorMode.SHADOW and target is ExecutorMode.DEMO and authority_packet is None:
+                raise ModeTransitionError("SHADOW to DEMO requires an exact one-use authority packet")
+            if authority_packet is not None:
+                try:
+                    authority_packet.assert_one_use_ready(now_utc=datetime.now(UTC), prior_consumptions=0)
+                except ModeTransitionAuthorityError as exc:
+                    raise ModeTransitionError(str(exc)) from exc
+                if (
+                    str(authority_packet.executor_id) != str(executor_id)
+                    or authority_packet.previous_mode is not current
+                    or authority_packet.new_mode is not target
+                    or authority_packet.account_reference != str(row["account_id"])
+                    or authority_packet.broker_server != str(row["broker_server"])
+                    or authority_packet.configuration_sha256 != observed_configuration_sha256
+                    or authority_packet.final_shadow_receipt_sha256 != observed_final_shadow_receipt_sha256
+                ):
+                    raise ModeTransitionError("mode transition authority binding mismatch")
+                packet_inserted = await connection.fetchrow(
+                    """
+                    INSERT INTO executor_mode_transition_authority_packets (
+                        authority_packet_id, authority_packet_sha256, approval_id, executor_id,
+                        previous_mode, new_mode, account_reference, broker_server,
+                        configuration_sha256, final_shadow_receipt_sha256, approved_by,
+                        approved_at, expires_at, payload
+                    ) VALUES (
+                        $1::uuid, $2, $3, $4::uuid, $5, $6, $7, $8,
+                        $9, $10, $11, $12, $13, $14::jsonb
+                    )
+                    ON CONFLICT DO NOTHING
+                    RETURNING authority_packet_id
+                    """,
+                    str(authority_packet.authority_packet_id),
+                    authority_packet.authority_packet_sha256,
+                    authority_packet.approval_id,
+                    str(authority_packet.executor_id),
+                    authority_packet.previous_mode.value,
+                    authority_packet.new_mode.value,
+                    authority_packet.account_reference,
+                    authority_packet.broker_server,
+                    authority_packet.configuration_sha256,
+                    authority_packet.final_shadow_receipt_sha256,
+                    authority_packet.approved_by,
+                    authority_packet.approved_at_utc,
+                    authority_packet.expires_at_utc,
+                    _json(authority_packet.model_dump(mode="json")),
+                )
+                if not packet_inserted:
+                    raise GovernanceConflictError("mode transition authority was already used or conflicts")
+
+            draining_to_shadow = current is ExecutorMode.DEMO and target is ExecutorMode.SHADOW
+            canary_commands_expired = 0
+            canary_windows_expired = 0
+            canary_windows_requiring_reconciliation = 0
+            governance_kill_switch_active = bool(row["kill_switch_active"])
+            governance_kill_switch_reason = str(row["kill_switch_reason"])
+            governance_version = int(row["governance_version"])
 
             previous = {
                 "execution_mode": current.value,
                 "mode_version": version,
-                "kill_switch_active": bool(row["kill_switch_active"]),
-                "governance_version": int(row["governance_version"]),
+                "kill_switch_active": governance_kill_switch_active,
+                "kill_switch_reason": governance_kill_switch_reason,
+                "governance_version": governance_version,
             }
+            if draining_to_shadow:
+                canary_table = await connection.fetchval("SELECT to_regclass('public.engineering_demo_canary_windows')")
+                if canary_table is not None:
+                    expired_canary_commands = await connection.fetchrow(
+                        """
+                        WITH changed AS (
+                            UPDATE execution_commands AS c
+                            SET state='EXPIRED', terminal_at=now(), updated_at=now()
+                            WHERE c.executor_id=$1::uuid
+                              AND c.source_event='ENGINEERING_DEMO_CANARY'
+                              AND c.state IN ('QUEUED','CLAIMED')
+                              AND EXISTS (
+                                  SELECT 1
+                                  FROM engineering_demo_canary_windows AS w
+                                  WHERE w.command_id=c.command_id
+                                    AND w.state IN ('QUEUED','ARMED','RECONCILIATION_REQUIRED')
+                              )
+                            RETURNING 1
+                        )
+                        SELECT count(*) AS count FROM changed
+                        """,
+                        str(executor_id),
+                    )
+                    expired_canary_windows = await connection.fetchrow(
+                        """
+                        WITH changed AS (
+                            UPDATE engineering_demo_canary_windows AS w
+                            SET state='EXPIRED', terminal_at=now(), updated_at=now()
+                            FROM execution_commands AS c
+                            WHERE c.command_id=w.command_id
+                              AND c.executor_id=$1::uuid
+                              AND c.source_event='ENGINEERING_DEMO_CANARY'
+                              AND c.state='EXPIRED'
+                              AND w.state IN ('QUEUED','ARMED','RECONCILIATION_REQUIRED')
+                            RETURNING 1
+                        )
+                        SELECT count(*) AS count FROM changed
+                        """,
+                        str(executor_id),
+                    )
+                    reconciliation_windows = await connection.fetchrow(
+                        """
+                        WITH changed AS (
+                            UPDATE engineering_demo_canary_windows AS w
+                            SET state='RECONCILIATION_REQUIRED', terminal_at=NULL, updated_at=now()
+                            FROM execution_commands AS c
+                            WHERE c.command_id=w.command_id
+                              AND c.executor_id=$1::uuid
+                              AND c.source_event='ENGINEERING_DEMO_CANARY'
+                              AND c.state IN ('SUBMITTING','BROKER_ACCEPTED','ACTIVE','AMBIGUOUS')
+                              AND w.state IN ('ARMED','RECONCILIATION_REQUIRED')
+                            RETURNING 1
+                        )
+                        SELECT count(*) AS count FROM changed
+                        """,
+                        str(executor_id),
+                    )
+                    canary_commands_expired = int(expired_canary_commands["count"])
+                    canary_windows_expired = int(expired_canary_windows["count"])
+                    canary_windows_requiring_reconciliation = int(reconciliation_windows["count"])
+
+                governed = await connection.fetchrow(
+                    """
+                    UPDATE executor_bridge_governance
+                    SET kill_switch_active=true,
+                        kill_switch_reason='MODE_TRANSITION_DRAINING_TO_SHADOW',
+                        governance_version=governance_version+1,
+                        updated_by=$1,
+                        updated_at=now()
+                    WHERE singleton_id=1
+                    RETURNING kill_switch_active, kill_switch_reason, governance_version
+                    """,
+                    actor,
+                )
+                governance_kill_switch_active = bool(governed["kill_switch_active"])
+                governance_kill_switch_reason = str(governed["kill_switch_reason"])
+                governance_version = int(governed["governance_version"])
+
             updated = await connection.fetchrow(
                 """
                 UPDATE executor_instances
@@ -329,9 +541,13 @@ class MT5ExecutorGovernanceRepository:
             new_state = {
                 "execution_mode": target.value,
                 "mode_version": int(updated["mode_version"]),
-                "kill_switch_active": bool(row["kill_switch_active"]),
-                "governance_version": int(row["governance_version"]),
+                "kill_switch_active": governance_kill_switch_active,
+                "kill_switch_reason": governance_kill_switch_reason,
+                "governance_version": governance_version,
                 "queued_commands_expired": int(expired["count"]),
+                "canary_commands_expired": canary_commands_expired,
+                "canary_windows_expired": canary_windows_expired,
+                "canary_windows_requiring_reconciliation": canary_windows_requiring_reconciliation,
             }
             await connection.execute(
                 """
@@ -340,16 +556,38 @@ class MT5ExecutorGovernanceRepository:
                 ) VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6::jsonb)
                 """,
                 str(executor_id),
-                "MODE_REASSERTED" if current is target else "MODE_TRANSITION",
+                (
+                    "MODE_TRANSITION_DRAINING_TO_SHADOW"
+                    if draining_to_shadow
+                    else "MODE_REASSERTED"
+                    if current is target
+                    else "MODE_TRANSITION"
+                ),
                 actor,
                 reason,
                 _json(previous),
                 _json(new_state),
             )
+            if authority_packet is not None:
+                await connection.execute(
+                    """
+                    INSERT INTO executor_mode_transition_receipts (
+                        transition_id, authority_packet_id, executor_id, previous_mode,
+                        new_mode, previous_version, new_version, transition_status
+                    ) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, 'APPLIED')
+                    """,
+                    str(uuid4()),
+                    str(authority_packet.authority_packet_id),
+                    str(executor_id),
+                    current.value,
+                    target.value,
+                    version,
+                    int(updated["mode_version"]),
+                )
         return GovernanceSnapshot(
-            kill_switch_active=bool(row["kill_switch_active"]),
-            kill_switch_reason=str(row["kill_switch_reason"]),
-            governance_version=int(row["governance_version"]),
+            kill_switch_active=governance_kill_switch_active,
+            kill_switch_reason=governance_kill_switch_reason,
+            governance_version=governance_version,
             executor_id=str(executor_id),
             execution_mode=target.value,
             mode_version=int(updated["mode_version"]),
@@ -370,5 +608,7 @@ __all__ = [
     "GovernanceSnapshot",
     "ModeTransitionError",
     "MT5ExecutorGovernanceRepository",
+    "acquire_canary_lifecycle_advisory_locks",
+    "acquire_executor_advisory_locks",
     "get_mt5_executor_governance_repository",
 ]
