@@ -1,0 +1,22 @@
+{
+  "producer-heads": {
+    "exit_code": 0,
+    "command": [
+      "-m",
+      "alembic",
+      "heads"
+    ],
+    "scope": "OFFLINE_NO_DATABASE_CONNECTION"
+  },
+  "producer-offline-upgrade": {
+    "exit_code": 0,
+    "command": [
+      "-m",
+      "alembic",
+      "upgrade",
+      "20260909_01:20260909_02",
+      "--sql"
+    ],
+    "scope": "OFFLINE_NO_DATABASE_CONNECTION"
+  }
+}

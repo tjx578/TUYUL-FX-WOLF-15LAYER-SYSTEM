@@ -1,0 +1,89 @@
+{
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "fed24c25e261706f20cd0d7b47ee3ce372dfca14dc6d2f36069cb79be48f07c1",
+      "bytes": 24
+    },
+    {
+      "path": "delivery-transaction-design.md",
+      "sha256": "8a1b54139b69d82251e7857bc098db18a667ed358bddf01a1bd817e6b8664751",
+      "bytes": 11746
+    },
+    {
+      "path": "evidence/delivery-examples.json",
+      "sha256": "47b1184137917e6ac688281cd5ebaa0a61c4f55eebf46b5f5a7575fd6a34f996",
+      "bytes": 9948
+    },
+    {
+      "path": "evidence/delivery-schemas.json",
+      "sha256": "4742291ea08449c4ac56bbec2dfd4b74c53d83259093cb6f6ebd2c0fa3386daa",
+      "bytes": 36491
+    },
+    {
+      "path": "evidence/github-hosted-diagnosis.json",
+      "sha256": "3ae3252da4f87e5585d4004de68ff7a031e1a06a2dfc612cd5af0f0d24558f70",
+      "bytes": 5129
+    },
+    {
+      "path": "evidence/s03-delivery-contract-final-collection.log",
+      "sha256": "2728200af425e6204844b7bfee47279247b97054ab774fa75379ee32e5691444",
+      "bytes": 14339
+    },
+    {
+      "path": "evidence/s03-delivery-contract-final-pytest.log",
+      "sha256": "94b7a94ad77dde5174ee187c17d97c0e412f8575e9256cb6617ddc9119513f36",
+      "bytes": 2604
+    },
+    {
+      "path": "evidence/s03-delivery-contract-final-receipt.json",
+      "sha256": "9fd22839a171a4ebeaf30d662f7151b12c79948fce4767bb5004c72c24b514e2",
+      "bytes": 21434
+    },
+    {
+      "path": "evidence/s03-delivery-contract-final-v2-collection.log",
+      "sha256": "a4f8b31f07aa2a5712be75e391a82737b4d3d628c4d67f32f93407a60e67403c",
+      "bytes": 14339
+    },
+    {
+      "path": "evidence/s03-delivery-contract-final-v2-pytest.log",
+      "sha256": "fc2aa46a04dd5192b27e9b5d9432d6e047e830c6a7d3171f01e06eb32ba5c2b8",
+      "bytes": 1083
+    },
+    {
+      "path": "evidence/s03-delivery-contract-final-v2-receipt.json",
+      "sha256": "09687505758a0a06bd47da1c9be1f6343e1a89bb40b44713c8aeb5da6ae66de3",
+      "bytes": 21443
+    },
+    {
+      "path": "evidence/s03-delivery-contract-final-v2.xml",
+      "sha256": "dae07f7997a27849e19e4f7d7d788628fa84c76be982b86d180663d50f2562f8",
+      "bytes": 18731
+    },
+    {
+      "path": "evidence/s03-delivery-contract-final.xml",
+      "sha256": "2b1aa50190c733cca89afeb52372c5e9a2124ce0d37bdd01a7d3020d87f4a692",
+      "bytes": 19876
+    },
+    {
+      "path": "evidence/source-commit.json",
+      "sha256": "8f2a6459685cc76595b4044dece0367d09619f9973bbe01f44bb565a6c80610e",
+      "bytes": 592
+    },
+    {
+      "path": "evidence/static-validation.json",
+      "sha256": "8bc30c944e865ba3eca1fca9be716da9e446e80ef39fed119d5524f3d5afbdf8",
+      "bytes": 747
+    },
+    {
+      "path": "README.md",
+      "sha256": "b99222e1ce385c3e588ac7a523292aa5a8426d22178a4db12fee2c7e23a67bf3",
+      "bytes": 5558
+    },
+    {
+      "path": "validation.json",
+      "sha256": "987e02706960f35b645b11de70f192c77810a4e2bda1272cfcded8cd4436835c",
+      "bytes": 1406
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+{
+  "started_at_utc": "2026-09-08T19:30:17.299358+00:00",
+  "base_commit": "08e902b3576cc4c76ac73a9504b5b2b285122589",
+  "scope": "Selected regression suites on combined candidate working bytes; not full required CI/DB/EA/broker acceptance",
+  "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+  "environment": "allowlisted OS environment, no inherited credentials or DB URLs",
+  "command": [
+    "C:\\Users\\INTEL\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+    "-m",
+    "pytest",
+    "tests/test_5scr_lifecycle_v2_runtime.py",
+    "tests/test_api_boot_readiness.py",
+    "tests/test_api_only_entrypoints.py",
+    "tests/test_async_signal_snapshot.py",
+    "tests/test_ci_required_gates.py",
+    "tests/test_cross_service_heartbeat.py",
+    "tests/test_health_probe.py",
+    "tests/test_health_probe_security.py",
+    "tests/test_observability_machine_auth.py",
+    "tests/test_owner_viewer_login.py",
+    "tests/test_p0_regression.py",
+    "tests/test_railway_release_source_gate.py",
+    "tests/test_redis_health_routes.py",
+    "tests/test_s5_campaign_risk.py",
+    "tests/test_startup_migration_ownership.py",
+    "tests/test_strategy_5scr_closed_candle_evidence.py",
+    "tests/test_strategy_5scr_context_epoch_v1.py",
+    "tests/test_strategy_5scr_directional_thesis_v1.py",
+    "tests/test_strategy_5scr_microboost_v1.py",
+    "tests/test_strategy_5scr_pair_admission.py",
+    "tests/test_strategy_5scr_raw_admission_blocks.py",
+    "tests/test_strategy_5scr_risk_reservation.py",
+    "tests/test_strategy_5scr_tradeplan_candidate_v2.py",
+    "tests/test_strategy_5scr_tradeplan_candidate_v2_containment.py",
+    "tests/unit/test_dashboard_bff_containment.py",
+    "-q",
+    "--tb=short",
+    "--junitxml=D:\\WOLF15-work\\master-remediation-20260909\\evidence\\candidate-validation.xml"
+  ],
+  "returncode": 0,
+  "elapsed_seconds": 158.375,
+  "counts": {
+    "tests": 484,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "source_sha256": {
+    ".github/workflows/ci.yml": "febd8d30bd095659af4cb2d1bedc52a46caebe122b3d76c3ac4180d393e3c25a",
+    ".github/workflows/railway-deploy.yml": "5ad2e640454b03b0a4e75de68049f485bf6041fc4f76e897038146940cf33ee3",
+    "api/app_factory.py": "db451576938b657a48b809c91b79514b73244482fc0647a501f94fbe8ecc651c",
+    "deploy/railway/start_api.sh": "138c94ce35694f44bbfc9ea9a2f31c2c971804e50aa5c60ca3bfe01726e2e14b",
+    "deploy/railway/start_api_consolidated.sh": "6b08ec70efb1aad9d8537098e9a8a062893751fa8421f14308d203323a9705cd",
+    "railway.toml": "d6418dafc4723fa81e83c5d960e583a06b971d283fdf9b9a765c08c01bd718d7",
+    "scripts/ci/railway_release_source_gate.py": "f2176a387f5340eea7a6ea3a021169c565f7b0b5d935f1a5daf2d890afbc2a52",
+    "tests/test_api_boot_readiness.py": "a1ee235e6429f7b6c715801d043dab9884b48130f1cd26db9345105ade6b56dd",
+    "tests/test_api_only_entrypoints.py": "ba6673bb119b12c04449e4fcee8056095248d7222d7208305ec56744f2430fc8",
+    "tests/test_ci_required_gates.py": "64c750dcecffc8bc625d79bfda2a8791a3b6a87b0bb2525826bf01f80dfd63fb",
+    "tests/test_railway_release_source_gate.py": "1d498b97f9bf6590438520958216b8e797487c688f981a94945e6925c6ed068b",
+    "tests/test_startup_migration_ownership.py": "cf59dce912724369b759095196aa5388ce1bc6286fdef10a0ebe01f66e9f111d"
+  },
+  "tested_source_commit": "08e902b3576cc4c76ac73a9504b5b2b285122589",
+  "tested_source_tree": "b45d93edada0901cfe34ef55ec964b4030ab0e6d",
+  "source_git_blob_sha256": {
+    ".github/workflows/ci.yml": "febd8d30bd095659af4cb2d1bedc52a46caebe122b3d76c3ac4180d393e3c25a",
+    ".github/workflows/railway-deploy.yml": "5ad2e640454b03b0a4e75de68049f485bf6041fc4f76e897038146940cf33ee3",
+    "api/app_factory.py": "d586b6ca03190670c0d165bd577acb5cc9e4e1968b7b26f5a3235c761d2348bd",
+    "deploy/railway/start_api.sh": "138c94ce35694f44bbfc9ea9a2f31c2c971804e50aa5c60ca3bfe01726e2e14b",
+    "deploy/railway/start_api_consolidated.sh": "6b08ec70efb1aad9d8537098e9a8a062893751fa8421f14308d203323a9705cd",
+    "railway.toml": "d6418dafc4723fa81e83c5d960e583a06b971d283fdf9b9a765c08c01bd718d7",
+    "scripts/ci/railway_release_source_gate.py": "f2176a387f5340eea7a6ea3a021169c565f7b0b5d935f1a5daf2d890afbc2a52",
+    "tests/test_api_boot_readiness.py": "a1ee235e6429f7b6c715801d043dab9884b48130f1cd26db9345105ade6b56dd",
+    "tests/test_api_only_entrypoints.py": "ba6673bb119b12c04449e4fcee8056095248d7222d7208305ec56744f2430fc8",
+    "tests/test_ci_required_gates.py": "64c750dcecffc8bc625d79bfda2a8791a3b6a87b0bb2525826bf01f80dfd63fb",
+    "tests/test_railway_release_source_gate.py": "1d498b97f9bf6590438520958216b8e797487c688f981a94945e6925c6ed068b",
+    "tests/test_startup_migration_ownership.py": "ba47670b17f9b40f3fbe125ddeee210b0a904498f3ab72b7988f45ca149d4f5d"
+  },
+  "line_endings": "Worktree hashes bind actual tested bytes; Git blob hashes separately recorded and normalized equality verified.",
+  "required_full_suite": "NOT_EXECUTED: dedicated Linux runner / disposable PG+Redis / full coverage / EA compile and runtime prerequisites not available as a bound combined release.",
+  "production_database": "NOT_MEASURED",
+  "broker": "NOT_MEASURED",
+  "warning_disposition": "Initial Windows subprocess encoding warning was fixed with explicit UTF-8 and did not recur. Final run retains2 timing-only slow-test UserWarnings (6.8s and7.0s); no failed/error/skipped cases.",
+  "ruff_version": "ruff 0.15.7",
+  "formatting_followup_commit": "c7d51c35d11c04cc61f152588ebded7614df1670",
+  "formatting_followup": {
+    "files": 11,
+    "ast_equal": 11,
+    "full_ruff_check": "PASS",
+    "full_ruff_format_check": "PASS",
+    "additional_available_tests": 88,
+    "mcp_test_initial_collection": "ERROR_MISSING_OPTIONAL_MCP_DEPENDENCY; superseded for fixture-only scope by isolated seven-test PASS"
+  },
+  "dependency_limitations": {
+    "host_484_tests_pydantic": "2.10.3",
+    "api_requirements_pin": "2.9.2",
+    "isolated_mcp_pydantic": "2.13.5",
+    "mcp_2_requirement": "pydantic>=2.12.0",
+    "full_api_pinned_dependency_acceptance": "NOT_EXECUTED"
+  },
+  "isolated_mcp": {
+    "counts": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "receipt": "evidence/mcp-dependency-validation.json",
+    "pip_check": "PASS",
+    "native_mt5_import_attempts": 0,
+    "broker": "NOT_MEASURED"
+  },
+  "ci_isolation_followup": {
+    "tested_source_commit": "ac19a69a68edd64d529cf2bb83760b31cd74c15a",
+    "counts": {
+      "tests": 55,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "required_jobs": 7,
+    "independent_review": "No actionable blocker; exact suite moved to required isolated job; no optional or soft-fail path.",
+    "source_sha256": {
+      ".github/workflows/ci.yml": "dafbb81ec88bdd5dc6ae32e1e00d9fdb38d21ccb3a6d41c0bc846b897903d6e7",
+      "scripts/ci/railway_release_source_gate.py": "86232b547818237bf97864548d7787a93192aa2353ec640efcf6867b747599e6",
+      "tests/test_ci_required_gates.py": "10383aafa3bc05c3769f06fffc4fd97e1b519b7605d56e97991f32f8e48f306f"
+    },
+    "source_git_blob_sha256": {
+      ".github/workflows/ci.yml": "dafbb81ec88bdd5dc6ae32e1e00d9fdb38d21ccb3a6d41c0bc846b897903d6e7",
+      "scripts/ci/railway_release_source_gate.py": "86232b547818237bf97864548d7787a93192aa2353ec640efcf6867b747599e6",
+      "tests/test_ci_required_gates.py": "10383aafa3bc05c3769f06fffc4fd97e1b519b7605d56e97991f32f8e48f306f"
+    }
+  },
+  "final_static_checks": {
+    "ruff": "0.15.7",
+    "whole_source_lint": "PASS",
+    "whole_source_format": "PASS",
+    "formatted_files": 1367
+  },
+  "latest_followup_validation": "followup-s01-s03/followup-validation.json",
+  "latest_runtime_followup": "followup-s03-runtime/validation.json",
+  "latest_runner_binding_followup": "followup-runner-binding/validation.json",
+  "latest_delivery_contract_followup": "followup-delivery-contract/validation.json",
+  "latest_producer_relay_followup": {
+    "path": "followup-producer-relay/validation.json",
+    "source_commit": "5219624a92253b66fe8bc67a1acace99b71e61e7",
+    "verdict": "INCOMPLETE_HOLD",
+    "local": {
+      "passed": 176,
+      "failed": 0,
+      "skipped": 0,
+      "platform": "Windows",
+      "junit": "evidence/dpr3.xml",
+      "scope": "SELECTED_LOCAL_UNIT_AND_CONTRACT_TESTS_ONLY"
+    },
+    "postgres_existing": {
+      "cases": 45,
+      "skipped": 45
+    },
+    "postgres_producer_relay": {
+      "cases": 7,
+      "skipped": 7,
+      "accepted": false
+    },
+    "migration": {
+      "head": "20260909_02",
+      "offline_sql": "PASS",
+      "actual_upgrade": "NOT_EXECUTED"
+    },
+    "consumer": "NOT_IMPLEMENTED",
+    "owner_fencing": "NOT_IMPLEMENTED",
+    "authenticated_transport_binding": "NOT_BOUND",
+    "linux": "NOT_EXECUTED",
+    "github_required_checks": "NOT_SATISFIED",
+    "production_changes": "NONE",
+    "demo": "HOLD",
+    "independent_agent_review": "UNAVAILABLE_USAGE_LIMIT",
+    "prior_iterations": [
+      "160 passed, 1 failed: stale expected migration head; corrected",
+      "162 passed, 1 failed: FileNotFoundError in nested temporary fixture; same source passed with shorter temp label"
+    ]
+  },
+  "latest_consumer_owner_followup": {
+    "path": "followup-consumer-owner/validation.json",
+    "source_commit": "3d8df68057d6a0c2f9dc1b1969651f8f298aa713",
+    "verdict": "INCOMPLETE_HOLD",
+    "local": {
+      "tests": 185,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "local_platform": "Windows",
+    "local_scope": "SELECTED_MODEL_ASGI_AND_REGRESSION_TESTS",
+    "postgres_existing_skipped": 45,
+    "postgres_producer_skipped": 7,
+    "postgres_consumer_skipped": 11,
+    "strict_consumer_skip_control": "REJECTED_ON_SOURCE_COMMIT",
+    "postgres_acceptance": false,
+    "migration_head": "20260909_03",
+    "offline_sql": "PASS",
+    "actual_migration": "NOT_EXECUTED",
+    "runtime_activation": "NOT_EXECUTED",
+    "live_https_tls": "NOT_EXECUTED",
+    "linux": "NOT_EXECUTED",
+    "github_required_checks": "NOT_SATISFIED",
+    "performance": "NOT_BENCHMARKED; serialized per symbol, recovery refuses >1000 rows rather than truncating",
+    "consumer_policy_and_owner_credentials": "NOT_BOUND",
+    "legacy_worker": "Unbound writes to managed symbols are rejected; no automatic fence acquisition",
+    "independent_agent_review": "UNAVAILABLE_PREVIOUS_USAGE_LIMIT",
+    "milestones_done": 0,
+    "milestones_total": 6
+  }
+}

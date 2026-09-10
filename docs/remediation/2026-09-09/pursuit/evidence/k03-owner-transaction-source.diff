@@ -1,0 +1,160 @@
+commit e996b331dac08067d848fbdd9268f4088c12adda
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 16:27:34 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 16:27:34 2026 +0800
+
+    fix(s03): require transaction before lifecycle owner fencing
+
+diff --git a/storage/strategy_5scr_activity_consumer.py b/storage/strategy_5scr_activity_consumer.py
+index a1754226..8b6c0507 100644
+--- a/storage/strategy_5scr_activity_consumer.py
++++ b/storage/strategy_5scr_activity_consumer.py
+@@ -47,6 +47,10 @@ class LifecycleOwnerFence:
+ 
+ 
+ async def lock_symbol(connection, symbol):
++    # Both the advisory lock and owner-token GUC are transaction scoped. In
++    # autocommit they expire before the subsequent owner read/write can use them.
++    if connection.is_in_transaction() is not True:
++        raise ValueError("LIFECYCLE_OWNER_TRANSACTION_REQUIRED")
+     await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('5scr-owner:' || $1::text,0))", symbol)
+ 
+ 
+diff --git a/tests/test_activity_delivery_consumer.py b/tests/test_activity_delivery_consumer.py
+index 33bcd8af..3c9328fe 100644
+--- a/tests/test_activity_delivery_consumer.py
++++ b/tests/test_activity_delivery_consumer.py
+@@ -31,6 +31,9 @@ class ConsumerDB:
+         self.active = False
+         self.fail_at = None
+ 
++    def is_in_transaction(self):
++        return self.active
++
+     @asynccontextmanager
+     async def transaction(self):
+         assert not self.active
+@@ -38,6 +41,8 @@ class ConsumerDB:
+         self.active = True
+         try:
+             yield self
++            if self.fail_at == "commit":
++                raise RuntimeError("injected consumer commit failure")
+         except BaseException:
+             self.data = before
+             raise
+@@ -115,7 +120,7 @@ def test_commit_then_expired_relay_ack_then_duplicate_ack_recovers():
+     assert len(db.data["lifecycles"]) == len(db.data["emissions"]) == len(db.data["inbox"]) == 1
+ 
+ 
+-@pytest.mark.parametrize("fail_at", ["mappings", "emissions", "inbox", "consumer_cursors"])
++@pytest.mark.parametrize("fail_at", ["mappings", "emissions", "inbox", "consumer_cursors", "commit"])
+ def test_every_consumer_write_failure_rolls_back(fail_at):
+     db = ConsumerDB()
+     db.fail_at = fail_at
+@@ -178,6 +183,35 @@ def test_authenticated_route_returns_ack_only_after_commit():
+     assert not db.active and len(db.data["inbox"]) == 1
+ 
+ 
++def test_authenticated_route_does_not_ack_failed_commit_and_retry_succeeds():
++    db = ConsumerDB()
++    db.fail_at = "commit"
++    binding = ActivityTransportBinding(
++        destination="https://consumer.test/internal/s03/activity-deliveries",
++        identity="fixture-producer",
++        key=b"x" * 32,
++        maximum_skew_seconds=30,
++    )
++    app = FastAPI()
++    app.include_router(activity_consumer_router(binding=binding, consumer=consumer(db), maximum_payload_bytes=100000))
++    wire = delivery().model_dump_json().encode()
++    timestamp = str(int(time.time()))
++    headers = {
++        "X-S03-Identity": binding.identity,
++        "X-S03-Time": timestamp,
++        "X-S03-Signature": binding.signature(timestamp, wire),
++    }
++    with TestClient(app, raise_server_exceptions=False) as client:
++        failed = client.post("/internal/s03/activity-deliveries", content=wire, headers=headers)
++        assert failed.status_code == 500
++        assert "COMMITTED" not in failed.text
++        assert all(not rows for rows in db.data.values()) and not db.active
++        db.fail_at = None
++        retry = client.post("/internal/s03/activity-deliveries", content=wire, headers=headers)
++    assert retry.status_code == 200 and retry.json()["outcome"] == "COMMITTED"
++    assert len(db.data["lifecycles"]) == len(db.data["emissions"]) == len(db.data["inbox"]) == 1
++
++
+ @pytest.mark.parametrize("field", ["identity", "timestamp", "payload", "signature"])
+ def test_transport_tampering_rejected(field):
+     binding = ActivityTransportBinding(
+diff --git a/tests/test_activity_owner_transaction.py b/tests/test_activity_owner_transaction.py
+new file mode 100644
+index 00000000..ec3dad94
+--- /dev/null
++++ b/tests/test_activity_owner_transaction.py
+@@ -0,0 +1,63 @@
++"""Owner helper transaction preconditions; this is not PostgreSQL acceptance."""
++
++import asyncio
++from dataclasses import asdict
++from uuid import uuid4
++
++import pytest
++
++from storage.strategy_5scr_activity_consumer import LifecycleOwnerFence, bind_owner, lock_symbol, transfer_owner
++from tests.test_activity_delivery_contract import scope
++
++
++class OwnerConnection:
++    def __init__(self, active):
++        self.active = active
++        self.calls = []
++        self.fence = LifecycleOwnerFence("EURUSD", scope().scope_hash, scope().lifecycle_owner_id, 1, uuid4())
++
++    def is_in_transaction(self):
++        return self.active
++
++    async def execute(self, sql, *args):
++        self.calls.append((sql, args))
++        if sql.startswith("INSERT INTO public.strategy_5scr_owner_fences_v1"):
++            self.fence = LifecycleOwnerFence(*args)
++
++    async def fetchrow(self, sql, *args):
++        self.calls.append((sql, args))
++        return asdict(self.fence)
++
++
++@pytest.mark.parametrize("operation", ["lock", "bind", "transfer"])
++def test_owner_helpers_reject_autocommit_before_any_sql(operation):
++    connection = OwnerConnection(active=False)
++    original = connection.fence
++
++    async def run():
++        if operation == "lock":
++            await lock_symbol(connection, "EURUSD")
++        elif operation == "bind":
++            await bind_owner(connection, original)
++        else:
++            await transfer_owner(connection, symbol="EURUSD", scope=scope(), expected_generation=1)
++
++    with pytest.raises(ValueError, match="^LIFECYCLE_OWNER_TRANSACTION_REQUIRED$"):
++        asyncio.run(run())
++    assert connection.calls == [] and connection.fence == original
++
++
++def test_transactional_handover_rotates_owner_and_rejects_old_binding():
++    connection = OwnerConnection(active=True)
++    old = connection.fence
++
++    async def run():
++        new = await transfer_owner(connection, symbol="EURUSD", scope=scope(), expected_generation=1)
++        assert new.generation == 2 and new.token != old.token
++        assert connection.fence == new
++        with pytest.raises(ValueError, match="STALE_OR_UNBOUND_LIFECYCLE_OWNER"):
++            await bind_owner(connection, old)
++        await bind_owner(connection, new)
++        assert connection.calls[-1][1] == (str(new.token),)
++
++    asyncio.run(run())

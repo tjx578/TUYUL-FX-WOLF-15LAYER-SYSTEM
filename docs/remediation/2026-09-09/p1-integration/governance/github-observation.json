@@ -1,0 +1,754 @@
+{
+  "observed_at": "2026-09-09T10:44:01.106238+00:00",
+  "main_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+  "protection_exit": 1,
+  "protection": {
+    "message": "Branch not protected",
+    "documentation_url": "https://docs.github.com/rest/branches/branch-protection#get-branch-protection",
+    "status": "404"
+  },
+  "rulesets": [
+    {
+      "id": 13682266,
+      "name": "kelanatajox444",
+      "target": "branch",
+      "source_type": "Repository",
+      "source": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+      "enforcement": "disabled",
+      "node_id": "RRS_lACqUmVwb3NpdG9yec5EvTG4zgDQxlo",
+      "_links": {
+        "self": {
+          "href": "https://api.github.com/repos/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/rulesets/13682266"
+        },
+        "html": {
+          "href": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/rules/13682266"
+        }
+      },
+      "created_at": "2026-03-10T01:08:29.266+08:00",
+      "updated_at": "2026-03-10T01:08:29.282+08:00"
+    }
+  ],
+  "production_environment": {
+    "id": 12409465374,
+    "node_id": "EN_kwDORL0xuM8AAAAC46lqHg",
+    "name": "Production",
+    "url": "https://api.github.com/repos/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/environments/Production",
+    "html_url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/deployments/activity_log?environments_filter=Production",
+    "created_at": "2026-02-24T20:19:25Z",
+    "updated_at": "2026-02-24T20:19:25Z",
+    "can_admins_bypass": true,
+    "protection_rules": [],
+    "deployment_branch_policy": null
+  },
+  "check_runs_count": 59,
+  "check_runs": [
+    {
+      "id": 102433715714,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102433671496,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102432618128,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102432397079,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102431624774,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102431614936,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102431470162,
+      "name": "Security Gate",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102431263745,
+      "name": "npm audit (Node deps)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "success",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102431263687,
+      "name": "Secret leak scan",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102431263188,
+      "name": "pip-audit (Python deps)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102431193093,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102431147401,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102431019001,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102430989166,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102428564046,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102428560930,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102428387037,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102428171785,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102427664417,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102427599131,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102427165585,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102427140929,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102426521023,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102426510480,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102425971913,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102425692455,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102425416135,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102425024301,
+      "name": "lint",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "success",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102425000099,
+      "name": "pytest",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "success",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102424990262,
+      "name": "Docker Build",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "success",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102424756895,
+      "name": "Docs Gate",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102424688053,
+      "name": "Legacy docs quarantine",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "success",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102424688019,
+      "name": "Architecture reading-order integrity",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "success",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102424687780,
+      "name": "Architecture cross-reference check",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102424347630,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102420694760,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102420198061,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102332878698,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102332851273,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102325463745,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102325449964,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102318899834,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102318789436,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102247851389,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102247835457,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102243100611,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102243052359,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102241041674,
+      "name": "Deploy ${{ matrix.service }} (gated)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "skipped",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102241013696,
+      "name": "CI Gate",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102241007026,
+      "name": "Security Gate",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102240994167,
+      "name": "Ruff lint & format",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102240994113,
+      "name": "Dashboard build (Next.js)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102240994043,
+      "name": "Native MCP fixture tests",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102240994015,
+      "name": "Architecture drift guard",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102240993975,
+      "name": "Python tests (pytest)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102240993729,
+      "name": "Deprecated shim guard",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102240993651,
+      "name": "Secret leak scan",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102240993625,
+      "name": "pip-audit (Python deps)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    },
+    {
+      "id": 102240993369,
+      "name": "npm audit (Node deps)",
+      "head_sha": "68ad0794e087177571972a7b95f4b7dde70b5286",
+      "status": "completed",
+      "conclusion": "failure",
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      }
+    }
+  ]
+}

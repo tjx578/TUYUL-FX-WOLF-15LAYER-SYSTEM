@@ -1,0 +1,55 @@
+............................F....................                        [100%]
+================================== FAILURES ===================================
+________________ test_cli_uses_nonzero_exit_for_blocked_report ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001314E1E4FD0>
+capsys = <_pytest.capture.CaptureFixture object at 0x000001314E1E5450>
+tmp_path = WindowsPath('C:/Users/INTEL/.codex/visualizations/2026/09/08/01a08273-1154-71e3-8242-cf3965a5b514/s03-runtime-staging/ci-temp/br1/test_cli_uses_nonzero_exit_for0')
+
+    def test_cli_uses_nonzero_exit_for_blocked_report(monkeypatch: object, capsys: object, tmp_path: Path) -> None:
+        async def fake_run_reconciliation(**_kwargs: object) -> dict[str, object]:
+            return {
+                "schema_version": "wolf15.channel-b-reconciliation.v2",
+                "B-B16": "EXECUTED_BLOCKED",
+                "EXECUTION_READY": False,
+                "PRODUCTION_READY": False,
+            }
+    
+        encoded_key = base64.urlsafe_b64encode(TEST_KEY).rstrip(b"=").decode("ascii")
+        monkeypatch.setenv("AUDIT_DATABASE_URL", "postgresql://must-not-appear")
+        monkeypatch.setenv(account_binding.KEY_ENV, encoded_key)
+        monkeypatch.setenv(account_binding.KEY_ID_ENV, TEST_KEY_ID)
+        monkeypatch.setattr(reconcile, "run_reconciliation", fake_run_reconciliation)
+    
+>       result = reconcile.main(tmp_path)
+
+tests\test_channel_b_reconciliation.py:728: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+ops\mt5_mcp\reconcile.py:764: in main
+    config_path = Path.home() / ".codex" / "config.toml"
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\pathlib.py:914: in home
+    return cls("~").expanduser()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('~')
+
+    def expanduser(self):
+        """ Return a new path with expanded ~ and ~user constructs
+        (as returned by os.path.expanduser)
+        """
+        if (not (self._drv or self._root) and
+            self._parts and self._parts[0][:1] == '~'):
+            homedir = os.path.expanduser(self._parts[0])
+            if homedir[:1] == "~":
+>               raise RuntimeError("Could not determine home directory.")
+E               RuntimeError: Could not determine home directory.
+
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\pathlib.py:1385: RuntimeError
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\br1.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_channel_b_reconciliation.py::test_cli_uses_nonzero_exit_for_blocked_report
+1 failed, 48 passed in 3.32s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

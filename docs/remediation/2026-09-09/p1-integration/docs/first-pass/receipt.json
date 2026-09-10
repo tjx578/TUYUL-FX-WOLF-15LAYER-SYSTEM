@@ -1,0 +1,44 @@
+{
+  "scope": "Exact run blocks from docs-hygiene.yml; local Git Bash; gate expressions resolved from preceding local outcomes",
+  "timestamp_utc": "2026-09-09T10:40:32.195020+00:00",
+  "workflow_sha256": "79f08eb1d29bb22018aab0efa4d9084a7860ce7cdcc595b51b05f2c51d8aceaf",
+  "head_at_check": "57f27f236d2a68229a18a8ff45b36841f0d0285f",
+  "results": [
+    {
+      "job": "reading-order",
+      "step": "Verify every reading-order entry exists",
+      "exit_code": 0,
+      "script_sha256": "5d117b23b204236d65fe23296f00beaa5bd1958d0e755703c9d4284bfac3af6f",
+      "log": "reading-order-1.log"
+    },
+    {
+      "job": "legacy-quarantine",
+      "step": "No production code may import from docs/legacy/",
+      "exit_code": 0,
+      "script_sha256": "3ffb60d7321b2686ba26eed9d94d01845e7807f8c4b39fe31c7267ddcac019bf",
+      "log": "legacy-quarantine-1.log"
+    },
+    {
+      "job": "legacy-quarantine",
+      "step": "docs/legacy/README.md must exist",
+      "exit_code": 0,
+      "script_sha256": "4d2ddf53f241732341258793578a71c810d9190ec575a278d6aea56e2e4081a3",
+      "log": "legacy-quarantine-2.log"
+    },
+    {
+      "job": "cross-references",
+      "step": "Check internal markdown links",
+      "exit_code": 1,
+      "script_sha256": "20d6a18dd057158d1d4fe4b9632e52f838701b326b91e0e5604c46b3ac7dee0c",
+      "log": "cross-references-2.log"
+    },
+    {
+      "job": "docs-gate",
+      "step": "Evaluate docs hygiene jobs",
+      "exit_code": 1,
+      "script_sha256": "cae108503518969278ec7473c23887af77a2f6d55d407827c1d55bb68f962540",
+      "log": "docs-gate-0.log"
+    }
+  ],
+  "remote_ci": "NOT_EXECUTED by this subtask"
+}

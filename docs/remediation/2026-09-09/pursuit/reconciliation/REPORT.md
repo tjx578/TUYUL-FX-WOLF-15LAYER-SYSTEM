@@ -1,0 +1,29 @@
+# P1 / S03 integrated candidate
+
+Status: **HOLD — integrated Linux acceptance pending**. Milestone closure is unchanged.
+
+The candidate combines #428 at `65cdf4e2eb57748accf1eb08f8d7f75b96317575` and #431 initially at `9e6f1ee38aaed8ff858f78611520ac61f79abe25`, then reconciles #431 advancing to `1966c55eb06069a7b77660d35b2fc828293378ae`. That advance includes main's external merge `44deab805248d8607e32200890edd3ab9d8e698e` of the preserved C06 recovery branch through #434. This task did not perform that main merge.
+
+Migration 07, the separate application LOGIN-role acceptance and K05 detached verification remain present. P1 contributes orchestrator mode ownership, runtime supervision/drain and governance. Current remote protection was observed with owner-operated zero required approvals, strict CI/Security/Docs contexts bound to GitHub Actions, admin enforcement and no force pushes/deletions. Production still requires protected branches and disables admin bypass. These observations are independent from candidate CI success.
+
+The integration repairs stale release fixtures that did not supply Security/Docs receipts, removes the obsolete `_bootstrap_probe` reference in `main`, covers partial resource acquisition with cleanup ownership, and binds watchdog cancellation to the caller that owns it. Required-worker exceptions racing a shutdown signal remain failures; callers without a readiness-recovery owner latch the probe closed during retries. The existing built-engine failure/restart/resistant-shutdown script is now a required CI step, in addition to actual engine/trade process acceptance.
+
+Local attempts are retained in [local-review.json](local-review.json): 214/218 passed before receipt-fixture reconciliation; 218/218 passed afterward. The latest remote integration exposed two service tests, followed by one test-contract mismatch. Final scoped run: **289 passed, zero failures/errors/skips**, source unchanged during execution. One subsequent Ruff-only format change affects the release gate. Full repository Ruff lint passed; final formatting is checked before publication. Counts from overlapping historical suites are not summed.
+
+[database-inventory.json](database-inventory.json) contains **106 collected identities**: 100 dedicated PostgreSQL, two PostgreSQL drain, four Redis owner. The dedicated groups are 45 runtime, seven producer/relay, 17 consumer, one LOGIN-role, ten candidate, eight capacity and 12 Transaction A. Collection is not execution. Five new consumer cases distinguish unseen expiry from committed replay using authenticated ASGI and actual PostgreSQL time, and reject missing/mismatched policy at the real factory with unchanged database state. Factory negatives do not claim dynamic runtime policy revocation. The preserved NOLOGIN case now uses the capability binder without owner-table grants.
+
+Independent review found that registered-symbol fencing alone does not close intended protected-symbol coverage. Migration 07 revokes PUBLIC grants; effective named-role/inherited privileges and the intended protected-symbol inventory still require target binding. These are reported separately from the disposable P1 runtime checks and from DEMO account/EA/canary/broker acceptance.
+
+Recovery: nine C06 WIP files were independently hash-verified and published on recovery commit `dba789eddee545089b71bf63267ce5f0542eeb0e` before the external main merge. Folder cleanup remains NOT_EXECUTED; aggregate recovery receipts do not prove current consumer inactivity. Canonical README/register and previous closure receipts are preserved.
+
+Next gate: publish this reviewed feature candidate, execute all required Linux workflows and database/runtime suites at its exact SHA, inspect receipts and failures, then assess C01-C06 individually. No production migration, Railway deployment, trading activation or folder deletion is authorized by this report.
+
+## First integrated execution and follow-up
+
+Draft PR #436 published `fb782c147a02f8dfaa902624d014c0afd9a919db`. CI run `34371264126` executed **all 100 dedicated PostgreSQL identities with zero failures/errors/skips**. JUnit identity sets, artifact hashes and every source-manifest blob matched the feature head; test merge was `eb18b2664efd8c3dc362d19bd6541f9b8a895112`. The two drain and four Redis lanes ran successfully as steps; their JUnit receipts require final artifact reconciliation. Security `34371264145` and Docs `34371264054` passed. Full Python was still running at receipt capture; no full-suite success is claimed.
+
+Runtime failed on orchestrator dependency-failure timeout and missing Dockerfile in the built-engine source check. The Dockerfile is excluded from the image intentionally; follow-up separates its host build-input hash from the 13 source hashes checked inside the image, with the image ID recorded. The orchestrator fixture now binds its eight-second diagnostic hold using the selected runtime setting rather than relying on the previous generic timeout.
+
+Further review restored the prior unconditional refusal to close pools while default-mode writers remain live; strict mode retains its typed timeout and bounded cleanup. Both modes now have resistant-writer tests. Actual trade-role invalid-dual-plane acceptance is added before the positive roles, checking nonzero conflict rejection, no consumers or DB/Redis changes, and zero requests to a functioning local recording sink. Its coverage is explicitly narrower than every historical broker path.
+
+Follow-up local scope: **118 passed, zero skipped**, preserved separately from overlapping previous suites. [First-run evidence](fb782c14/postgres-verified-summary.json) and failed runtime receipts remain available under `fb782c14/`. Follow-up source still requires new exact-candidate Linux acceptance. P1 and release remain HOLD.

@@ -1,0 +1,202 @@
+commit d144d3042f36bfc8887cbbf0795da501975cc500
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 13:46:11 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 13:46:11 2026 +0800
+
+    Bind broker observation timestamps to parent collection interval
+
+diff --git a/ops/mt5_mcp/reconcile.py b/ops/mt5_mcp/reconcile.py
+index d562c960..723f4407 100644
+--- a/ops/mt5_mcp/reconcile.py
++++ b/ops/mt5_mcp/reconcile.py
+@@ -278,6 +278,18 @@ def _classify_entities(
+     return broker_to_database, database_to_broker
+ 
+ 
++def _evidence_time(value: Any) -> datetime | None:
++    if not isinstance(value, str):
++        return None
++    try:
++        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
++        if parsed.tzinfo is None or parsed.utcoffset() is None:
++            return None
++        return parsed.astimezone(UTC)
++    except ValueError:
++        return None
++
++
+ def _measurement_summary(
+     broker: Mapping[str, Any], *, window_from: datetime, window_to: datetime
+ ) -> tuple[dict[str, Any], bool]:
+@@ -287,6 +299,13 @@ def _measurement_summary(
+     summary: dict[str, Any] = {}
+     expected_window = {"from_utc": _iso(window_from), "to_utc": _iso(window_to)}
+     measured = broker.get("tool_surface_exact") is True and broker.get("window") == expected_window
++    interval = broker.get("collection_interval")
++    interval = interval if isinstance(interval, Mapping) else {}
++    started = _evidence_time(interval.get("started_at_utc"))
++    finished = _evidence_time(interval.get("finished_at_utc"))
++    interval_valid = started is not None and finished is not None and window_to <= started <= finished
++    if not interval_valid:
++        measured = False
+     for tool_name in (
+         "mt5_account_get",
+         "mt5_positions_get",
+@@ -301,6 +320,8 @@ def _measurement_summary(
+             continue
+         state = payload.get("measurement_state", "NOT_MEASURED")
+         truncated = payload.get("truncated")
++        observed = _evidence_time(payload.get("observed_at_utc"))
++        observation_in_interval = bool(interval_valid and observed is not None and started <= observed <= finished)
+         records = payload.get("records")
+         count = payload.get("record_count")
+         source_count = payload.get("source_record_count")
+@@ -323,8 +344,10 @@ def _measurement_summary(
+             "source_record_count": payload.get("source_record_count"),
+             "truncated": truncated,
+             "payload_consistent": consistent,
++            "observed_at_utc": payload.get("observed_at_utc"),
++            "observation_in_collection_interval": observation_in_interval,
+         }
+-        if state not in MEASURED_STATES or truncated is not False or not consistent:
++        if state not in MEASURED_STATES or truncated is not False or not consistent or not observation_in_interval:
+             measured = False
+         if tool_name.startswith("mt5_history_") and payload.get("window") != expected_window:
+             measured = False
+@@ -691,11 +714,20 @@ async def _broker_snapshot(
+         )
+ 
+     try:
++        started_at = datetime.now(UTC)
+         completed = await asyncio.to_thread(invoke)
++        finished_at = datetime.now(UTC)
+         if completed.returncode != 0:
+             return {"tool_surface_exact": False, "snapshots": {}, "error_type": "CollectorExitError"}
+         payload = json.loads(completed.stdout)
+-        return payload if isinstance(payload, dict) else {"tool_surface_exact": False, "snapshots": {}}
++        if not isinstance(payload, dict):
++            return {"tool_surface_exact": False, "snapshots": {}}
++        # Parent process bounds overwrite any interval asserted by the child.
++        payload["collection_interval"] = {
++            "started_at_utc": _iso(started_at),
++            "finished_at_utc": _iso(finished_at),
++        }
++        return payload
+     except Exception as exc:  # noqa: BLE001
+         return {"tool_surface_exact": False, "snapshots": {}, "error_type": type(exc).__name__}
+ 
+diff --git a/tests/test_channel_b_reconciliation.py b/tests/test_channel_b_reconciliation.py
+index 382ba5b9..6dc4902a 100644
+--- a/tests/test_channel_b_reconciliation.py
++++ b/tests/test_channel_b_reconciliation.py
+@@ -50,6 +50,10 @@ def _broker(
+     history_orders["window"] = {"from_utc": WINDOW_FROM.isoformat(), "to_utc": WINDOW_TO.isoformat()}
+     broker = {
+         "tool_surface_exact": True,
++        "collection_interval": {
++            "started_at_utc": WINDOW_TO.isoformat(),
++            "finished_at_utc": (WINDOW_TO + timedelta(seconds=1)).isoformat(),
++        },
+         "window": {"from_utc": WINDOW_FROM.isoformat(), "to_utc": WINDOW_TO.isoformat()},
+         "snapshots": {
+             "mt5_account_get": account,
+@@ -60,6 +64,7 @@ def _broker(
+         },
+     }
+     for payload in broker["snapshots"].values():
++        payload["observed_at_utc"] = WINDOW_TO.isoformat()
+         payload["account_binding"] = {
+             "scheme": account_binding.SCHEME,
+             "version": account_binding.VERSION,
+@@ -851,3 +856,90 @@ def test_measurement_flags_require_explicit_booleans(channel, field, value):
+         database=database, broker=broker, window_from=WINDOW_FROM, window_to=WINDOW_TO
+     )
+     assert report["B-B16"] == "NOT_EXECUTED"
++
++
++@pytest.mark.parametrize(
++    "observed",
++    [
++        None,
++        "bad-time",
++        "2026-08-24T02:00:00",
++        (WINDOW_TO - timedelta(microseconds=1)).isoformat(),
++        (WINDOW_TO + timedelta(seconds=1, microseconds=1)).isoformat(),
++    ],
++)
++def test_observation_must_belong_to_parent_collection_interval(observed):
++    for tool in _broker()["snapshots"]:
++        broker = _broker()
++        broker["snapshots"][tool]["observed_at_utc"] = observed
++        report = reconcile.reconcile_snapshots(
++            database=_database(
++                account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
++            ),
++            broker=broker,
++            window_from=WINDOW_FROM,
++            window_to=WINDOW_TO,
++        )
++        assert report["B-B16"] == "NOT_EXECUTED", tool
++        assert report["broker_measurements"][tool]["observation_in_collection_interval"] is False
++
++
++@pytest.mark.parametrize(
++    "interval",
++    [
++        None,
++        {},
++        {"started_at_utc": WINDOW_TO.isoformat()},
++        {"started_at_utc": WINDOW_TO.isoformat(), "finished_at_utc": (WINDOW_TO - timedelta(seconds=1)).isoformat()},
++        {
++            "started_at_utc": (WINDOW_TO - timedelta(seconds=2)).isoformat(),
++            "finished_at_utc": (WINDOW_TO + timedelta(seconds=1)).isoformat(),
++        },
++    ],
++)
++def test_missing_or_invalid_collection_interval_cannot_pass(interval):
++    broker = _broker()
++    broker["collection_interval"] = interval
++    report = reconcile.reconcile_snapshots(
++        database=_database(), broker=broker, window_from=WINDOW_FROM, window_to=WINDOW_TO
++    )
++    assert report["DIRECT_BROKER_STATE"] == "NOT_MEASURED"
++    assert report["B-B16"] == "NOT_EXECUTED"
++
++
++@pytest.mark.parametrize("offset", [0, 1])
++def test_observations_at_collection_boundaries_are_accepted(offset):
++    broker = _broker()
++    for snapshot in broker["snapshots"].values():
++        snapshot["observed_at_utc"] = (WINDOW_TO + timedelta(seconds=offset)).isoformat()
++    report = reconcile.reconcile_snapshots(
++        database=_database(
++            account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
++        ),
++        broker=broker,
++        window_from=WINDOW_FROM,
++        window_to=WINDOW_TO,
++    )
++    assert report["B-B16"] == "EXECUTED_PASS"
++
++
++def test_broker_snapshot_records_parent_bounds_over_child_claim(monkeypatch, tmp_path):
++    payload = _broker()
++    payload["collection_interval"] = {"started_at_utc": "child-assertion", "finished_at_utc": "child-assertion"}
++    monkeypatch.setattr(reconcile, "_collector_command", lambda *a, **kw: ["fixture-not-executed"])
++
++    def fake_run(command, **kwargs):
++        assert command == ["fixture-not-executed"]
++        assert "AUDIT_DATABASE_URL" not in kwargs["env"]
++        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload), stderr="")
++
++    monkeypatch.setattr(reconcile.subprocess, "run", fake_run)
++    before = datetime.now(UTC)
++    result = asyncio.run(
++        reconcile._broker_snapshot(tmp_path / "unused", window_from=WINDOW_FROM, window_to=WINDOW_TO, cwd=tmp_path)
++    )
++    after = datetime.now(UTC)
++    interval = result["collection_interval"]
++    started = datetime.fromisoformat(interval["started_at_utc"])
++    finished = datetime.fromisoformat(interval["finished_at_utc"])
++    assert before <= started <= finished <= after

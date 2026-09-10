@@ -1,0 +1,64 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Generating static SQL
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+BEGIN;
+
+INFO  [alembic.runtime.migration] Running upgrade 20260909_02 -> 20260909_03, Owner-fenced S03 consumer storage. Explicit migration; no runtime activation.
+-- Running upgrade 20260909_02 -> 20260909_03
+
+CREATE TABLE public.strategy_5scr_owner_fences_v1 (
+        symbol text PRIMARY KEY, scope_hash text NOT NULL, owner_id text NOT NULL,
+        generation bigint NOT NULL CHECK(generation>0), token uuid NOT NULL UNIQUE);
+
+CREATE FUNCTION public.guard_5scr_lifecycle_owner_v1() RETURNS trigger LANGUAGE plpgsql AS $$
+    DECLARE target_symbol text; expected_token uuid;
+    BEGIN
+        IF TG_OP = 'UPDATE' AND NEW.symbol IS DISTINCT FROM OLD.symbol THEN
+            RAISE EXCEPTION 'LIFECYCLE_SYMBOL_IMMUTABLE';
+        END IF;
+        IF TG_OP = 'DELETE' THEN target_symbol := OLD.symbol; ELSE target_symbol := NEW.symbol; END IF;
+        PERFORM pg_advisory_xact_lock(hashtextextended('5scr-owner:' || target_symbol,0));
+        SELECT token INTO expected_token FROM public.strategy_5scr_owner_fences_v1 WHERE symbol=target_symbol FOR UPDATE;
+        IF FOUND AND expected_token::text IS DISTINCT FROM current_setting('wolf15.lifecycle_owner_token',true) THEN
+            RAISE EXCEPTION 'STALE_OR_UNBOUND_LIFECYCLE_OWNER';
+        END IF;
+        IF expected_token IS NOT NULL AND TG_OP = 'UPDATE' THEN
+            IF NEW.event_count < OLD.event_count OR NEW.last_event_at < OLD.last_event_at
+               OR (NEW.last_event_at = OLD.last_event_at AND NEW.material_state_hash <> OLD.material_state_hash) THEN
+                RAISE EXCEPTION 'STALE_LIFECYCLE_REDUCTION_RELOAD_REQUIRED';
+            END IF;
+        END IF;
+        IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+    END; $$;
+
+CREATE TRIGGER guard_5scr_lifecycle_owner_v1 BEFORE INSERT OR UPDATE OR DELETE ON public.strategy_5scr_analysis_lifecycles_v2 FOR EACH ROW EXECUTE FUNCTION public.guard_5scr_lifecycle_owner_v1();
+
+CREATE TABLE public.strategy_5scr_activity_inbox_v1 (delivery_id text PRIMARY KEY,payload_hash text NOT NULL,payload jsonb NOT NULL,
+            CHECK ((payload->'execution_authority'='false'::jsonb) IS TRUE
+              AND (payload->'hypothesis_authority'='false'::jsonb) IS TRUE
+              AND (payload->'risk_authority'='false'::jsonb) IS TRUE));
+
+CREATE TABLE public.strategy_5scr_activity_conflicts_v1 (delivery_id text NOT NULL,payload_hash text NOT NULL,payload jsonb NOT NULL,PRIMARY KEY(delivery_id,payload_hash),
+            CHECK ((payload->'execution_authority'='false'::jsonb) IS TRUE
+              AND (payload->'hypothesis_authority'='false'::jsonb) IS TRUE
+              AND (payload->'risk_authority'='false'::jsonb) IS TRUE));
+
+CREATE TABLE public.strategy_5scr_activity_consumer_cursors_v1 (scope_hash text NOT NULL,activity_id text NOT NULL,payload jsonb NOT NULL,PRIMARY KEY(scope_hash,activity_id),
+            CHECK ((payload->'execution_authority'='false'::jsonb) IS TRUE
+              AND (payload->'hypothesis_authority'='false'::jsonb) IS TRUE
+              AND (payload->'risk_authority'='false'::jsonb) IS TRUE));
+
+CREATE TABLE public.strategy_5scr_activity_mappings_v1 (consumer_scope_id text NOT NULL,scope_hash text NOT NULL,activity_id text NOT NULL,lifecycle_id text NOT NULL REFERENCES public.strategy_5scr_analysis_lifecycles_v2(strategy_lifecycle_id),payload jsonb NOT NULL,PRIMARY KEY(consumer_scope_id,activity_id),
+            CHECK ((payload->'execution_authority'='false'::jsonb) IS TRUE
+              AND (payload->'hypothesis_authority'='false'::jsonb) IS TRUE
+              AND (payload->'risk_authority'='false'::jsonb) IS TRUE));
+
+CREATE TABLE public.strategy_5scr_activity_emissions_v1 (emission_id text PRIMARY KEY,lifecycle_id text NOT NULL REFERENCES public.strategy_5scr_analysis_lifecycles_v2(strategy_lifecycle_id),payload jsonb NOT NULL,
+            CHECK ((payload->'execution_authority'='false'::jsonb) IS TRUE
+              AND (payload->'hypothesis_authority'='false'::jsonb) IS TRUE
+              AND (payload->'risk_authority'='false'::jsonb) IS TRUE));
+
+UPDATE alembic_version SET version_num='20260909_03' WHERE alembic_version.version_num = '20260909_02';
+
+COMMIT;
+

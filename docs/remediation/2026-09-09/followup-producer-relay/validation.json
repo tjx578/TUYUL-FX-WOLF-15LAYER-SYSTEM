@@ -1,0 +1,38 @@
+{
+  "source_commit": "5219624a92253b66fe8bc67a1acace99b71e61e7",
+  "verdict": "INCOMPLETE_HOLD",
+  "local": {
+    "passed": 176,
+    "failed": 0,
+    "skipped": 0,
+    "platform": "Windows",
+    "junit": "evidence/dpr3.xml",
+    "scope": "SELECTED_LOCAL_UNIT_AND_CONTRACT_TESTS_ONLY"
+  },
+  "postgres_existing": {
+    "cases": 45,
+    "skipped": 45
+  },
+  "postgres_producer_relay": {
+    "cases": 7,
+    "skipped": 7,
+    "accepted": false
+  },
+  "migration": {
+    "head": "20260909_02",
+    "offline_sql": "PASS",
+    "actual_upgrade": "NOT_EXECUTED"
+  },
+  "consumer": "NOT_IMPLEMENTED",
+  "owner_fencing": "NOT_IMPLEMENTED",
+  "authenticated_transport_binding": "NOT_BOUND",
+  "linux": "NOT_EXECUTED",
+  "github_required_checks": "NOT_SATISFIED",
+  "production_changes": "NONE",
+  "demo": "HOLD",
+  "independent_agent_review": "UNAVAILABLE_USAGE_LIMIT",
+  "prior_iterations": [
+    "160 passed, 1 failed: stale expected migration head; corrected",
+    "162 passed, 1 failed: FileNotFoundError in nested temporary fixture; same source passed with shorter temp label"
+  ]
+}

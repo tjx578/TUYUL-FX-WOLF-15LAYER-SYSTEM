@@ -1,0 +1,1216 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 58745c37..071489ed 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -147,6 +147,9 @@ jobs:
+       - name: Require separate S03 producer and relay PostgreSQL acceptance
+         run: python scripts/ci/run_activity_delivery_producer_acceptance.py
+ 
++      - name: Require separate S03 consumer and owner PostgreSQL acceptance
++        run: python scripts/ci/run_activity_delivery_consumer_acceptance.py
++
+       - name: Upload S03 source-bound PostgreSQL receipt
+         if: always()
+         uses: actions/upload-artifact@v4
+diff --git a/api/app_factory.py b/api/app_factory.py
+index f3c763b7..928d59be 100644
+--- a/api/app_factory.py
++++ b/api/app_factory.py
+@@ -848,7 +848,7 @@ def _create_app_inner() -> FastAPI:
+     return app
+ 
+ 
+-def create_app() -> FastAPI:
++def create_app(*, activity_delivery_endpoint=None) -> FastAPI:
+     """Build the FastAPI application with fail-open bootstrap protection.
+ 
+     If ``API_BOOT_FAIL_OPEN`` is truthy (default) and the inner factory
+@@ -857,9 +857,20 @@ def create_app() -> FastAPI:
+     """
+     fail_open = _env_bool("API_BOOT_FAIL_OPEN", True)
+     try:
+-        return _create_app_inner()
++        application = _create_app_inner()
++        if activity_delivery_endpoint is not None:
++            from services.pressure_outbox.activity_delivery_transport import ActivityDeliveryEndpoint
++
++            if not isinstance(activity_delivery_endpoint, ActivityDeliveryEndpoint):
++                raise ValueError("ACTIVITY_DELIVERY_ENDPOINT_BINDING_REQUIRED")
++            if "/internal/s03/activity-deliveries" in application.openapi().get("paths", {}):
++                raise ValueError("ACTIVITY_DELIVERY_ENDPOINT_ALREADY_REGISTERED")
++            application.include_router(activity_delivery_endpoint.router())
++            application.openapi_schema = None
++            _assert_no_duplicate_routes(application)
++        return application
+     except Exception as exc:
+-        if not fail_open:
++        if not fail_open or activity_delivery_endpoint is not None:
+             raise
+         logger.exception("API bootstrap failed — enabling fallback liveness app")
+         return _build_bootstrap_fallback_app(f"api_bootstrap_failed: {exc!s}")
+diff --git a/scripts/ci/run_activity_delivery_consumer_acceptance.py b/scripts/ci/run_activity_delivery_consumer_acceptance.py
+new file mode 100644
+index 00000000..23d1a965
+--- /dev/null
++++ b/scripts/ci/run_activity_delivery_consumer_acceptance.py
+@@ -0,0 +1,13 @@
++"""Separate owner/transport integration gate; existing 45+7 scopes stay intact."""
++
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++if str(ROOT) not in sys.path:
++    sys.path.insert(0, str(ROOT))
++
++from scripts.ci.run_pair_activity_runtime_acceptance import main  # noqa: E402
++
++if __name__ == "__main__":
++    raise SystemExit(main(test_module="tests/integration/test_activity_delivery_consumer_postgres.py"))
+diff --git a/scripts/ci/run_pair_activity_runtime_acceptance.py b/scripts/ci/run_pair_activity_runtime_acceptance.py
+index ac240321..a1c15486 100644
+--- a/scripts/ci/run_pair_activity_runtime_acceptance.py
++++ b/scripts/ci/run_pair_activity_runtime_acceptance.py
+@@ -49,6 +49,15 @@ SOURCES = (
+     "services/pressure_outbox/activity_delivery_relay.py",
+     "tests/integration/test_activity_delivery_producer_postgres.py",
+     "scripts/ci/run_activity_delivery_producer_acceptance.py",
++    "scripts/ci/run_activity_delivery_consumer_acceptance.py",
++    "storage/strategy_5scr_activity_consumer.py",
++    "api/app_factory.py",
++    "contracts/strategy_5scr_lifecycle_v2.py",
++    "analysis/strategy_5scr_v3/episode_hash.py",
++    "storage/strategy_5scr_lifecycle_v2_repository.py",
++    "storage/strategy_5scr_shadow_evidence_v2_repository.py",
++    "services/pressure_outbox/activity_delivery_transport.py",
++    "tests/integration/test_activity_delivery_consumer_postgres.py",
+     "storage/strategy_5scr_activity_schema.py",
+     "storage/migrations/versions/20260909_01_pair_activity_runtime.py",
+     "pipeline/wolf_constitutional_pipeline.py",
+diff --git a/services/pressure_outbox/activity_delivery_transport.py b/services/pressure_outbox/activity_delivery_transport.py
+new file mode 100644
+index 00000000..8e4e1310
+--- /dev/null
++++ b/services/pressure_outbox/activity_delivery_transport.py
+@@ -0,0 +1,122 @@
++"""Explicit HTTPS destination and authenticated S03 request/ACK binding.
++
++No environment discovery, implicit route registration, credential logging or retry.
++Application startup must mount the returned router with a bound owner consumer.
++"""
++
++import hashlib
++import hmac
++import time
++from dataclasses import dataclass
++from urllib.parse import urlsplit
++
++import httpx
++from fastapi import APIRouter, HTTPException, Request
++
++
++@dataclass(frozen=True)
++class ActivityDeliveryEndpoint:
++    binding: "ActivityTransportBinding"
++    consumer: object
++    maximum_payload_bytes: int
++
++    def router(self):
++        return activity_consumer_router(
++            binding=self.binding, consumer=self.consumer, maximum_payload_bytes=self.maximum_payload_bytes
++        )
++
++
++class ActivityTransportBinding:
++    def __init__(self, *, destination, identity, key: bytes, maximum_skew_seconds: int):
++        url = urlsplit(destination)
++        if (
++            url.scheme != "https"
++            or not url.hostname
++            or url.username
++            or url.password
++            or url.query
++            or url.fragment
++            or url.path != "/internal/s03/activity-deliveries"
++            or not identity.strip()
++            or type(key) is not bytes
++            or len(key) < 32
++            or type(maximum_skew_seconds) is not int
++            or maximum_skew_seconds <= 0
++        ):
++            raise ValueError("ACTIVITY_TRANSPORT_BINDING_INVALID")
++        self.destination, self.identity = destination, identity
++        self._key, self.maximum_skew_seconds = key, maximum_skew_seconds
++
++    def signature(self, timestamp, payload):
++        context = f"{self.identity}\n{self.destination}\n{timestamp}\n".encode()
++        return hmac.new(self._key, context + payload, hashlib.sha256).hexdigest()
++
++    def authenticate(self, *, identity, timestamp, signature, payload, now=None):
++        try:
++            valid = (
++                identity == self.identity
++                and str(int(timestamp)) == timestamp
++                and abs((time.time() if now is None else now) - int(timestamp)) <= self.maximum_skew_seconds
++                and hmac.compare_digest(signature, self.signature(timestamp, payload))
++            )
++        except (TypeError, ValueError):
++            valid = False
++        if not valid:
++            raise ValueError("ACTIVITY_TRANSPORT_UNAUTHENTICATED")
++
++
++class ActivityHTTPSender:
++    def __init__(self, binding, *, timeout_seconds: float):
++        if timeout_seconds <= 0:
++            raise ValueError("TRANSPORT_TIMEOUT_REQUIRED")
++        self.binding, self.timeout = binding, timeout_seconds
++
++    def __call__(self, payload: bytes):
++        timestamp = str(int(time.time()))
++        # TLS certificate verification is mandatory; inherited proxy settings
++        # and redirects cannot silently replace the bound destination.
++        with httpx.Client(timeout=self.timeout, trust_env=False, follow_redirects=False, verify=True) as client:
++            response = client.post(
++                self.binding.destination,
++                content=payload,
++                headers={
++                    "Content-Type": "application/json",
++                    "X-S03-Identity": self.binding.identity,
++                    "X-S03-Time": timestamp,
++                    "X-S03-Signature": self.binding.signature(timestamp, payload),
++                },
++            )
++            response.raise_for_status()
++            body = response.json()
++            return body["delivery_id"], body["payload_hash"], body["outcome"]
++
++
++def activity_consumer_router(*, binding, consumer, maximum_payload_bytes: int):
++    if type(maximum_payload_bytes) is not int or maximum_payload_bytes <= 0:
++        raise ValueError("TRANSPORT_PAYLOAD_LIMIT_REQUIRED")
++    router = APIRouter()
++
++    @router.post("/internal/s03/activity-deliveries")
++    async def receive(request: Request):
++        payload = bytearray()
++        async for chunk in request.stream():
++            payload.extend(chunk)
++            if len(payload) > maximum_payload_bytes:
++                raise HTTPException(413, "ACTIVITY_PAYLOAD_TOO_LARGE")
++        raw = bytes(payload)
++        try:
++            binding.authenticate(
++                identity=request.headers.get("X-S03-Identity"),
++                timestamp=request.headers.get("X-S03-Time"),
++                signature=request.headers.get("X-S03-Signature"),
++                payload=raw,
++            )
++        except ValueError:
++            raise HTTPException(401, "ACTIVITY_TRANSPORT_UNAUTHENTICATED") from None
++        try:
++            delivery_id, payload_hash, outcome = await consumer.consume(raw)
++        except ValueError:
++            raise HTTPException(409, "ACTIVITY_CONSUMER_REJECTED") from None
++        return {"delivery_id": delivery_id, "payload_hash": payload_hash, "outcome": outcome}
++
++    return router
+diff --git a/storage/migrations/versions/20260909_03_activity_consumer.py b/storage/migrations/versions/20260909_03_activity_consumer.py
+new file mode 100644
+index 00000000..0082fc94
+--- /dev/null
++++ b/storage/migrations/versions/20260909_03_activity_consumer.py
+@@ -0,0 +1,57 @@
++"""Owner-fenced S03 consumer storage. Explicit migration; no runtime activation."""
++
++from alembic import op
++
++revision = "20260909_03"
++down_revision = "20260909_02"
++branch_labels = None
++depends_on = None
++
++
++def upgrade():
++    op.execute("""CREATE TABLE public.strategy_5scr_owner_fences_v1 (
++        symbol text PRIMARY KEY, scope_hash text NOT NULL, owner_id text NOT NULL,
++        generation bigint NOT NULL CHECK(generation>0), token uuid NOT NULL UNIQUE)""")
++    op.execute("""CREATE FUNCTION public.guard_5scr_lifecycle_owner_v1() RETURNS trigger LANGUAGE plpgsql AS $$
++    DECLARE target_symbol text; expected_token uuid;
++    BEGIN
++        IF TG_OP = 'UPDATE' AND NEW.symbol IS DISTINCT FROM OLD.symbol THEN
++            RAISE EXCEPTION 'LIFECYCLE_SYMBOL_IMMUTABLE';
++        END IF;
++        IF TG_OP = 'DELETE' THEN target_symbol := OLD.symbol; ELSE target_symbol := NEW.symbol; END IF;
++        PERFORM pg_advisory_xact_lock(hashtextextended('5scr-owner:' || target_symbol,0));
++        SELECT token INTO expected_token FROM public.strategy_5scr_owner_fences_v1 WHERE symbol=target_symbol FOR UPDATE;
++        IF FOUND AND expected_token::text IS DISTINCT FROM current_setting('wolf15.lifecycle_owner_token',true) THEN
++            RAISE EXCEPTION 'STALE_OR_UNBOUND_LIFECYCLE_OWNER';
++        END IF;
++        IF expected_token IS NOT NULL AND TG_OP = 'UPDATE' THEN
++            IF NEW.event_count < OLD.event_count OR NEW.last_event_at < OLD.last_event_at
++               OR (NEW.last_event_at = OLD.last_event_at AND NEW.material_state_hash <> OLD.material_state_hash) THEN
++                RAISE EXCEPTION 'STALE_LIFECYCLE_REDUCTION_RELOAD_REQUIRED';
++            END IF;
++        END IF;
++        IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
++    END; $$""")
++    op.execute(
++        "CREATE TRIGGER guard_5scr_lifecycle_owner_v1 BEFORE INSERT OR UPDATE OR DELETE "
++        "ON public.strategy_5scr_analysis_lifecycles_v2 FOR EACH ROW EXECUTE FUNCTION public.guard_5scr_lifecycle_owner_v1()"
++    )
++    for name, columns in {
++        "inbox": "delivery_id text PRIMARY KEY,payload_hash text NOT NULL,payload jsonb NOT NULL",
++        "conflicts": "delivery_id text NOT NULL,payload_hash text NOT NULL,payload jsonb NOT NULL,PRIMARY KEY(delivery_id,payload_hash)",
++        "consumer_cursors": "scope_hash text NOT NULL,activity_id text NOT NULL,payload jsonb NOT NULL,PRIMARY KEY(scope_hash,activity_id)",
++        "mappings": "consumer_scope_id text NOT NULL,scope_hash text NOT NULL,activity_id text NOT NULL,lifecycle_id text NOT NULL REFERENCES public.strategy_5scr_analysis_lifecycles_v2(strategy_lifecycle_id),payload jsonb NOT NULL,PRIMARY KEY(consumer_scope_id,activity_id)",
++        "emissions": "emission_id text PRIMARY KEY,lifecycle_id text NOT NULL REFERENCES public.strategy_5scr_analysis_lifecycles_v2(strategy_lifecycle_id),payload jsonb NOT NULL",
++    }.items():
++        op.execute(f"""CREATE TABLE public.strategy_5scr_activity_{name}_v1 ({columns},
++            CHECK ((payload->'execution_authority'='false'::jsonb) IS TRUE
++              AND (payload->'hypothesis_authority'='false'::jsonb) IS TRUE
++              AND (payload->'risk_authority'='false'::jsonb) IS TRUE))""")
++
++
++def downgrade():
++    for name in ("emissions", "mappings", "consumer_cursors", "conflicts", "inbox"):
++        op.execute(f"DROP TABLE public.strategy_5scr_activity_{name}_v1")
++    op.execute("DROP TRIGGER guard_5scr_lifecycle_owner_v1 ON public.strategy_5scr_analysis_lifecycles_v2")
++    op.execute("DROP FUNCTION public.guard_5scr_lifecycle_owner_v1()")
++    op.execute("DROP TABLE public.strategy_5scr_owner_fences_v1")
+diff --git a/storage/strategy_5scr_activity_consumer.py b/storage/strategy_5scr_activity_consumer.py
+new file mode 100644
+index 00000000..a1754226
+--- /dev/null
++++ b/storage/strategy_5scr_activity_consumer.py
+@@ -0,0 +1,232 @@
++"""S03 delivery transaction owned by the existing lifecycle repository.
++
++No default policy, source trust, owner takeover or network destination is chosen.
++The DB trigger applies the same fence to legacy lifecycle writes.
++"""
++
++from __future__ import annotations
++
++import json
++import re
++from dataclasses import dataclass
++from uuid import UUID, uuid4
++
++from contracts.strategy_5scr_activity_delivery import (
++    ActivityConsumerScopeV1,
++    ActivityDeliveryV1,
++    ActivityLifecycleEmissionLinkV1,
++    classify_delivery_order,
++    classify_delivery_replay,
++    validate_existing_activity_owner,
++)
++from contracts.strategy_5scr_lifecycle_v2 import StrategyLifecycleV2
++
++
++def decoded(value):
++    return json.loads(value) if isinstance(value, str) else value
++
++
++@dataclass(frozen=True)
++class LifecycleOwnerFence:
++    symbol: str
++    scope_hash: str
++    owner_id: str
++    generation: int
++    token: UUID
++
++    def __post_init__(self):
++        if (
++            not re.fullmatch(r"[A-Z0-9._-]{3,32}", self.symbol)
++            or not re.fullmatch(r"sha256:[0-9a-f]{64}", self.scope_hash)
++            or not self.owner_id.strip()
++            or type(self.generation) is not int
++            or self.generation < 1
++            or not isinstance(self.token, UUID)
++        ):
++            raise ValueError("OWNER_FENCE_BINDING_INVALID")
++
++
++async def lock_symbol(connection, symbol):
++    await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('5scr-owner:' || $1::text,0))", symbol)
++
++
++async def transfer_owner(connection, *, symbol, scope: ActivityConsumerScopeV1, expected_generation: int):
++    """Explicit CAS handover in a caller-owned transaction, never auto-acquire."""
++    scope = ActivityConsumerScopeV1.model_validate(scope.model_dump(mode="json"))
++    if not isinstance(symbol, str) or not re.fullmatch(r"[A-Z0-9._-]{3,32}", symbol):
++        raise ValueError("OWNER_SYMBOL_REQUIRED")
++    if type(expected_generation) is not int or expected_generation < 0:
++        raise ValueError("OWNER_GENERATION_REQUIRED")
++    await lock_symbol(connection, symbol)
++    row = await connection.fetchrow(
++        "SELECT * FROM public.strategy_5scr_owner_fences_v1 WHERE symbol=$1 FOR UPDATE", symbol
++    )
++    if (row["generation"] if row else 0) != expected_generation:
++        raise ValueError("OWNER_HANDOVER_CONFLICT")
++    token = uuid4()
++    generation = expected_generation + 1
++    await connection.execute(
++        "INSERT INTO public.strategy_5scr_owner_fences_v1(symbol,scope_hash,owner_id,generation,token) "
++        "VALUES($1,$2,$3,$4,$5) ON CONFLICT(symbol) DO UPDATE SET scope_hash=$2,owner_id=$3,generation=$4,token=$5",
++        symbol,
++        scope.scope_hash,
++        scope.lifecycle_owner_id,
++        generation,
++        token,
++    )
++    return LifecycleOwnerFence(symbol, scope.scope_hash, scope.lifecycle_owner_id, generation, token)
++
++
++async def bind_owner(connection, fence: LifecycleOwnerFence):
++    await lock_symbol(connection, fence.symbol)
++    row = await connection.fetchrow(
++        "SELECT * FROM public.strategy_5scr_owner_fences_v1 WHERE symbol=$1 FOR UPDATE", fence.symbol
++    )
++    if row is None or any(row[key] != getattr(fence, key) for key in ("scope_hash", "owner_id", "generation", "token")):
++        raise ValueError("STALE_OR_UNBOUND_LIFECYCLE_OWNER")
++    await connection.execute("SELECT set_config('wolf15.lifecycle_owner_token',$1,true)", str(fence.token))
++
++
++class ActivityLifecycleConsumer:
++    def __init__(self, *, owner, scope, fence, policy_hash, select_lifecycle, validate_source):
++        self.owner = owner
++        self.scope = ActivityConsumerScopeV1.model_validate(scope.model_dump(mode="json"))
++        self.fence = fence
++        if (
++            fence.scope_hash != self.scope.scope_hash
++            or fence.owner_id != self.scope.lifecycle_owner_id
++            or policy_hash != self.scope.lifecycle_policy_hash
++            or not callable(select_lifecycle)
++            or not callable(validate_source)
++        ):
++            raise ValueError("CONSUMER_POLICY_OR_OWNER_UNBOUND")
++        self.select_lifecycle = select_lifecycle
++        self.validate_source = validate_source
++
++    async def consume(self, payload: bytes):
++        event = ActivityDeliveryV1.model_validate_json(payload)
++        if event.scope != self.scope or event.evaluation.symbol != self.fence.symbol:
++            raise ValueError("CONSUMER_SCOPE_MISMATCH")
++        # Authenticity is checked by transport before this method; provenance
++        # verification is independently supplied by the configured source reader.
++        async with self.owner._pg.transaction() as c:
++            await bind_owner(c, self.fence)
++            prior = await c.fetchrow(
++                "SELECT payload FROM public.strategy_5scr_activity_inbox_v1 WHERE delivery_id=$1", event.delivery_id
++            )
++            replay = classify_delivery_replay(
++                event, ActivityDeliveryV1.model_validate(decoded(prior["payload"])) if prior else None
++            )
++            if replay == "QUARANTINE_PAYLOAD_CONFLICT":
++                await c.execute(
++                    "INSERT INTO public.strategy_5scr_activity_conflicts_v1(delivery_id,payload_hash,payload) "
++                    "VALUES($1,$2,$3::jsonb) ON CONFLICT DO NOTHING",
++                    event.delivery_id,
++                    event.payload_hash,
++                    event.model_dump_json(),
++                )
++                outcome = replay
++            elif replay == "DUPLICATE_NO_EFFECT":
++                outcome = replay
++            else:
++                if self.validate_source(event) is not True:
++                    raise ValueError("CONSUMER_SOURCE_NOT_VERIFIED")
++                outcome = await self._apply(c, event)
++        # This return happens only after transaction.__aexit__ has committed.
++        return event.delivery_id, event.payload_hash, outcome
++
++    async def _apply(self, c, event):
++        key = (self.scope.scope_hash, event.evaluation.activity_id)
++        cursor = await c.fetchrow(
++            "SELECT payload FROM public.strategy_5scr_activity_consumer_cursors_v1 WHERE scope_hash=$1 AND activity_id=$2",
++            *key,
++        )
++        order = classify_delivery_order(
++            event, ActivityDeliveryV1.model_validate(decoded(cursor["payload"])) if cursor else None
++        )
++        if order != "NEXT_REQUIRES_OWNER_VALIDATION":
++            return order
++        now = await c.fetchval("SELECT clock_timestamp()")
++        evaluation = event.evaluation
++        if evaluation.evaluated_at_utc > now:
++            return "FUTURE_SOURCE_EVALUATION"
++        if evaluation.decision == "GRANTED" and now >= evaluation.valid_until_utc:
++            return "EXPIRED_UNSEEN_DELIVERY"
++        mapping = await c.fetchrow(
++            "SELECT payload FROM public.strategy_5scr_activity_mappings_v1 WHERE consumer_scope_id=$1 AND activity_id=$2",
++            self.scope.consumer_scope_id,
++            evaluation.activity_id,
++        )
++        previous = ActivityLifecycleEmissionLinkV1.model_validate(decoded(mapping["payload"])) if mapping else None
++        if evaluation.decision in {"SUSPENDED", "RECONCILIATION_REQUIRED"} and previous is None:
++            return "ACTIVITY_MAPPING_REQUIRED"
++        if evaluation.decision != "PENDING":
++            rows = await c.fetch(
++                "SELECT * FROM public.strategy_5scr_analysis_lifecycles_v2 WHERE symbol=$1 ORDER BY opened_at LIMIT 1001 FOR UPDATE",
++                self.fence.symbol,
++            )
++            if len(rows) > 1000:
++                raise ValueError("OWNER_RECOVERY_CAPACITY_EXCEEDED")
++            # A pure policy receives fresh database rows; no process reducer state
++            # is advanced before commit or retained after rollback.
++            lifecycle = self.select_lifecycle(event, tuple(dict(row) for row in rows), previous)
++            lifecycle = StrategyLifecycleV2.model_validate(lifecycle.model_dump(mode="json"))
++            if lifecycle.symbol != self.fence.symbol or lifecycle.last_event_at_utc > now:
++                raise ValueError("OWNER_LIFECYCLE_SCOPE_MISMATCH")
++            link = ActivityLifecycleEmissionLinkV1(
++                delivery=event,
++                strategy_lifecycle_id=lifecycle.strategy_lifecycle_id,
++                material_state_hash=lifecycle.material_state_hash,
++                emission_purpose={
++                    "GRANTED": "ACTIVITY_ATTACHED",
++                    "SUSPENDED": "ACTIVITY_SUSPENDED",
++                    "RECONCILIATION_REQUIRED": "ACTIVITY_RECONCILIATION",
++                }[evaluation.decision],
++            )
++            if previous:
++                validate_existing_activity_owner(previous, link)
++            await self.owner._lifecycles.upsert_lifecycle(lifecycle, _executor=c)
++            await c.execute(
++                "INSERT INTO public.strategy_5scr_activity_mappings_v1(consumer_scope_id,activity_id,scope_hash,lifecycle_id,payload) "
++                "VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(consumer_scope_id,activity_id) DO UPDATE SET payload=$5::jsonb",
++                self.scope.consumer_scope_id,
++                evaluation.activity_id,
++                self.scope.scope_hash,
++                lifecycle.strategy_lifecycle_id,
++                link.model_dump_json(),
++            )
++            # Emission identity excludes the delivery. Keep the first payload for
++            # unchanged material state; a new delivery is not a new emission.
++            await c.execute(
++                "INSERT INTO public.strategy_5scr_activity_emissions_v1(emission_id,lifecycle_id,payload) "
++                "VALUES($1,$2,$3::jsonb) ON CONFLICT DO NOTHING",
++                link.analysis_emission_id,
++                lifecycle.strategy_lifecycle_id,
++                link.model_dump_json(),
++            )
++            stored_emission = await c.fetchrow(
++                "SELECT payload FROM public.strategy_5scr_activity_emissions_v1 WHERE emission_id=$1",
++                link.analysis_emission_id,
++            )
++            stored_link = ActivityLifecycleEmissionLinkV1.model_validate(decoded(stored_emission["payload"]))
++            if (
++                stored_link.analysis_emission_id != link.analysis_emission_id
++                or stored_link.strategy_lifecycle_id != link.strategy_lifecycle_id
++                or stored_link.material_state_hash != link.material_state_hash
++                or stored_link.emission_purpose != link.emission_purpose
++                or stored_link.delivery.scope.scope_hash != link.delivery.scope.scope_hash
++            ):
++                raise ValueError("ANALYSIS_EMISSION_IDENTITY_CONFLICT")
++        await c.execute(
++            "INSERT INTO public.strategy_5scr_activity_inbox_v1(delivery_id,payload_hash,payload) VALUES($1,$2,$3::jsonb)",
++            event.delivery_id,
++            event.payload_hash,
++            event.model_dump_json(),
++        )
++        await c.execute(
++            "INSERT INTO public.strategy_5scr_activity_consumer_cursors_v1(scope_hash,activity_id,payload) "
++            "VALUES($1,$2,$3::jsonb) ON CONFLICT(scope_hash,activity_id) DO UPDATE SET payload=$3::jsonb",
++            *key,
++            event.model_dump_json(),
++        )
++        return "COMMITTED"
+diff --git a/storage/strategy_5scr_lifecycle_v2_repository.py b/storage/strategy_5scr_lifecycle_v2_repository.py
+index f6018bd9..6c261013 100644
+--- a/storage/strategy_5scr_lifecycle_v2_repository.py
++++ b/storage/strategy_5scr_lifecycle_v2_repository.py
+@@ -393,6 +393,8 @@ class StrategyLifecycleV2Repository:
+         self,
+         lifecycle: StrategyLifecycleV2,
+         link: StrategyLifecycleEventLink,
++        *,
++        owner_fence=None,
+     ) -> bool:
+         """Write episode and link atomically.
+ 
+@@ -401,7 +403,7 @@ class StrategyLifecycleV2Repository:
+         """
+         try:
+             async with self._pg.transaction() as connection:
+-                if not await self.persist_in_transaction(connection, lifecycle, link):
++                if not await self.persist_in_transaction(connection, lifecycle, link, owner_fence=owner_fence):
+                     # The lifecycle upsert happened first to satisfy the FK.
+                     # Roll it back when another worker already linked this
+                     # event, otherwise a lagging worker could overwrite newer
+@@ -416,9 +418,18 @@ class StrategyLifecycleV2Repository:
+         connection: Any,
+         lifecycle: StrategyLifecycleV2,
+         link: StrategyLifecycleEventLink,
++        *,
++        owner_fence=None,
+     ) -> bool:
+         """Persist lifecycle/link/export using one caller-owned transaction."""
+ 
++        if owner_fence is not None:
++            from storage.strategy_5scr_activity_consumer import bind_owner
++
++            if owner_fence.symbol != lifecycle.symbol:
++                raise ValueError("OWNER_LIFECYCLE_SCOPE_MISMATCH")
++            await bind_owner(connection, owner_fence)
++
+         previous_state: str | None = None
+         if self._observer_export is not None:
+             previous = await connection.fetchrow(
+diff --git a/storage/strategy_5scr_shadow_evidence_v2_repository.py b/storage/strategy_5scr_shadow_evidence_v2_repository.py
+index f66b9d34..a09fcae5 100644
+--- a/storage/strategy_5scr_shadow_evidence_v2_repository.py
++++ b/storage/strategy_5scr_shadow_evidence_v2_repository.py
+@@ -169,6 +169,19 @@ class StrategyShadowEvidenceV2Repository:
+     def is_available(self) -> bool:
+         return self._pg.is_available
+ 
++    def activity_consumer(self, *, scope, fence, policy_hash, select_lifecycle, validate_source):
++        """Bind the typed channel to this owner's existing DB and lifecycle writer."""
++        from storage.strategy_5scr_activity_consumer import ActivityLifecycleConsumer
++
++        return ActivityLifecycleConsumer(
++            owner=self,
++            scope=scope,
++            fence=fence,
++            policy_hash=policy_hash,
++            select_lifecycle=select_lifecycle,
++            validate_source=validate_source,
++        )
++
+     async def schema_status(self) -> dict[str, tuple[str, ...]]:
+         expected_columns = tuple(sorted(f"{table}.{column}" for table, column in _REQUIRED_COLUMNS))
+         if not self._pg.is_available:
+@@ -243,6 +256,8 @@ class StrategyShadowEvidenceV2Repository:
+         lifecycle: StrategyLifecycleV2,
+         event_link: StrategyLifecycleEventLink,
+         admission_link: StrategyLifecycleAdmissionLinkV2,
++        *,
++        owner_fence=None,
+     ) -> bool:
+         """Atomically persist episode, event, admission lineage and its one job."""
+ 
+@@ -255,7 +270,9 @@ class StrategyShadowEvidenceV2Repository:
+         job_id = shadow_evidence_job_id(lifecycle.strategy_lifecycle_id)
+         try:
+             async with self._pg.transaction() as connection:
+-                if not await self._lifecycles.persist_in_transaction(connection, lifecycle, event_link):
++                if not await self._lifecycles.persist_in_transaction(
++                    connection, lifecycle, event_link, owner_fence=owner_fence
++                ):
+                     raise _DuplicateOwnerEventError
+                 await connection.execute(
+                     f"""
+diff --git a/tests/integration/test_activity_delivery_consumer_postgres.py b/tests/integration/test_activity_delivery_consumer_postgres.py
+new file mode 100644
+index 00000000..e3d684e0
+--- /dev/null
++++ b/tests/integration/test_activity_delivery_consumer_postgres.py
+@@ -0,0 +1,328 @@
++"""Actual producer/relay/owner DB acceptance. Guarded disposable target only."""
++
++import asyncio
++import json
++from contextlib import asynccontextmanager
++from dataclasses import replace
++from datetime import UTC, datetime, timedelta
++
++import asyncpg
++import pytest
++
++from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
++from analysis.strategy_5scr_v3.episode_hash import build_strategy_lifecycle_id
++from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1, ActivityDeliveryV1
++from contracts.strategy_5scr_activity_runtime import ActivityCoverageCheckpointV1
++from contracts.strategy_5scr_lifecycle_v2 import StrategyLifecycleV2
++from scripts.ci.pair_activity_run_evidence import record_runtime_fixture
++from services.pressure_outbox.activity_delivery_relay import ActivityDeliveryRelay
++from storage.strategy_5scr_activity_consumer import bind_owner, transfer_owner
++from storage.strategy_5scr_activity_runtime import PostgresActivityRuntime
++from storage.strategy_5scr_shadow_evidence_v2_repository import StrategyShadowEvidenceV2Repository
++from tests.integration.test_pair_activity_runtime_postgres import fixture_binding, pg_dsn, raw
++
++__all__ = ["pg_dsn"]
++
++
++class DB:
++    def __init__(self, dsn):
++        self.dsn = dsn
++        self.fault = None
++
++    @asynccontextmanager
++    async def transaction(self):
++        c = await asyncpg.connect(self.dsn, timeout=3, command_timeout=10)
++        try:
++            async with c.transaction():
++                yield FaultConnection(c, self.fault)
++        finally:
++            await c.close()
++
++
++class FaultConnection:
++    def __init__(self, c, fault):
++        self.c, self.fault = c, fault
++
++    def __getattr__(self, name):
++        return getattr(self.c, name)
++
++    async def execute(self, sql, *args):
++        result = await self.c.execute(sql, *args)
++        if self.fault and self.fault in sql:
++            raise RuntimeError("injected after consumer write")
++        return result
++
++
++def setup(dsn):
++    start = datetime.now(UTC) - timedelta(seconds=300)
++    binding = fixture_binding().model_copy(update={"window_start_utc": start})
++    events = [
++        replace(raw(second, direction, symbol="S03TEST"), timestamp=start + timedelta(seconds=second))
++        for second, direction in ((0, "BUY"), (150, "SELL"), (300, "BUY"))
++    ]
++    normalized = normalize_pair_activity_observations(events)
++    cp = ActivityCoverageCheckpointV1(
++        binding_hash=binding.binding_hash,
++        attestor_id=binding.coverage_attestor_id,
++        window_start_utc=start,
++        window_end_utc=start + timedelta(seconds=300),
++        expected_raw_count=normalized.raw_event_count,
++        expected_raw_hash=normalized.raw_population_hash,
++        status="COMPLETE",
++    )
++    record_runtime_fixture(binding, cp)
++    scope = ActivityConsumerScopeV1(
++        consumer_scope_id=binding.ledger_id,
++        producer_binding_hash=binding.binding_hash,
++        lifecycle_owner_id="fixture-shared-owner",
++        lifecycle_policy_hash="sha256:" + "2" * 64,
++        environment_class="DISPOSABLE_TEST",
++    )
++    producer = PostgresActivityRuntime(
++        dsn=dsn,
++        binding=binding,
++        checkpoint_provider=lambda: cp,
++        clock=lambda: start + timedelta(seconds=300),
++        delivery_scope=scope,
++    )
++    producer.append(events)
++    producer.evaluate()
++    db = DB(dsn)
++    owner = StrategyShadowEvidenceV2Repository(pg=db)
++
++    async def claim():
++        async with db.transaction() as c:
++            row = await c.fetchrow("SELECT generation FROM public.strategy_5scr_owner_fences_v1 WHERE symbol='S03TEST'")
++            return await transfer_owner(
++                c, symbol="S03TEST", scope=scope, expected_generation=row["generation"] if row else 0
++            )
++
++    fence = asyncio.run(claim())
++    lifecycle = StrategyLifecycleV2(
++        strategy_lifecycle_id=build_strategy_lifecycle_id(
++            symbol="S03TEST", opened_at_utc=start, opening_direction_state="INCOMPLETE"
++        ),
++        symbol="S03TEST",
++        opened_at_utc=start,
++        last_event_at_utc=start + timedelta(seconds=300),
++        last_continuity_event_at_utc=start + timedelta(seconds=300),
++        last_material_event_at_utc=start + timedelta(seconds=300),
++        material_state_hash="5" * 64,
++    )
++
++    def verify(event):
++        with producer._connect() as c:
++            stored = c.execute(
++                "SELECT payload FROM public.pair_activity_delivery_outbox_v1 WHERE delivery_id=%s", (event.delivery_id,)
++            ).fetchone()
++        return stored is not None and ActivityDeliveryV1.model_validate_json(stored["payload"]) == event
++
++    consumer = owner.activity_consumer(
++        scope=scope,
++        fence=fence,
++        policy_hash=scope.lifecycle_policy_hash,
++        select_lifecycle=lambda event, rows, previous: lifecycle,
++        validate_source=verify,
++    )
++
++    def wire():
++        with producer._connect() as c:
++            return c.execute(
++                "SELECT payload FROM public.pair_activity_delivery_outbox_v1 WHERE ledger_id=%s ORDER BY sequence",
++                (binding.ledger_id,),
++            ).fetchall()
++
++    return producer, consumer, db, owner, lifecycle, wire
++
++
++def test_commit_expired_lease_replay_then_successor(pg_dsn):
++    import time
++
++    from fastapi import FastAPI
++    from fastapi.testclient import TestClient
++
++    from services.pressure_outbox.activity_delivery_transport import ActivityTransportBinding, activity_consumer_router
++
++    producer, consumer, db, owner, lifecycle, wire = setup(pg_dsn)
++    producer._clock = lambda: datetime.now(UTC)
++    producer.evaluate()
++    assert len(wire()) == 2
++    calls = []
++    binding = ActivityTransportBinding(
++        destination="https://fixture.test/internal/s03/activity-deliveries",
++        identity="fixture-producer",
++        key=b"x" * 32,
++        maximum_skew_seconds=30,
++    )
++    application = FastAPI()
++    application.include_router(
++        activity_consumer_router(binding=binding, consumer=consumer, maximum_payload_bytes=100000)
++    )
++
++    def send(payload):
++        timestamp = str(int(time.time()))
++        with TestClient(application) as client:
++            response = client.post(
++                "/internal/s03/activity-deliveries",
++                content=payload,
++                headers={
++                    "X-S03-Identity": binding.identity,
++                    "X-S03-Time": timestamp,
++                    "X-S03-Signature": binding.signature(timestamp, payload),
++                },
++            )
++            assert response.status_code == 200
++            body = response.json()
++        ack = body["delivery_id"], body["payload_hash"], body["outcome"]
++        calls.append(ack[-1])
++        if len(calls) == 1:
++            with producer._connect() as c:
++                c.execute(
++                    "UPDATE public.pair_activity_delivery_outbox_v1 SET lease_until=clock_timestamp()-interval '1 second' "
++                    "WHERE delivery_id=%s",
++                    (ack[0],),
++                )
++        return ack
++
++    relay = ActivityDeliveryRelay(
++        connect=producer._connect,
++        ledger_id=producer.binding.ledger_id,
++        scope=consumer.scope,
++        send=send,
++        lease_seconds=60,
++    )
++    assert relay.poll_once() == "STALE_LEASE_ACK_IGNORED"
++    assert relay.poll_once() == "ACKNOWLEDGED"
++    assert relay.poll_once() == "ACKNOWLEDGED"
++    assert calls == ["COMMITTED", "DUPLICATE_NO_EFFECT", "COMMITTED"]
++    with producer._connect() as c:
++        assert (
++            c.execute(
++                "SELECT count(*) AS n FROM public.strategy_5scr_activity_emissions_v1 WHERE lifecycle_id=%s",
++                (lifecycle.strategy_lifecycle_id,),
++            ).fetchone()["n"]
++            == 1
++        )
++        assert (
++            c.execute(
++                "SELECT count(*) AS n FROM public.strategy_5scr_activity_mappings_v1 WHERE lifecycle_id=%s",
++                (lifecycle.strategy_lifecycle_id,),
++            ).fetchone()["n"]
++            == 1
++        )
++
++
++@pytest.mark.parametrize("table", ["mappings", "emissions", "inbox", "consumer_cursors"])
++def test_consumer_rollback_all_writes(pg_dsn, table):
++    producer, consumer, db, owner, lifecycle, wire = setup(pg_dsn)
++    db.fault = "INSERT INTO public.strategy_5scr_activity_" + table
++    with pytest.raises(RuntimeError, match="injected"):
++        asyncio.run(consumer.consume(wire()[0]["payload"].encode()))
++    with producer._connect() as c:
++        assert (
++            c.execute(
++                "SELECT count(*) AS n FROM public.strategy_5scr_analysis_lifecycles_v2 WHERE strategy_lifecycle_id=%s",
++                (lifecycle.strategy_lifecycle_id,),
++            ).fetchone()["n"]
++            == 0
++        )
++        assert (
++            c.execute(
++                "SELECT count(*) AS n FROM public.strategy_5scr_activity_inbox_v1 WHERE delivery_id=%s",
++                (ActivityDeliveryV1.model_validate_json(wire()[0]["payload"]).delivery_id,),
++            ).fetchone()["n"]
++            == 0
++        )
++    db.fault = None
++    assert asyncio.run(consumer.consume(wire()[0]["payload"].encode()))[-1] == "COMMITTED"
++
++
++def test_legacy_writer_and_old_owner_cannot_bypass_handover(pg_dsn):
++    producer, consumer, db, owner, lifecycle, wire = setup(pg_dsn)
++
++    async def run():
++        async with db.transaction() as c:
++            await transfer_owner(
++                c, symbol="S03TEST", scope=consumer.scope, expected_generation=consumer.fence.generation
++            )
++        with pytest.raises(ValueError, match="STALE_OR_UNBOUND"):
++            await consumer.consume(wire()[0]["payload"].encode())
++        with pytest.raises(asyncpg.RaiseError, match="STALE_OR_UNBOUND"):
++            async with db.transaction() as c:
++                await owner._lifecycles.upsert_lifecycle(lifecycle, _executor=c)
++        with pytest.raises(ValueError, match="STALE_OR_UNBOUND"):
++            async with db.transaction() as c:
++                await bind_owner(c, consumer.fence)
++
++    asyncio.run(run())
++
++
++def test_payload_conflict_quarantined_in_database(pg_dsn):
++    producer, consumer, db, owner, lifecycle, wire = setup(pg_dsn)
++    payload = wire()[0]["payload"]
++    asyncio.run(consumer.consume(payload.encode()))
++    changed = json.loads(payload)
++    changed["source_snapshot_id"] = "sha256:" + "9" * 64
++    assert asyncio.run(consumer.consume(json.dumps(changed).encode()))[-1] == "QUARANTINE_PAYLOAD_CONFLICT"
++    with producer._connect() as c:
++        assert (
++            c.execute(
++                "SELECT count(*) AS n FROM public.strategy_5scr_activity_conflicts_v1 WHERE delivery_id=%s",
++                (changed["delivery_id"],),
++            ).fetchone()["n"]
++            == 1
++        )
++
++
++def test_successor_waits_for_consumer_predecessor(pg_dsn):
++    producer, consumer, db, owner, lifecycle, wire = setup(pg_dsn)
++    producer._clock = lambda: datetime.now(UTC)
++    producer.evaluate()
++    assert asyncio.run(consumer.consume(wire()[1]["payload"].encode()))[-1] == "WAITING_PREDECESSOR"
++    assert asyncio.run(consumer.consume(wire()[0]["payload"].encode()))[-1] == "COMMITTED"
++    assert asyncio.run(consumer.consume(wire()[1]["payload"].encode()))[-1] == "COMMITTED"
++
++
++def test_existing_advisory_lifecycle_is_attached_without_remint(pg_dsn):
++    producer, consumer, db, owner, lifecycle, wire = setup(pg_dsn)
++
++    async def run():
++        async with db.transaction() as c:
++            await bind_owner(c, consumer.fence)
++            await owner._lifecycles.upsert_lifecycle(lifecycle, _executor=c)
++        assert (await consumer.consume(wire()[0]["payload"].encode()))[-1] == "COMMITTED"
++
++    asyncio.run(run())
++    with producer._connect() as c:
++        assert (
++            c.execute(
++                "SELECT lifecycle_id FROM public.strategy_5scr_activity_mappings_v1 WHERE scope_hash=%s",
++                (consumer.scope.scope_hash,),
++            ).fetchone()["lifecycle_id"]
++            == lifecycle.strategy_lifecycle_id
++        )
++
++
++def test_concurrent_consumer_duplicate_has_one_effect(pg_dsn):
++    producer, consumer, db, owner, lifecycle, wire = setup(pg_dsn)
++    payload = wire()[0]["payload"].encode()
++
++    async def run():
++        return await asyncio.gather(consumer.consume(payload), consumer.consume(payload))
++
++    outcomes = asyncio.run(run())
++    assert sorted(row[-1] for row in outcomes) == ["COMMITTED", "DUPLICATE_NO_EFFECT"]
++
++
++def test_fresh_consumer_after_restart_recovers_committed_inbox(pg_dsn):
++    producer, consumer, db, owner, lifecycle, wire = setup(pg_dsn)
++    payload = wire()[0]["payload"].encode()
++    assert asyncio.run(consumer.consume(payload))[-1] == "COMMITTED"
++    restarted = StrategyShadowEvidenceV2Repository(pg=DB(pg_dsn)).activity_consumer(
++        scope=consumer.scope,
++        fence=consumer.fence,
++        policy_hash=consumer.scope.lifecycle_policy_hash,
++        select_lifecycle=lambda *args: pytest.fail("duplicate must not reduce again"),
++        validate_source=lambda event: pytest.fail("committed duplicate must not reacquire source"),
++    )
++    assert asyncio.run(restarted.consume(payload))[-1] == "DUPLICATE_NO_EFFECT"
+diff --git a/tests/test_activity_delivery_consumer.py b/tests/test_activity_delivery_consumer.py
+new file mode 100644
+index 00000000..33bcd8af
+--- /dev/null
++++ b/tests/test_activity_delivery_consumer.py
+@@ -0,0 +1,260 @@
++"""Transactional model and authenticated ASGI tests, not PostgreSQL acceptance."""
++
++import asyncio
++import copy
++import json
++import time
++from contextlib import asynccontextmanager
++from datetime import timedelta
++from uuid import uuid4
++
++import pytest
++from fastapi import FastAPI
++from fastapi.testclient import TestClient
++
++from contracts.strategy_5scr_lifecycle_v2 import StrategyLifecycleV2
++from services.pressure_outbox.activity_delivery_transport import ActivityTransportBinding, activity_consumer_router
++from storage.strategy_5scr_activity_consumer import LifecycleOwnerFence
++from storage.strategy_5scr_shadow_evidence_v2_repository import StrategyShadowEvidenceV2Repository
++from tests.test_activity_delivery_contract import delivery, scope
++from tests.test_activity_delivery_relay import Store
++from tests.test_strategy_5scr_pair_activity import START
++
++
++class ConsumerDB:
++    def __init__(self):
++        self.fence = LifecycleOwnerFence("EURUSD", scope().scope_hash, scope().lifecycle_owner_id, 1, uuid4())
++        self.data = {
++            name: {} for name in ("inbox", "conflicts", "mappings", "consumer_cursors", "emissions", "lifecycles")
++        }
++        self.now = START + timedelta(seconds=301)
++        self.active = False
++        self.fail_at = None
++
++    @asynccontextmanager
++    async def transaction(self):
++        assert not self.active
++        before = copy.deepcopy(self.data)
++        self.active = True
++        try:
++            yield self
++        except BaseException:
++            self.data = before
++            raise
++        finally:
++            self.active = False
++
++    async def execute(self, sql, *args):
++        if "INSERT INTO strategy_5scr_analysis_lifecycles_v2" in sql:
++            self.data["lifecycles"][args[0]] = {"strategy_lifecycle_id": args[0]}
++        elif sql.startswith("INSERT INTO public.strategy_5scr_activity_"):
++            table = sql.split("strategy_5scr_activity_")[1].split("_v1")[0]
++            if table == self.fail_at:
++                raise RuntimeError("injected consumer write failure")
++            key = args[:2] if table in {"mappings", "consumer_cursors", "conflicts"} else args[0]
++            row = {"payload": json.loads(args[-1])}
++            if table == "emissions":
++                self.data[table].setdefault(key, row)
++            else:
++                self.data[table][key] = row
++        return "INSERT 0 1"
++
++    async def fetchrow(self, sql, *args):
++        if "owner_fences" in sql:
++            return vars(self.fence)
++        table = sql.split("strategy_5scr_activity_")[1].split("_v1")[0]
++        return self.data[table].get(args[0] if table in {"inbox", "emissions"} else args)
++
++    async def fetchval(self, sql):
++        return self.now
++
++    async def fetch(self, sql, *args):
++        return list(self.data["lifecycles"].values())
++
++
++def lifecycle(event, rows, previous):
++    return StrategyLifecycleV2(
++        strategy_lifecycle_id="5scr-lifecycle:" + "4" * 32,
++        symbol="EURUSD",
++        opened_at_utc=START,
++        last_event_at_utc=START + timedelta(seconds=300),
++        last_continuity_event_at_utc=START + timedelta(seconds=300),
++        last_material_event_at_utc=START + timedelta(seconds=300),
++        material_state_hash="5" * 64,
++    )
++
++
++def consumer(db):
++    return StrategyShadowEvidenceV2Repository(pg=db).activity_consumer(
++        scope=scope(),
++        fence=db.fence,
++        policy_hash=scope().lifecycle_policy_hash,
++        select_lifecycle=lifecycle,
++        validate_source=lambda event: True,
++    )
++
++
++def test_commit_then_expired_relay_ack_then_duplicate_ack_recovers():
++    db = ConsumerDB()
++    owner = consumer(db)
++    relay_store = Store()
++    relay_store.ack_updated = False
++
++    def send(wire):
++        ack = asyncio.run(owner.consume(wire))
++        assert not db.active
++        return ack
++
++    relay = relay_store.relay(send)
++    assert relay.poll_once() == "STALE_LEASE_ACK_IGNORED"
++    before = copy.deepcopy(db.data)
++    db.now = START + timedelta(days=1)
++    relay_store.ack_updated = True
++    assert relay.poll_once() == "ACKNOWLEDGED"
++    assert db.data == before
++    assert len(db.data["lifecycles"]) == len(db.data["emissions"]) == len(db.data["inbox"]) == 1
++
++
++@pytest.mark.parametrize("fail_at", ["mappings", "emissions", "inbox", "consumer_cursors"])
++def test_every_consumer_write_failure_rolls_back(fail_at):
++    db = ConsumerDB()
++    db.fail_at = fail_at
++    with pytest.raises(RuntimeError, match="injected"):
++        asyncio.run(consumer(db).consume(delivery().model_dump_json().encode()))
++    assert all(not rows for rows in db.data.values())
++
++
++def test_payload_conflict_quarantined_without_rewriting_outcome():
++    db = ConsumerDB()
++    owner = consumer(db)
++    asyncio.run(owner.consume(delivery().model_dump_json().encode()))
++    original = copy.deepcopy(db.data["inbox"])
++    conflict = delivery(source_snapshot_id="sha256:" + "7" * 64)
++    assert asyncio.run(owner.consume(conflict.model_dump_json().encode()))[-1] == "QUARANTINE_PAYLOAD_CONFLICT"
++    assert db.data["inbox"] == original and len(db.data["conflicts"]) == 1
++
++
++def test_uncommitted_predecessor_cannot_be_skipped():
++    db = ConsumerDB()
++    event = delivery(activity_sequence=2, previous_delivery_id="5scr-activity-delivery:" + "8" * 32)
++    assert asyncio.run(consumer(db).consume(event.model_dump_json().encode()))[-1] == "WAITING_PREDECESSOR"
++    assert all(not rows for rows in db.data.values())
++
++
++def test_old_owner_rejected_after_handover():
++    db = ConsumerDB()
++    old = consumer(db)
++    db.fence = LifecycleOwnerFence("EURUSD", scope().scope_hash, scope().lifecycle_owner_id, 2, uuid4())
++    with pytest.raises(ValueError, match="STALE_OR_UNBOUND"):
++        asyncio.run(old.consume(delivery().model_dump_json().encode()))
++    assert all(not rows for rows in db.data.values())
++
++
++def test_authenticated_route_returns_ack_only_after_commit():
++    db = ConsumerDB()
++    binding = ActivityTransportBinding(
++        destination="https://consumer.test/internal/s03/activity-deliveries",
++        identity="fixture-producer",
++        key=b"x" * 32,
++        maximum_skew_seconds=30,
++    )
++    app = FastAPI()
++    app.include_router(activity_consumer_router(binding=binding, consumer=consumer(db), maximum_payload_bytes=100000))
++    wire = delivery().model_dump_json().encode()
++    timestamp = str(int(time.time()))
++    with TestClient(app) as client:
++        assert client.post("/internal/s03/activity-deliveries", content=wire).status_code == 401
++        assert not db.data["inbox"]
++        response = client.post(
++            "/internal/s03/activity-deliveries",
++            content=wire,
++            headers={
++                "X-S03-Identity": binding.identity,
++                "X-S03-Time": timestamp,
++                "X-S03-Signature": binding.signature(timestamp, wire),
++            },
++        )
++    assert response.status_code == 200 and response.json()["outcome"] == "COMMITTED"
++    assert not db.active and len(db.data["inbox"]) == 1
++
++
++@pytest.mark.parametrize("field", ["identity", "timestamp", "payload", "signature"])
++def test_transport_tampering_rejected(field):
++    binding = ActivityTransportBinding(
++        destination="https://consumer.test/internal/s03/activity-deliveries",
++        identity="fixture",
++        key=b"x" * 32,
++        maximum_skew_seconds=30,
++    )
++    args = dict(
++        identity="fixture", timestamp="100", payload=b"body", signature=binding.signature("100", b"body"), now=100
++    )
++    args[field] = b"other" if field == "payload" else "wrong"
++    with pytest.raises(ValueError, match="UNAUTHENTICATED"):
++        binding.authenticate(**args)
++
++
++def test_api_factory_mounts_only_explicit_bound_endpoint(monkeypatch):
++    from api import app_factory
++    from services.pressure_outbox.activity_delivery_transport import ActivityDeliveryEndpoint
++
++    monkeypatch.setattr(app_factory, "_create_app_inner", lambda: FastAPI())
++    assert not any(route.path == "/internal/s03/activity-deliveries" for route in app_factory.create_app().routes)
++    db = ConsumerDB()
++    binding = ActivityTransportBinding(
++        destination="https://consumer.test/internal/s03/activity-deliveries",
++        identity="fixture",
++        key=b"x" * 32,
++        maximum_skew_seconds=30,
++    )
++    endpoint = ActivityDeliveryEndpoint(binding, consumer(db), 100000)
++    app = app_factory.create_app(activity_delivery_endpoint=endpoint)
++    with TestClient(app) as client:
++        assert client.post("/internal/s03/activity-deliveries", content=b"{}").status_code == 401
++    with pytest.raises(ValueError, match="BINDING_REQUIRED"):
++        app_factory.create_app(activity_delivery_endpoint=object())
++    monkeypatch.setattr(app_factory, "_create_app_inner", lambda: app)
++    with pytest.raises(ValueError, match="ALREADY_REGISTERED"):
++        app_factory.create_app(activity_delivery_endpoint=endpoint)
++
++
++def test_unseen_expiry_and_missing_policy_fail_closed():
++    db = ConsumerDB()
++    db.now = delivery().evaluation.valid_until_utc
++    assert asyncio.run(consumer(db).consume(delivery().model_dump_json().encode()))[-1] == "EXPIRED_UNSEEN_DELIVERY"
++    assert all(not rows for rows in db.data.values())
++    with pytest.raises(ValueError, match="POLICY_OR_OWNER_UNBOUND"):
++        StrategyShadowEvidenceV2Repository(pg=db).activity_consumer(
++            scope=scope(),
++            fence=db.fence,
++            policy_hash=None,
++            select_lifecycle=lifecycle,
++            validate_source=lambda event: True,
++        )
++
++
++def test_changed_policy_cannot_remap_same_logical_activity():
++    db = ConsumerDB()
++    asyncio.run(consumer(db).consume(delivery().model_dump_json().encode()))
++    original = copy.deepcopy(db.data)
++    new_scope = scope(lifecycle_policy_hash="sha256:" + "9" * 64)
++    db.fence = LifecycleOwnerFence("EURUSD", new_scope.scope_hash, new_scope.lifecycle_owner_id, 2, uuid4())
++    owner = StrategyShadowEvidenceV2Repository(pg=db).activity_consumer(
++        scope=new_scope,
++        fence=db.fence,
++        policy_hash=new_scope.lifecycle_policy_hash,
++        select_lifecycle=lifecycle,
++        validate_source=lambda event: True,
++    )
++    with pytest.raises(ValueError, match="EXPLICIT_MIGRATION"):
++        asyncio.run(owner.consume(delivery(scope=new_scope).model_dump_json().encode()))
++    assert db.data == original
++
++
++def test_recovery_capacity_excess_is_not_silently_truncated():
++    db = ConsumerDB()
++    db.data["lifecycles"] = {str(n): {} for n in range(1001)}
++    before = copy.deepcopy(db.data)
++    with pytest.raises(ValueError, match="CAPACITY_EXCEEDED"):
++        asyncio.run(consumer(db).consume(delivery().model_dump_json().encode()))
++    assert db.data == before
+diff --git a/tests/test_pair_activity_ci_receipt.py b/tests/test_pair_activity_ci_receipt.py
+index 66dbece1..b2c39096 100644
+--- a/tests/test_pair_activity_ci_receipt.py
++++ b/tests/test_pair_activity_ci_receipt.py
+@@ -219,7 +219,7 @@ def test_migration_graph_records_structure_without_claiming_execution():
+     from scripts.ci.pair_activity_run_evidence import migration_graph
+ 
+     graph = migration_graph(Path(__file__).resolve().parents[1])
+-    assert graph["repository_heads"] == ["20260909_02"]
++    assert graph["repository_heads"] == ["20260909_03"]
+     assert graph["revision_parents"]["20260909_01"] == "20260822_01"
+     assert graph["migration_upgrade_execution"] == "NOT_BOUND"
+ 
