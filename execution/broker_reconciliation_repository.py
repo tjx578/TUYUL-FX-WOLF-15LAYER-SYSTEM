@@ -97,11 +97,9 @@ async def current_identity(connection: Any, executor_id: UUID | str, snapshot: A
         str(executor_id),
         snapshot.snapshot_id,
     )
-    if (
-        not stored_snapshot
-        or snapshot_digest(AccountSnapshotV1.model_validate(_object(stored_snapshot["payload"])))
-        != snapshot_digest(snapshot)
-    ):
+    if not stored_snapshot or snapshot_digest(
+        AccountSnapshotV1.model_validate(_object(stored_snapshot["payload"]))
+    ) != snapshot_digest(snapshot):
         raise ReconciliationEvidenceError("RECONCILIATION_BINDING_MISMATCH")
     row = await connection.fetchrow(
         "SELECT * FROM executor_reconciliation_bindings WHERE executor_id=$1::uuid FOR SHARE", str(executor_id)
