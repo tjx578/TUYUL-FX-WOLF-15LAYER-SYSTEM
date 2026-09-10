@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -18,7 +19,8 @@ from contracts.mt5_execution_protocol import (
     ExecutorMode,
     sha256_tag,
 )
-from execution.mt5_command_repository import MT5CommandRepository
+from execution.broker_reconciliation_repository import produce_backend_identity, store_evidence
+from execution.mt5_command_repository import CommandConflictError, MT5CommandRepository
 from execution.mt5_engineering_demo_canary import (
     EngineeringDemoCanaryAuthorityV1,
     EngineeringDemoCanaryError,
@@ -32,8 +34,6 @@ from tests.integration.test_mt5_bridge_postgres_e2e import (
     SIGNING_SECRET,
     _auth_headers,
 )
-
-from execution.broker_reconciliation_repository import produce_backend_identity, store_evidence
 from tests.reconciliation_fixtures import configure_test_keys, fixture_attestation
 
 ACCOUNT_ID = "12345678"
@@ -1113,7 +1113,6 @@ async def test_d0_incomplete_filled_report_is_rejected_atomically(
     )
 
 
-
 def _resign_test_evidence(evidence):
     import hashlib
     import hmac
@@ -1141,24 +1140,32 @@ async def test_reconciliation_faults_block_each_gate(client, postgres, registere
     identity, evidence = await repository.load_engineering_reconciliation(snapshot)
     request = _request(registered, snapshot_id)
     command = build_engineering_demo_canary_command(
-        request, executor=await repository.get_executor(registered), snapshot=snapshot,
-        signing_secret=SIGNING_SECRET, signing_key_id=SIGNING_KEY_ID,
-        reconciliation_identity=identity, reconciliation_evidence=evidence,
+        request,
+        executor=await repository.get_executor(registered),
+        snapshot=snapshot,
+        signing_secret=SIGNING_SECRET,
+        signing_key_id=SIGNING_KEY_ID,
+        reconciliation_identity=identity,
+        reconciliation_evidence=evidence,
     )
     if stage == "arm":
         await repository.enqueue_engineering_demo_canary_command(command)
     if fault == "missing":
         await postgres.execute("DELETE FROM broker_reconciliation_evidence WHERE executor_id=$1::uuid", str(registered))
     elif fault == "revoked":
-        await postgres.execute("UPDATE broker_reconciliation_evidence SET status='REVOKED' WHERE executor_id=$1::uuid", str(registered))
+        await postgres.execute(
+            "UPDATE broker_reconciliation_evidence SET status='REVOKED' WHERE executor_id=$1::uuid", str(registered)
+        )
     else:
         if fault == "forged":
             evidence["signature"] = "0" * 64
         elif fault == "expired":
             now = datetime.now(UTC)
-            evidence.update(observed_at_utc=(now-timedelta(seconds=60)).isoformat(),
-                            issued_at_utc=(now-timedelta(seconds=59)).isoformat(),
-                            expires_at_utc=(now-timedelta(seconds=31)).isoformat())
+            evidence.update(
+                observed_at_utc=(now - timedelta(seconds=60)).isoformat(),
+                issued_at_utc=(now - timedelta(seconds=59)).isoformat(),
+                expires_at_utc=(now - timedelta(seconds=31)).isoformat(),
+            )
             _resign_test_evidence(evidence)
         elif fault == "account":
             from ops.mt5_mcp.account_binding import identifier
@@ -1173,7 +1180,9 @@ async def test_reconciliation_faults_block_each_gate(client, postgres, registere
             _resign_test_evidence(evidence)
         await postgres.execute(
             "UPDATE broker_reconciliation_evidence SET payload=$2::jsonb,payload_sha256=$3 WHERE executor_id=$1::uuid",
-            str(registered), json.dumps(evidence), digest(evidence),
+            str(registered),
+            json.dumps(evidence),
+            digest(evidence),
         )
     with pytest.raises((EngineeringDemoCanaryError, CommandConflictError), match="RECONCILIATION_"):
         if stage == "builder":
@@ -1181,23 +1190,36 @@ async def test_reconciliation_faults_block_each_gate(client, postgres, registere
         elif stage == "enqueue":
             await repository.enqueue_engineering_demo_canary_command(command)
         else:
-            await repository.arm_engineering_demo_canary(request.canary_id, actor="test", reason="test blocked evidence")
+            await repository.arm_engineering_demo_canary(
+                request.canary_id, actor="test", reason="test blocked evidence"
+            )
     state = await _governance(postgres).global_snapshot()
     assert state.kill_switch_active is True
     if stage == "arm":
-        row = await postgres.fetchrow("SELECT state FROM engineering_demo_canary_windows WHERE canary_id=$1", request.canary_id)
+        row = await postgres.fetchrow(
+            "SELECT state FROM engineering_demo_canary_windows WHERE canary_id=$1", request.canary_id
+        )
         assert row["state"] == "QUEUED"
     else:
-        assert await postgres.fetchrow("SELECT command_id FROM execution_commands WHERE engineering_canary_id=$1", request.canary_id) is None
+        assert (
+            await postgres.fetchrow(
+                "SELECT command_id FROM execution_commands WHERE engineering_canary_id=$1", request.canary_id
+            )
+            is None
+        )
 
 
 @pytest.mark.asyncio
-async def test_false_snapshot_passes_all_three_gates_only_with_authenticated_evidence(client, postgres, registered, monkeypatch):
+async def test_false_snapshot_passes_all_three_gates_only_with_authenticated_evidence(
+    client, postgres, registered, monkeypatch
+):
     command, request = await _issue_queued(client, postgres, registered, monkeypatch)
     snapshot = await _commands(postgres).latest_snapshot(registered)
     assert snapshot.broker_ledger_reconciled is False
     assert command.guards.reconciliation_evidence_id is not None
-    armed = await _commands(postgres).arm_engineering_demo_canary(request.canary_id, actor="test", reason="valid independent evidence")
+    armed = await _commands(postgres).arm_engineering_demo_canary(
+        request.canary_id, actor="test", reason="valid independent evidence"
+    )
     assert armed["window_state"] == "ARMED"
     assert (await _commands(postgres).latest_snapshot(registered)).broker_ledger_reconciled is False
 
@@ -1209,10 +1231,18 @@ async def test_true_heartbeat_without_evidence_never_authorizes_d0(client, postg
     await postgres.execute("DELETE FROM broker_reconciliation_evidence WHERE executor_id=$1::uuid", str(registered))
     snapshot = _snapshot(registered, f"heartbeat-true-new-{uuid4().hex}")
     snapshot["broker_ledger_reconciled"] = True
-    response = await client.post(f"/api/v1/executors/{registered}/heartbeat", headers=_auth_headers(registered), json={
-        "executor_id": str(registered), "sent_at_utc": datetime.now(UTC).isoformat(),
-        "terminal_connected": True, "trade_allowed": True, "autotrading_enabled": True, "account_snapshot": snapshot,
-    })
+    response = await client.post(
+        f"/api/v1/executors/{registered}/heartbeat",
+        headers=_auth_headers(registered),
+        json={
+            "executor_id": str(registered),
+            "sent_at_utc": datetime.now(UTC).isoformat(),
+            "terminal_connected": True,
+            "trade_allowed": True,
+            "autotrading_enabled": True,
+            "account_snapshot": snapshot,
+        },
+    )
     assert response.status_code == 200, response.text
     assert (await _commands(postgres).latest_snapshot(registered)).broker_ledger_reconciled is True
     async with postgres.transaction() as connection:
@@ -1234,11 +1264,19 @@ async def test_evidence_or_binding_change_after_enqueue_blocks_arm(client, postg
         async with postgres.transaction() as connection:
             await store_evidence(connection, fixture_attestation(identity))
     elif change == "binding":
-        await postgres.execute("UPDATE executor_reconciliation_bindings SET binding_version=$2::uuid WHERE executor_id=$1::uuid", str(registered), str(uuid4()))
+        await postgres.execute(
+            "UPDATE executor_reconciliation_bindings SET binding_version=$2::uuid WHERE executor_id=$1::uuid",
+            str(registered),
+            str(uuid4()),
+        )
     else:
         payload = snapshot.model_dump(mode="json")
         payload["free_margin"] -= 1
-        await postgres.execute("UPDATE executor_account_snapshots SET payload=$2::jsonb WHERE snapshot_id=$1", snapshot.snapshot_id, json.dumps(payload))
+        await postgres.execute(
+            "UPDATE executor_account_snapshots SET payload=$2::jsonb WHERE snapshot_id=$1",
+            snapshot.snapshot_id,
+            json.dumps(payload),
+        )
     with pytest.raises(CommandConflictError, match="RECONCILIATION_"):
         await repository.arm_engineering_demo_canary(request.canary_id, actor="test", reason="must fail")
 
@@ -1250,19 +1288,35 @@ async def test_backend_producer_reads_governed_binding_and_audit_projection(post
 
     snapshot_id = f"producer-{uuid4().hex}"
     await _prepare_demo_executor(client, postgres, registered, snapshot_id=snapshot_id)
-    row = dict(await postgres.fetchrow("SELECT * FROM wolf15_audit.backend_account_identity_v1 WHERE executor_id=$1::uuid", str(registered)))
-    assert row["account_binding_identifier"] == identifier(secret_key=IDENTITY_TEST_KEY, key_id="disposable-identity", login=ACCOUNT_ID, server=BROKER_SERVER)
+    row = dict(
+        await postgres.fetchrow(
+            "SELECT * FROM wolf15_audit.backend_account_identity_v1 WHERE executor_id=$1::uuid", str(registered)
+        )
+    )
+    assert row["account_binding_identifier"] == identifier(
+        secret_key=IDENTITY_TEST_KEY, key_id="disposable-identity", login=ACCOUNT_ID, server=BROKER_SERVER
+    )
     assert not ({"account_id", "login_hash", "snapshot_payload"} & row.keys())
     async with postgres.transaction() as connection:
         unchanged = await produce_backend_identity(connection, registered)
     assert row["binding_version"] == unchanged["binding_version"]
     # Unsupported opaque account IDs cannot be repaired by a terminal-provided identity.
-    await postgres.execute("UPDATE executor_instances SET account_id='opaque-local-id' WHERE executor_id=$1::uuid", str(registered))
-    await postgres.execute("UPDATE executor_account_snapshots SET account_id='opaque-local-id',payload=jsonb_set(payload,'{account_id}','\"opaque-local-id\"') WHERE executor_id=$1::uuid", str(registered))
+    await postgres.execute(
+        "UPDATE executor_instances SET account_id='opaque-local-id' WHERE executor_id=$1::uuid", str(registered)
+    )
+    await postgres.execute(
+        "UPDATE executor_account_snapshots SET account_id='opaque-local-id',payload=jsonb_set(payload,'{account_id}','\"opaque-local-id\"') WHERE executor_id=$1::uuid",
+        str(registered),
+    )
     with pytest.raises(AccountBindingError, match="LOGIN_INVALID"):
         async with postgres.transaction() as connection:
             await produce_backend_identity(connection, registered)
-    assert await postgres.fetchrow("SELECT * FROM wolf15_audit.backend_account_identity_v1 WHERE executor_id=$1::uuid", str(registered)) is None
+    assert (
+        await postgres.fetchrow(
+            "SELECT * FROM wolf15_audit.backend_account_identity_v1 WHERE executor_id=$1::uuid", str(registered)
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -1280,10 +1334,16 @@ async def test_auditor_projection_does_not_grant_table_writes(client, postgres, 
             await connection.execute(f"GRANT USAGE ON SCHEMA wolf15_audit TO {role}")
             await connection.execute(f"GRANT SELECT ON wolf15_audit.backend_account_identity_v1 TO {role}")
             await connection.execute(f"SET LOCAL ROLE {role}")
-            row = await connection.fetchrow("SELECT * FROM wolf15_audit.backend_account_identity_v1 WHERE executor_id=$1::uuid", str(registered))
+            row = await connection.fetchrow(
+                "SELECT * FROM wolf15_audit.backend_account_identity_v1 WHERE executor_id=$1::uuid", str(registered)
+            )
             assert row is not None
             assert not ({"account_id", "login_hash", "snapshot_payload"} & set(row.keys()))
-            for query in ("SELECT * FROM executor_reconciliation_bindings", "DELETE FROM broker_reconciliation_evidence", "UPDATE executor_instances SET account_id='1'"):
+            for query in (
+                "SELECT * FROM executor_reconciliation_bindings",
+                "DELETE FROM broker_reconciliation_evidence",
+                "UPDATE executor_instances SET account_id='1'",
+            ):
                 with pytest.raises(asyncpg.InsufficientPrivilegeError):
                     async with connection.transaction():
                         await connection.execute(query)
@@ -1300,9 +1360,32 @@ async def test_duplicate_receipt_cannot_reactivate_revoked_evidence(client, post
     repository = _commands(postgres)
     snapshot = await repository.latest_snapshot(registered)
     _, evidence = await repository.load_engineering_reconciliation(snapshot)
-    await postgres.execute("UPDATE broker_reconciliation_evidence SET status='REVOKED' WHERE executor_id=$1::uuid", str(registered))
+    await postgres.execute(
+        "UPDATE broker_reconciliation_evidence SET status='REVOKED' WHERE executor_id=$1::uuid", str(registered)
+    )
     with pytest.raises(ReconciliationEvidenceError, match="REPLAY"):
         async with postgres.transaction() as connection:
             await store_evidence(connection, evidence)
-    row = await postgres.fetchrow("SELECT status FROM broker_reconciliation_evidence WHERE evidence_id=$1::uuid", evidence["evidence_id"])
+    row = await postgres.fetchrow(
+        "SELECT status FROM broker_reconciliation_evidence WHERE evidence_id=$1::uuid", evidence["evidence_id"]
+    )
     assert row["status"] == "REVOKED"
+
+
+@pytest.mark.asyncio
+async def test_unchanged_receipt_expiring_after_enqueue_cannot_arm(client, postgres, registered, monkeypatch):
+    import execution.broker_reconciliation_repository as evidence_repository
+
+    _, request = await _issue_queued(client, postgres, registered, monkeypatch)
+    future = datetime.now(UTC) + timedelta(seconds=31)
+
+    class AfterExpiry(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return future
+
+    monkeypatch.setattr(evidence_repository, "datetime", AfterExpiry)
+    with pytest.raises(CommandConflictError, match="RECONCILIATION_EVIDENCE_STALE"):
+        await _commands(postgres).arm_engineering_demo_canary(
+            request.canary_id, actor="test", reason="unchanged receipt expired"
+        )

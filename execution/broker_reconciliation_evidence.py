@@ -144,21 +144,36 @@ def attest_collected_reconciliation(
     if identity.get("account_binding_source") != account_binding.DATABASE_SOURCE:
         raise ReconciliationEvidenceError("RECONCILIATION_BACKEND_IDENTITY_UNTRUSTED")
     freshness = database.get("executor_freshness", [])
-    if not any(str(row.get("executor_id")) == str(identity["executor_id"]) and row.get("latest_snapshot_id") == identity["snapshot_id"] for row in freshness):
+    if not any(
+        str(row.get("executor_id")) == str(identity["executor_id"])
+        and row.get("latest_snapshot_id") == identity["snapshot_id"]
+        for row in freshness
+    ):
         raise ReconciliationEvidenceError("RECONCILIATION_SNAPSHOT_BINDING_MISMATCH")
     session = database.get("audit_session", {})
-    if session.get("current_role") != "wolf15_auditor" or session.get("transaction_read_only") is not True or session.get("transaction_isolation") != "repeatable read":
+    if (
+        session.get("current_role") != "wolf15_auditor"
+        or session.get("transaction_read_only") is not True
+        or session.get("transaction_isolation") != "repeatable read"
+    ):
         raise ReconciliationEvidenceError("RECONCILIATION_AUDITOR_SESSION_INVALID")
     snapshots = broker["snapshots"]
     for payload in snapshots.values():
-        if payload.get("error_code") is not None or not account_binding.identifiers_match(
-            payload["account_binding"]["identifier"], identity["account_binding_identifier"]
-        ) or payload["account_binding"]["server"] != identity["broker_server"]:
+        if (
+            payload.get("error_code") is not None
+            or not account_binding.identifiers_match(
+                payload["account_binding"]["identifier"], identity["account_binding_identifier"]
+            )
+            or payload["account_binding"]["server"] != identity["broker_server"]
+        ):
             raise ReconciliationEvidenceError("RECONCILIATION_BINDING_MISMATCH")
     account = snapshots["mt5_account_get"]["records"]
     if (
-        len(account) != 1 or type(account[0].get("trade_mode")) is not int or account[0]["trade_mode"] != 0
-        or snapshots["mt5_positions_get"]["records"] or snapshots["mt5_orders_get"]["records"]
+        len(account) != 1
+        or type(account[0].get("trade_mode")) is not int
+        or account[0]["trade_mode"] != 0
+        or snapshots["mt5_positions_get"]["records"]
+        or snapshots["mt5_orders_get"]["records"]
     ):
         raise ReconciliationEvidenceError("RECONCILIATION_NOT_FLAT_DEMO")
     now = datetime.now(UTC)
@@ -172,12 +187,20 @@ def attest_collected_reconciliation(
         raise ReconciliationEvidenceError("RECONCILIATION_EVIDENCE_STALE")
     key_id, key = issuer_key()
     proof = ReconciliationAttestation(
-        issuer_key_id=key_id, evidence_id=uuid4(), binding_version=identity["binding_version"],
-        executor_id=identity["executor_id"], account_binding_identifier=identity["account_binding_identifier"],
-        broker_server=identity["broker_server"], snapshot_id=identity["snapshot_id"],
-        snapshot_sha256=identity["snapshot_sha256"], report_sha256=digest(report),
-        status="MATCHED_FLAT_DEMO", observed_at_utc=observed, issued_at_utc=now,
-        expires_at_utc=observed + timedelta(seconds=MAX_AGE_SECONDS), signature="0" * 64,
+        issuer_key_id=key_id,
+        evidence_id=uuid4(),
+        binding_version=identity["binding_version"],
+        executor_id=identity["executor_id"],
+        account_binding_identifier=identity["account_binding_identifier"],
+        broker_server=identity["broker_server"],
+        snapshot_id=identity["snapshot_id"],
+        snapshot_sha256=identity["snapshot_sha256"],
+        report_sha256=digest(report),
+        status="MATCHED_FLAT_DEMO",
+        observed_at_utc=observed,
+        issued_at_utc=now,
+        expires_at_utc=observed + timedelta(seconds=MAX_AGE_SECONDS),
+        signature="0" * 64,
     )
     payload = proof.model_dump(mode="json", exclude={"signature"})
     payload["signature"] = hmac.new(key, DOMAIN + canonical(payload), hashlib.sha256).hexdigest()

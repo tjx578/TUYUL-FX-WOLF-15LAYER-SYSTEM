@@ -176,6 +176,15 @@ jobs:
       - name: Require supported PostgreSQL upgrade with existing data
         run: python scripts/ci/run_supported_upgrade_acceptance.py
 
+      - name: Require authenticated D0 reconciliation on disposable PostgreSQL
+        run: |
+          python -m pytest tests/test_broker_reconciliation_evidence.py \
+            tests/test_mt5_engineering_demo_canary.py \
+            tests/integration/test_mt5_engineering_demo_canary_postgres.py \
+            -o addopts= -q --timeout=60 \
+            --junitxml=artifacts/python-suite/d0-reconciliation.xml
+          python scripts/ci/validate_suite_junit.py artifacts/python-suite/d0-reconciliation.xml
+
       - name: Require distributed mode-owner Redis acceptance
         run: |
           python -m pytest tests/integration/test_orchestrator_mode_owner_redis.py \

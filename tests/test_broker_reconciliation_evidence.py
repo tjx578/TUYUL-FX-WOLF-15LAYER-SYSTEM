@@ -29,11 +29,15 @@ def test_signed_evidence_with_false_executor_observation_is_valid():
     snapshot = _snapshot()
     assert snapshot.broker_ledger_reconciled is False
     identity = fixture_identity(snapshot)
-    proof = verify_attestation(fixture_attestation(identity), identity=identity, snapshot=snapshot, now=datetime.now(UTC))
+    proof = verify_attestation(
+        fixture_attestation(identity), identity=identity, snapshot=snapshot, now=datetime.now(UTC)
+    )
     assert proof.status == "MATCHED_FLAT_DEMO"
 
 
-@pytest.mark.parametrize("fault", ["report_hash", "signature", "unknown_issuer", "wrong_key_id", "future", "old_snapshot"])
+@pytest.mark.parametrize(
+    "fault", ["report_hash", "signature", "unknown_issuer", "wrong_key_id", "future", "old_snapshot"]
+)
 def test_authentication_scope_and_freshness_fail_closed(fault):
     snapshot = _snapshot()
     identity = fixture_identity(snapshot)
@@ -47,14 +51,26 @@ def test_authentication_scope_and_freshness_fail_closed(fault):
     elif fault == "wrong_key_id":
         evidence["issuer_key_id"] = "unknown"
     elif fault == "future":
-        evidence["issued_at_utc"] = (datetime.now(UTC)+timedelta(hours=1)).isoformat()
+        evidence["issued_at_utc"] = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     else:
-        snapshot = snapshot.model_copy(update={"captured_at_utc": datetime.now(UTC)-timedelta(minutes=1)})
+        snapshot = snapshot.model_copy(update={"captured_at_utc": datetime.now(UTC) - timedelta(minutes=1)})
     with pytest.raises(ReconciliationEvidenceError):
         verify_attestation(evidence, identity=identity, snapshot=snapshot, now=datetime.now(UTC))
 
 
-@pytest.mark.parametrize("fault", ["missing_projection", "terminal_identity", "unmeasured", "truncated", "real_account", "open_position", "wrong_server", "stale_collection"])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing_projection",
+        "terminal_identity",
+        "unmeasured",
+        "truncated",
+        "real_account",
+        "open_position",
+        "wrong_server",
+        "stale_collection",
+    ],
+)
 def test_collector_refuses_nonqualifying_inputs(fault):
     identity = fixture_identity(_snapshot())
     database, broker, start, end = collected_fixture(identity)
@@ -73,7 +89,7 @@ def test_collector_refuses_nonqualifying_inputs(fault):
     elif fault == "wrong_server":
         database["backend_identity"] = [{**identity, "broker_server": "other"}]
     else:
-        database["observed_at_utc"] = (datetime.now(UTC)-timedelta(seconds=31)).isoformat()
+        database["observed_at_utc"] = (datetime.now(UTC) - timedelta(seconds=31)).isoformat()
     with pytest.raises(ReconciliationEvidenceError):
         attest_collected_reconciliation(database=database, broker=broker, window_from=start, window_to=end)
 
@@ -94,8 +110,11 @@ def test_direct_builder_cannot_use_heartbeat_boolean_as_proof(flag):
 
     with pytest.raises(EngineeringDemoCanaryError, match="RECONCILIATION_EVIDENCE_MISSING"):
         build_engineering_demo_canary_command(
-            _request(), executor=_executor(), snapshot=_snapshot(broker_ledger_reconciled=flag),
-            signing_secret=SECRET, signing_key_id="d0-test-key",
+            _request(),
+            executor=_executor(),
+            snapshot=_snapshot(broker_ledger_reconciled=flag),
+            signing_secret=SECRET,
+            signing_key_id="d0-test-key",
         )
 
 

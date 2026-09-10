@@ -12,9 +12,6 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
-from execution.broker_reconciliation_evidence import ReconciliationEvidenceError
-from execution.broker_reconciliation_repository import load_evidence
-
 from contracts.mt5_execution_protocol import (
     ENGINEERING_DEMO_CANARY_EA_VERSION,
     SHADOW_ACCEPTANCE_EA_VERSION,
@@ -36,6 +33,8 @@ from contracts.mt5_execution_protocol import (
     verify_execution_command,
     verify_signed_execution_envelope_with_root,
 )
+from execution.broker_reconciliation_evidence import ReconciliationEvidenceError
+from execution.broker_reconciliation_repository import load_evidence
 from execution.mt5_executor_governance import (
     ExecutorGovernanceError,
     GovernanceSnapshot,
@@ -705,20 +704,31 @@ class MT5CommandRepository:
         details = dict(row)
         return {"ready": all(bool(value) for value in details.values()), **details}
 
-    async def load_engineering_reconciliation(self, snapshot: AccountSnapshotV1) -> tuple[dict[str, Any], dict[str, Any]]:
+    async def load_engineering_reconciliation(
+        self, snapshot: AccountSnapshotV1
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         self._require_database()
         async with self._pg.transaction() as connection:
             return await load_evidence(connection, executor_id=snapshot.executor_id, snapshot=snapshot)
 
     @staticmethod
-    async def _require_engineering_reconciliation(connection: Any, command: ExecutionCommandV1, snapshot: AccountSnapshotV1) -> None:
+    async def _require_engineering_reconciliation(
+        connection: Any, command: ExecutionCommandV1, snapshot: AccountSnapshotV1
+    ) -> None:
         guards = command.guards
-        if not isinstance(guards, EngineeringDemoCanaryGuards) or guards.reconciliation_evidence_id is None or guards.reconciliation_evidence_sha256 is None:
+        if (
+            not isinstance(guards, EngineeringDemoCanaryGuards)
+            or guards.reconciliation_evidence_id is None
+            or guards.reconciliation_evidence_sha256 is None
+        ):
             raise CommandConflictError("RECONCILIATION_EVIDENCE_MISSING")
         try:
             await load_evidence(
-                connection, executor_id=command.executor_binding.executor_id, snapshot=snapshot,
-                evidence_id=guards.reconciliation_evidence_id, expected_digest=guards.reconciliation_evidence_sha256,
+                connection,
+                executor_id=command.executor_binding.executor_id,
+                snapshot=snapshot,
+                evidence_id=guards.reconciliation_evidence_id,
+                expected_digest=guards.reconciliation_evidence_sha256,
             )
         except ReconciliationEvidenceError as exc:
             raise CommandConflictError(str(exc)) from exc

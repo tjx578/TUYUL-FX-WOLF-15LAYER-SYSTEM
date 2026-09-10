@@ -39,7 +39,8 @@ async def produce_backend_identity(connection: Any, executor_id: UUID | str) -> 
     row = await connection.fetchrow(
         """SELECT payload FROM executor_account_snapshots WHERE executor_id=$1::uuid
            AND account_id=$2 ORDER BY captured_at DESC LIMIT 1 FOR SHARE""",
-        str(executor_id), executor["account_id"],
+        str(executor_id),
+        executor["account_id"],
     )
     if not row:
         raise ReconciliationEvidenceError("RECONCILIATION_SNAPSHOT_MISSING")
@@ -50,7 +51,8 @@ async def produce_backend_identity(connection: Any, executor_id: UUID | str) -> 
     identity = account_binding.identifier(
         secret_key=account_binding.decode_secret_key(os.getenv(account_binding.KEY_ENV, "")),
         key_id=os.getenv(account_binding.KEY_ID_ENV, ""),
-        login=executor["account_id"], server=executor["broker_server"],
+        login=executor["account_id"],
+        server=executor["broker_server"],
     )
     await connection.execute(
         """INSERT INTO executor_reconciliation_bindings AS b
@@ -66,13 +68,21 @@ async def produce_backend_identity(connection: Any, executor_id: UUID | str) -> 
            WHERE (b.account_id,b.login_hash,b.broker_server,b.account_binding_identifier,b.snapshot_sha256)
              IS DISTINCT FROM (EXCLUDED.account_id,EXCLUDED.login_hash,EXCLUDED.broker_server,
                                EXCLUDED.account_binding_identifier,EXCLUDED.snapshot_sha256)""",
-        str(executor_id), str(uuid4()), executor["account_id"], executor["login_hash"],
-        executor["broker_server"], identity, snapshot.snapshot_id, snapshot_digest(snapshot),
+        str(executor_id),
+        str(uuid4()),
+        executor["account_id"],
+        executor["login_hash"],
+        executor["broker_server"],
+        identity,
+        snapshot.snapshot_id,
+        snapshot_digest(snapshot),
         json.dumps(raw_snapshot),
     )
-    return dict(await connection.fetchrow(
-        "SELECT * FROM wolf15_audit.backend_account_identity_v1 WHERE executor_id=$1::uuid", str(executor_id)
-    ))
+    return dict(
+        await connection.fetchrow(
+            "SELECT * FROM wolf15_audit.backend_account_identity_v1 WHERE executor_id=$1::uuid", str(executor_id)
+        )
+    )
 
 
 async def current_identity(connection: Any, executor_id: UUID | str, snapshot: AccountSnapshotV1) -> dict[str, Any]:
@@ -80,7 +90,8 @@ async def current_identity(connection: Any, executor_id: UUID | str, snapshot: A
         """SELECT b.*, e.execution_mode, e.revoked_at FROM executor_reconciliation_bindings b
            JOIN executor_instances e ON e.executor_id=b.executor_id
            WHERE b.executor_id=$1::uuid AND b.account_id=e.account_id AND b.login_hash=e.login_hash
-             AND b.broker_server=e.broker_server FOR SHARE OF b, e""", str(executor_id)
+             AND b.broker_server=e.broker_server FOR SHARE OF b, e""",
+        str(executor_id),
     )
     if not row or row["execution_mode"] != "DEMO" or row["revoked_at"] is not None:
         raise ReconciliationEvidenceError("RECONCILIATION_BACKEND_BINDING_MISSING")
@@ -90,8 +101,12 @@ async def current_identity(connection: Any, executor_id: UUID | str, snapshot: A
 
 
 async def load_evidence(
-    connection: Any, *, executor_id: UUID | str, snapshot: AccountSnapshotV1,
-    evidence_id: UUID | None = None, expected_digest: str | None = None,
+    connection: Any,
+    *,
+    executor_id: UUID | str,
+    snapshot: AccountSnapshotV1,
+    evidence_id: UUID | None = None,
+    expected_digest: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     identity = await current_identity(connection, executor_id, snapshot)
     row = await connection.fetchrow(
@@ -99,7 +114,9 @@ async def load_evidence(
            WHERE executor_id=$1::uuid AND snapshot_id=$2
              AND ($3::uuid IS NULL OR evidence_id=$3::uuid)
            ORDER BY created_at DESC, evidence_id DESC LIMIT 1 FOR SHARE""",
-        str(executor_id), snapshot.snapshot_id, str(evidence_id) if evidence_id else None,
+        str(executor_id),
+        snapshot.snapshot_id,
+        str(evidence_id) if evidence_id else None,
     )
     if not row or row["status"] != "ACTIVE":
         raise ReconciliationEvidenceError("RECONCILIATION_EVIDENCE_MISSING_OR_REVOKED")
@@ -123,7 +140,8 @@ async def store_evidence(connection: Any, evidence: dict[str, Any]) -> str:
     )
     row = await connection.fetchrow(
         "SELECT payload FROM executor_account_snapshots WHERE snapshot_id=$1 AND executor_id=$2::uuid FOR SHARE",
-        proof.snapshot_id, str(proof.executor_id),
+        proof.snapshot_id,
+        str(proof.executor_id),
     )
     if not row:
         raise ReconciliationEvidenceError("RECONCILIATION_SNAPSHOT_MISSING")
@@ -136,8 +154,12 @@ async def store_evidence(connection: Any, evidence: dict[str, Any]) -> str:
            (evidence_id,executor_id,binding_version,snapshot_id,payload,payload_sha256,status)
            VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5::jsonb,$6,'ACTIVE')
            ON CONFLICT (evidence_id) DO NOTHING RETURNING evidence_id""",
-        str(proof.evidence_id), str(proof.executor_id), str(proof.binding_version), proof.snapshot_id,
-        canonical(evidence).decode(), receipt_digest,
+        str(proof.evidence_id),
+        str(proof.executor_id),
+        str(proof.binding_version),
+        proof.snapshot_id,
+        canonical(evidence).decode(),
+        receipt_digest,
     )
     if inserted is None:
         raise ReconciliationEvidenceError("RECONCILIATION_EVIDENCE_REPLAY")
@@ -145,6 +167,7 @@ async def store_evidence(connection: Any, evidence: dict[str, Any]) -> str:
     # import commit together; enqueue/arm hold SHARE locks on the pinned row.
     await connection.execute(
         "UPDATE broker_reconciliation_evidence SET status='REVOKED' WHERE executor_id=$1::uuid AND evidence_id<>$2::uuid AND status='ACTIVE'",
-        str(proof.executor_id), str(proof.evidence_id),
+        str(proof.executor_id),
+        str(proof.evidence_id),
     )
     return receipt_digest

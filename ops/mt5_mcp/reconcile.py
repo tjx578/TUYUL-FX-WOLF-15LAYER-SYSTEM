@@ -621,7 +621,9 @@ def _clean_database_rows(rows: Iterable[Any]) -> list[dict[str, Any]]:
     return [_mapping(row) for row in rows]
 
 
-async def _database_snapshot(dsn: str, *, window_from: datetime, window_to: datetime, include_backend_identity: bool = False) -> dict[str, Any]:
+async def _database_snapshot(
+    dsn: str, *, window_from: datetime, window_to: datetime, include_backend_identity: bool = False
+) -> dict[str, Any]:
     asyncpg = importlib.import_module("asyncpg")
     connection: Any | None = None
     transaction: Any | None = None
@@ -651,14 +653,21 @@ async def _database_snapshot(dsn: str, *, window_from: datetime, window_to: date
         mirror = await connection.fetch(MIRROR_SQL, window_from, window_to, limit)
         backend_identity = []
         if include_backend_identity:
-            backend_identity = _clean_database_rows(await connection.fetch(
-                "SELECT * FROM wolf15_audit.backend_account_identity_v1 ORDER BY executor_id LIMIT $1", limit
-            ))
+            backend_identity = _clean_database_rows(
+                await connection.fetch(
+                    "SELECT * FROM wolf15_audit.backend_account_identity_v1 ORDER BY executor_id LIMIT $1", limit
+                )
+            )
             # Replace any legacy identifier columns only with the backend projection.
             projected = {str(row["executor_id"]): row for row in backend_identity}
             binding = [
-                {**dict(row), "account_binding_identifier": projected.get(str(row["executor_id"]), {}).get("account_binding_identifier"),
-                 "account_binding_source": projected.get(str(row["executor_id"]), {}).get("account_binding_source")}
+                {
+                    **dict(row),
+                    "account_binding_identifier": projected.get(str(row["executor_id"]), {}).get(
+                        "account_binding_identifier"
+                    ),
+                    "account_binding_source": projected.get(str(row["executor_id"]), {}).get("account_binding_source"),
+                }
                 for row in binding
             ]
         mutation = _mapping(await connection.fetchrow(MUTATION_SQL))
@@ -747,7 +756,9 @@ async def _broker_snapshot(
         return {"tool_surface_exact": False, "snapshots": {}, "error_type": type(exc).__name__}
 
 
-async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, retention_sink=None, attest: bool = False) -> dict[str, Any]:
+async def run_reconciliation(
+    *, dsn: str, repo_root: Path, config_path: Path, retention_sink=None, attest: bool = False
+) -> dict[str, Any]:
     """Collect and seal; an optional synchronous sink returns True after durability.
 
     Sink receives confidential replay bytes and a separately retainable receipt
@@ -766,7 +777,9 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, re
         cwd=repo_root,
     )
     database = await _database_snapshot(
-        dsn, window_from=window_from, window_to=window_to,
+        dsn,
+        window_from=window_from,
+        window_to=window_to,
         **({"include_backend_identity": True} if attest else {}),
     )
     report = reconcile_snapshots(
