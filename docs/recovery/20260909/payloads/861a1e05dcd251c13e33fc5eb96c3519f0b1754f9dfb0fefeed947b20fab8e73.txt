@@ -1,0 +1,27 @@
+"""
+Redis Keys Patch — ADD to existing core/redis_keys.py.
+
+Adds forming bar key functions for H1 forming bar publisher.
+"""
+
+# ── ADD these to core/redis_keys.py ────────────────────────────────
+
+CANDLE_FORMING_PREFIX = "wolf15:candle:forming"
+
+
+def candle_forming(symbol: str, timeframe: str) -> str:
+    """Forming (in-progress) candle bar. Type: HASH, TTL=60s.
+
+    Written by: ingest FormingBarPublisher (H1 only, every 1s).
+    Read by:    dashboard HybridCandleAggregator.
+    """
+    return f"{CANDLE_FORMING_PREFIX}:{symbol.upper()}:{timeframe.upper()}"
+
+
+def channel_candle_forming(symbol: str, timeframe: str) -> str:
+    """PubSub channel for forming bar updates."""
+    return f"candle:forming:{symbol.upper()}:{timeframe.upper()}"
+
+
+# ── ADD to TYPE_MAP dict in RedisKeys class (if applicable) ────────
+# "wolf15:candle:forming:*:*": "hash",

@@ -1,0 +1,92 @@
+"""Repository contract: Loguru calls use brace-style formatting."""
+
+import ast
+import re
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+_LOG_METHODS = {
+    "trace",
+    "debug",
+    "info",
+    "success",
+    "warning",
+    "error",
+    "critical",
+    "exception",
+    "log",
+}
+_PERCENT_PLACEHOLDER = re.compile(
+    r"%(?:\([^)]+\))?[-+ #0]*\d*(?:\.\d+)?[diouxXeEfFgGcrsa]"
+)
+
+
+def _loguru_names(tree: ast.AST, parents: dict[ast.AST, ast.AST]) -> set[str]:
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or node.module != "loguru":
+            continue
+        current = parents.get(node)
+        if any(
+            isinstance(ancestor, (ast.FunctionDef, ast.AsyncFunctionDef))
+            for ancestor in _ancestors(current, parents)
+        ):
+            continue
+        for alias in node.names:
+            if alias.name == "logger":
+                names.add(alias.asname or alias.name)
+    return names
+
+
+def _ancestors(node: ast.AST | None, parents: dict[ast.AST, ast.AST]):
+    while node is not None:
+        yield node
+        node = parents.get(node)
+
+
+def _is_locally_rebound(node: ast.AST, name: str, parents: dict[ast.AST, ast.AST]) -> bool:
+    current = parents.get(node)
+    while current is not None and not isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        current = parents.get(current)
+    if current is None:
+        return False
+    return any(
+        isinstance(candidate, ast.Name) and candidate.id == name and isinstance(candidate.ctx, ast.Store)
+        for candidate in ast.walk(current)
+    )
+
+
+def test_loguru_calls_do_not_use_percent_placeholders() -> None:
+    violations: list[str] = []
+    for path in _ROOT.rglob("*.py"):
+        if any(part in {".git", ".venv", "venv", "site-packages"} for part in path.parts):
+            continue
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+        logger_names = _loguru_names(tree, parents)
+        if not logger_names:
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or len(node.args) < 2:
+                continue
+            function = node.func
+            if not (
+                isinstance(function, ast.Attribute)
+                and isinstance(function.value, ast.Name)
+                and function.value.id in logger_names
+                and function.attr in _LOG_METHODS
+            ):
+                continue
+            if _is_locally_rebound(node, function.value.id, parents):
+                continue
+            template = node.args[0]
+            if (
+                isinstance(template, ast.Constant)
+                and isinstance(template.value, str)
+                and _PERCENT_PLACEHOLDER.search(template.value)
+            ):
+                violations.append(f"{path.relative_to(_ROOT)}:{node.lineno}")
+
+    assert violations == [], "Loguru percent-style formatting found at: " + ", ".join(violations)
