@@ -111,7 +111,8 @@ jobs:
             --output "${RUNNER_TEMP}/${tarball}" "${base_url}/${tarball}"
           (
             cd "${RUNNER_TEMP}"
-            grep " ${tarball}\$" "${checksums}" | sha256sum -c -
+            awk -v file="${tarball}" '$2 == file { print; found = 1 } END { exit found ? 0 : 1 }' \
+              "${checksums}" | sha256sum -c -
           )
           tar --no-same-owner -xzf "${RUNNER_TEMP}/${tarball}" -C "${install_dir}" trufflehog
 
