@@ -403,7 +403,7 @@ def _live_rr_gate(
         payload.get("tp3"),
         enriched.get("tp_min_rr"),
     )
-    if live_price is None:
+    if live_price is None or exit_price is None:
         _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_PRICE_MISSING")
         return None
 
