@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date, datetime, time
+from enum import Enum
 from typing import Any
+from uuid import UUID
 
 from agents.exceptions import AgentValidationError
 from storage.postgres_client import PostgresClient
@@ -41,6 +44,22 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 def _rows_to_list(rows: list[Any]) -> list[dict[str, Any]]:
     """Convert a list of asyncpg Records to plain dicts."""
     return [dict(r) for r in rows]
+
+
+def _audit_json_default(value: Any) -> Any:
+    """Convert database/domain scalar types to lossless JSON values."""
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _audit_json_dumps(value: Any) -> str:
+    """Serialize an audit payload without silently stringifying unknown objects."""
+    return json.dumps(value, default=_audit_json_default)
 
 
 class AgentRepository:
@@ -490,9 +509,9 @@ class AgentRepository:
             agent_id,
             action,
             performed_by,
-            json.dumps(details),
-            json.dumps(previous_state) if previous_state is not None else None,
-            json.dumps(new_state) if new_state is not None else None,
+            _audit_json_dumps(details),
+            _audit_json_dumps(previous_state) if previous_state is not None else None,
+            _audit_json_dumps(new_state) if new_state is not None else None,
         )
         return _row_to_dict(row)
 
