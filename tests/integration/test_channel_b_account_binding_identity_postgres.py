@@ -805,9 +805,11 @@ async def test_migration_survives_downgrade_and_re_upgrade(pool: Any) -> None:
                   AND NOT tgisinternal""",
             IDENTITY_TABLE,
         )
+        # confdeltype is PostgreSQL "char", which asyncpg returns as bytes.
+        # Cast in SQL so this compares a value, not a driver detail.
         assert (
             await connection.fetchval(
-                """SELECT confdeltype FROM pg_constraint
+                """SELECT confdeltype::text FROM pg_constraint
                 WHERE conrelid = $1::regclass AND contype = 'f'""",
                 IDENTITY_TABLE,
             )
