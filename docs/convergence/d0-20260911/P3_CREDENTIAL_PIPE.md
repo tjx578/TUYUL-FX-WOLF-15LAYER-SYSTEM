@@ -123,13 +123,34 @@ csc -nologo -target:exe -out:Wolf15CredentialBroker.exe ^
 #446's test was source grep only. It never showed the helper compiled, DPAPI
 decrypted, a pipe was created, or a frame was framed correctly. This run does.
 
-Bound to helper source `tools/windows/wolf15_credential_broker/Wolf15CredentialBroker.cs`,
-SHA-256:
+Bound to helper source `tools/windows/wolf15_credential_broker/Wolf15CredentialBroker.cs`.
+
+The binding is recorded as the **git blob hash**, which is content-addressed and
+therefore independent of checkout line endings:
+
+```
+git rev-parse HEAD:tools/windows/wolf15_credential_broker/Wolf15CredentialBroker.cs
+9738d843cd1c7ec39c890a2c0a02d22d54b05a72
+```
+
+A plain SHA-256 of the working-tree file is **not** reproducible here: this repository
+normalises to LF in the object store and checks out CRLF on Windows, so the same blob
+yields different digests in different worktrees (observed: 14,239 bytes with 375 LF
+versus 14,614 bytes with 375 CRLF, a 375-byte difference that is exactly the added CR
+octets). Over LF-normalised bytes the digest is stable and is:
 
 ```
 de66c8bd1ce92bc087458952000b871801340b066f9c24a5c6fa62e643ebd42c
 ```
 
+reproducible with:
+
+```
+python -c "import hashlib,io,sys; print(hashlib.sha256(io.open(sys.argv[1],chr(114)+chr(98)).read().replace(bytes([13,10]),bytes([10]))).hexdigest())" tools/windows/wolf15_credential_broker/Wolf15CredentialBroker.cs
+```
+
+Quote the blob hash when binding evidence to this helper; quote the SHA-256 only
+together with the normalisation it assumes.
 | Gate | Check | Result | Evidence |
 |---|---|---|---|
 | C16 | helper compiles with in-box compiler | **PASS** | csc exit 0, no SDK |
@@ -159,29 +180,47 @@ end contained **exactly one** access rule, and it was the running account's SID.
 
 ### Why the harness is reproduced here instead of stored as a .ps1
 
-On this build host, security software takes an exclusive handle on this specific
-script content — DPAPI plus named pipes plus process spawning plus runtime C#
-compilation is a credential-tooling pattern that AV heuristics flag. The file
-became unreadable even to `git add`:
+On this build host an **unidentified process** takes an exclusive handle on this
+specific script content, and the file became unreadable even to `git add`:
 
 ```
 error: open("tools/windows/wolf15_credential_broker/acceptance.ps1"): Permission denied
 error: unable to index file
 ```
 
-A trivial `.ps1` written to the same directory stayed readable, and byte-identical
-content ran fine from a scratch directory on `C:` — so the trigger is content plus
-location, not permissions. Security settings were **not** modified to work around
-it. The harness is therefore reproduced verbatim below; save it next to
-`Wolf15CredentialBroker.cs` and run:
+What is actually established: a trivial `.ps1` written to the same directory stayed
+readable; byte-identical content ran fine from a scratch directory on `C:`; and the
+file ACLs are normal, so this is a sharing violation rather than a permissions
+problem. The trigger therefore correlates with content **and** location.
+
+What is **not** established: which process holds the handle. Attributing it to
+antivirus heuristics is a plausible hypothesis — the script combines DPAPI, named
+pipes, process spawning and runtime C# compilation — but no host log or handle
+diagnosis was captured to support it, so it is recorded as a hypothesis, not a finding.
+
+Security settings were **not** modified to work around it. The harness is reproduced
+verbatim below; save it next to `Wolf15CredentialBroker.cs` and run:
 
 ```
 powershell -NoProfile -ExecutionPolicy Bypass -File acceptance.ps1
 ```
 
-**Open item for the owner:** decide whether to add an antivirus exclusion for the
-tools directory — your machine, your call — or keep the harness out of tree.
+**Open item for the owner.** Closing this needs a handle diagnosis on the host to
+identify the holder before any mitigation is chosen. An antivirus exclusion is **not**
+recommended as the next step: that would be a security-settings change made on an
+unverified cause.
 
+Evidence status while that stays open:
+
+```
+WINDOWS_FUNCTIONAL_RESULT       = PASS_REPORTED
+HARNESS_SOURCE_PRESERVED        = REPORTED
+REPRODUCIBLE_WINDOWS_ACCEPTANCE = OPEN
+```
+
+`PASS_REPORTED` means the 16 gates were executed and observed on this host and
+toolchain. It does not mean they have been independently reproduced from reviewed
+source in an approved test environment.
 ## 5. Source-contract coverage
 
 `tests/test_mt5_dpapi_pipe_credential_loader.py` — 15 tests covering C01 and
@@ -214,6 +253,22 @@ survived P3.
 | C25 | baseline D0 suite remains PASS | recorded in the commit message |
 
 MetaEditor integration compile remains **P6**, unchanged.
+
+### What these numbers do and do not prove
+
+The 15 source-contract tests, the 16 live helper gates and the D0 focused suite test
+three different boundaries and **must not be added into one end-to-end figure**:
+
+| Evidence | Proves | Does not prove |
+|---|---|---|
+| 15 source-contract tests | the MQL5 / C# / JSON contract shape | any MQL5 execution |
+| 16 live helper gates | the C# broker compiles, decrypts, frames, ACLs, and fails closed | that a native EA read the frame |
+| D0 focused suite | Python-side behaviour at this SHA | anything about MQ5 or EX5 |
+
+Specifically still unproven: **a native MQL5 EA reading the full frame from the pipe,
+handling failure, and not hanging.** The ACL read-back is strong evidence about access
+configuration on that run, which is a different claim from native consumption. That,
+and Channel B `w15ab:v1` / B-B16, remain outside P3.
 
 ## 7. Not touched
 
