@@ -123,28 +123,36 @@ def test_shadow_executor_rejects_execution_enabled() -> None:
 
 
 def test_invalid_credentials_are_diagnosed_without_printing_values() -> None:
-    on_init = _on_init(_source())
+    source = _source()
+    on_init = _on_init(source)
 
+    # Non-secret endpoint shape is still diagnosed by length only.
     assert "executor_id_length = StringLen(InpExecutorId)" in on_init
-    assert "executor_token_length = StringLen(InpExecutorToken)" in on_init
     assert "login_hash_length = StringLen(InpLoginHash)" in on_init
-    assert "executor_id_length=%d token_length=%d" in on_init
-    assert "login_hash_length=%d" in on_init
-    assert 'PrintFormat("%s", InpExecutorToken)' not in on_init
+    assert "executor_id_length=%d login_hash_length=%d" in on_init
+
+    # The bearer token is no longer an EA input at all; it arrives over the
+    # runtime credential pipe and is checked by shape after loading.
+    assert "InpExecutorToken" not in source
+    assert "IsLowerHexExact(g_executor_token, 64)" in on_init
+    assert 'PrintFormat("%s", g_executor_token)' not in on_init
     assert 'PrintFormat("%s", InpLoginHash)' not in on_init
+    assert "credential_reason" in on_init
 
 
 def test_signed_wire_credentials_are_required_without_logging_values() -> None:
     source = _source()
     on_init = _on_init(source)
 
+    # The key id stays a non-secret input; the key material does not.
     assert 'input string InpCommandVerificationKeyId = "";' in source
-    assert 'input string InpCommandVerificationKey   = "";' in source
-    assert 'TaggedHexToBytes(InpCommandVerificationKey, "hex:", 32, verification_key)' in on_init
-    assert "IsSafeWireIdentifier(InpCommandVerificationKeyId)" in on_init
-    assert "verification_key_id_length=%d" in on_init
-    assert "verification_key_length=%d" in on_init
-    assert 'PrintFormat("%s", InpCommandVerificationKey)' not in on_init
+    assert "input string InpCommandVerificationKey " not in source
+
+    assert 'TaggedHexToBytes(g_command_verification_key, "hex:", 32, verification_key)' in on_init
+    assert "IsSafeWireIdentifier(g_command_verification_key_id)" in on_init
+    assert "ClearRuntimeCredentials();" in on_init
+    assert 'PrintFormat("%s", g_command_verification_key)' not in on_init
+    assert "Runtime credential shape rejected" in on_init
 
 
 def test_signed_wire_crypto_self_test_matches_the_public_golden_vector() -> None:
@@ -368,8 +376,8 @@ def test_http_diagnostics_correlate_requests_and_leave_success_path_quiet() -> N
 
     assert request_id < request_header < request_log
     assert healthy_return < response_classification
-    assert '"Authorization: Bearer " + InpExecutorToken' in http
-    assert "InpExecutorToken" not in http[http.index("if(code == -1)") :]
+    assert '"Authorization: Bearer " + g_executor_token' in http
+    assert "g_executor_token" not in http[http.index("if(code == -1)") :]
 
 
 def test_http_diagnostics_distinguish_transport_non_http_and_http_results() -> None:
