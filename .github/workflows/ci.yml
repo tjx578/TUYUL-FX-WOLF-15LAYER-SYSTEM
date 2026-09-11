@@ -129,6 +129,54 @@ jobs:
           print(json.dumps({"service_id": service_id, "server_address": address}))
           PYEOF
 
+      - name: Provision disposable auditor principal before migrations
+        run: |
+          python - <<'PYEOF'
+          import asyncio
+          import os
+
+          import asyncpg
+
+          ROLE = "wolf15_auditor"
+
+
+          async def main() -> None:
+              connection = await asyncpg.connect(dsn=os.environ["DATABASE_URL"])
+              try:
+                  # Prove authority rather than assume it. A silent inability to create
+                  # the principal would make the auditor ACL tests skip, and the suite
+                  # would look green while proving nothing.
+                  authority = await connection.fetchrow(
+                      """SELECT current_user AS name, rolsuper, rolcreaterole
+                           FROM pg_roles WHERE rolname = current_user"""
+                  )
+                  assert authority is not None, "current CI principal not found in pg_roles"
+                  if not (authority["rolsuper"] or authority["rolcreaterole"]):
+                      raise SystemExit(
+                          f"CI principal {authority['name']} lacks role-management authority"
+                      )
+
+                  # Disposable test fixture only. NOLOGIN and no password: this grants
+                  # nothing in production and provisions nothing outside this container.
+                  if not await connection.fetchval("SELECT 1 FROM pg_roles WHERE rolname=$1", ROLE):
+                      await connection.execute(
+                          f"""CREATE ROLE {ROLE} NOLOGIN NOSUPERUSER NOCREATEDB
+                                                 NOCREATEROLE NOINHERIT NOREPLICATION"""
+                      )
+                  attributes = await connection.fetchrow(
+                      """SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication
+                           FROM pg_roles WHERE rolname=$1""",
+                      ROLE,
+                  )
+                  assert not any(attributes.values()), f"{ROLE} must hold no elevated attribute"
+                  print(f"provisioned disposable principal {ROLE}: {dict(attributes)}")
+              finally:
+                  await connection.close()
+
+
+          asyncio.run(main())
+          PYEOF
+
       - name: Apply database migrations
         run: python -m alembic upgrade head
 

@@ -44,6 +44,7 @@ ACCOUNT_ID = "44556677"
 BROKER_SERVER = "Broker-Demo-ChannelB"
 IDENTITY_TABLE = "executor_account_binding_identifiers"
 AUDIT_VIEW = "wolf15_audit.account_binding_identity_v1"
+AUDITOR_ROLE = "wolf15_auditor"
 ROOT = Path(__file__).resolve().parents[2]
 
 pytestmark = pytest.mark.integration
@@ -373,18 +374,104 @@ async def test_audit_view_exposes_only_sanitised_metadata(pool: Any, shadow_exec
 
 
 # --- P4-C17 / P4-C18: auditor privilege containment -------------------------
+#
+# The role is a fixture contract here, not an optional extra: CI provisions
+# wolf15_auditor NOLOGIN before `alembic upgrade head`, so the migrations' own
+# conditional GRANT blocks execute and can be asserted. A missing role is an
+# acceptance failure, never a skip -- a skip would make the suite look green
+# while proving nothing about privilege containment.
 
 
-async def test_auditor_may_select_the_view_and_not_the_base_table(pool: Any, shadow_executor: UUID) -> None:
+async def _require_auditor(connection: Any) -> None:
+    exists = await connection.fetchval("SELECT 1 FROM pg_roles WHERE rolname=$1", AUDITOR_ROLE)
+    assert exists, (
+        f"{AUDITOR_ROLE} must be provisioned by the disposable CI environment "
+        "before migrations run; see the 'Provision disposable auditor principal' step"
+    )
+
+
+async def test_auditor_principal_holds_no_elevated_attribute(pool: Any) -> None:
     async with pool.acquire() as connection:
-        role = await connection.fetchval("SELECT 1 FROM pg_roles WHERE rolname='wolf15_auditor'")
-        if role is None:
-            pytest.skip("wolf15_auditor role is not provisioned in this disposable database")
-        assert await connection.fetchval("SELECT has_table_privilege('wolf15_auditor', $1, 'SELECT')", AUDIT_VIEW)
+        await _require_auditor(connection)
+        attributes = await connection.fetchrow(
+            """SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication
+                 FROM pg_roles WHERE rolname=$1""",
+            AUDITOR_ROLE,
+        )
+    assert dict(attributes) == {
+        "rolcanlogin": False,
+        "rolsuper": False,
+        "rolcreatedb": False,
+        "rolcreaterole": False,
+        "rolreplication": False,
+    }
+
+
+async def test_auditor_privileges_are_view_select_only(pool: Any, shadow_executor: UUID) -> None:
+    async with pool.acquire() as connection:
+        await _require_auditor(connection)
+
+        assert await connection.fetchval("SELECT has_schema_privilege($1, 'wolf15_audit', 'USAGE')", AUDITOR_ROLE)
+        assert await connection.fetchval("SELECT has_table_privilege($1, $2, 'SELECT')", AUDITOR_ROLE, AUDIT_VIEW)
+
+        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES"):
+            assert not await connection.fetchval(
+                "SELECT has_table_privilege($1, $2, $3)", AUDITOR_ROLE, IDENTITY_TABLE, privilege
+            ), f"{AUDITOR_ROLE} must not hold {privilege} on {IDENTITY_TABLE}"
+
+        # The view joins executor_instances. A security-barrier view must not leak
+        # access to the table it reads from.
         for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
             assert not await connection.fetchval(
-                "SELECT has_table_privilege('wolf15_auditor', $1, $2)", IDENTITY_TABLE, privilege
+                "SELECT has_table_privilege($1, 'executor_instances', $2)", AUDITOR_ROLE, privilege
+            ), f"{AUDITOR_ROLE} must not hold {privilege} on executor_instances"
+
+
+async def test_public_holds_no_privilege_on_the_identity_objects(pool: Any) -> None:
+    """PUBLIC appears in a PostgreSQL ACL as an entry with an empty grantee."""
+
+    async with pool.acquire() as connection:
+        for relation in (IDENTITY_TABLE, AUDIT_VIEW):
+            acl = await connection.fetchval("SELECT relacl FROM pg_class WHERE oid = $1::regclass", relation)
+            entries = [str(entry) for entry in (acl or [])]
+            public_entries = [entry for entry in entries if entry.startswith("=")]
+            assert public_entries == [], f"PUBLIC must hold nothing on {relation}, found {public_entries}"
+
+
+async def test_auditor_session_can_read_the_view_and_cannot_escalate(pool: Any, shadow_executor: UUID) -> None:
+    """Catalog privilege bits and real behaviour must agree."""
+
+    asyncpg = import_module("asyncpg")
+    async with pool.acquire() as connection, connection.transaction():
+        await produce_account_binding_identity(connection, shadow_executor)
+
+    connection = await asyncpg.connect(dsn=os.environ["DATABASE_URL"])
+    try:
+        await _require_auditor(connection)
+        await connection.execute(f"SET ROLE {AUDITOR_ROLE}")
+        try:
+            rows = await connection.fetch(
+                f"SELECT * FROM {AUDIT_VIEW} WHERE executor_id=$1::uuid",  # noqa: S608 - constant view name
+                str(shadow_executor),
             )
+            assert len(rows) == 1
+            assert rows[0]["identifier"].startswith("w15ab:v1:")
+
+            denied = asyncpg.exceptions.InsufficientPrivilegeError
+            with pytest.raises(denied):
+                await connection.fetch(f"SELECT * FROM {IDENTITY_TABLE} LIMIT 1")  # noqa: S608
+            with pytest.raises(denied):
+                await connection.execute(
+                    f"UPDATE {IDENTITY_TABLE} SET producer_version='tampered'"  # noqa: S608
+                )
+            with pytest.raises(denied):
+                await connection.execute(f"DELETE FROM {IDENTITY_TABLE}")  # noqa: S608
+            with pytest.raises(denied):
+                await connection.fetch("SELECT account_id FROM executor_instances LIMIT 1")
+        finally:
+            await connection.execute("RESET ROLE")
+    finally:
+        await connection.close()
 
 
 # --- P4-C31 / P4-C32: a Channel-B read mutates nothing ----------------------
@@ -497,8 +584,12 @@ async def test_migration_survives_downgrade_and_re_upgrade(pool: Any) -> None:
             "account_binding_identity_shape",
             "account_binding_identity_key_id_agrees",
         } <= names
-        if await connection.fetchval("SELECT 1 FROM pg_roles WHERE rolname='wolf15_auditor'"):
-            assert await connection.fetchval("SELECT has_table_privilege('wolf15_auditor', $1, 'SELECT')", AUDIT_VIEW)
+        # The migration re-applied its own grants on re-upgrade. Assert those,
+        # never a privilege some test granted.
+        await _require_auditor(connection)
+        assert await connection.fetchval("SELECT has_schema_privilege($1, 'wolf15_audit', 'USAGE')", AUDITOR_ROLE)
+        assert await connection.fetchval("SELECT has_table_privilege($1, $2, 'SELECT')", AUDITOR_ROLE, AUDIT_VIEW)
+        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
             assert not await connection.fetchval(
-                "SELECT has_table_privilege('wolf15_auditor', $1, 'SELECT')", IDENTITY_TABLE
+                "SELECT has_table_privilege($1, $2, $3)", AUDITOR_ROLE, IDENTITY_TABLE, privilege
             )
