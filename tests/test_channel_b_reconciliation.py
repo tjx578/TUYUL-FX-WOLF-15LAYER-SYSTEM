@@ -741,6 +741,14 @@ def test_cli_uses_nonzero_exit_for_blocked_report(monkeypatch: object, capsys: o
     assert "postgresql://must-not-appear" not in output
 
 
+POWERSHELL_LAUNCHER_TIMEOUT_SECONDS = 120
+"""PowerShell cold start plus AST parsing of the launcher runs well past the
+suite-wide --timeout=30 on slower CI runners. This single test gets its own
+allowance; the suite-wide guard is left alone."""
+
+
+@pytest.mark.slow
+@pytest.mark.timeout(POWERSHELL_LAUNCHER_TIMEOUT_SECONDS)
 def test_powershell_process_helper_propagates_nonzero_and_keeps_report(tmp_path: Path) -> None:
     powershell = shutil.which("pwsh") or shutil.which("powershell")
     if powershell is None:
@@ -796,7 +804,10 @@ exit 0
         text=True,
         capture_output=True,
         check=False,
-        timeout=30,
+        # This is the bound that actually fires: it raises subprocess.TimeoutExpired
+        # independently of any pytest-timeout marker. Kept explicit and bounded, and
+        # aligned with the marker above so neither silently overrides the other.
+        timeout=POWERSHELL_LAUNCHER_TIMEOUT_SECONDS,
     )
 
     assert completed.returncode == 0, completed.stderr or completed.stdout
