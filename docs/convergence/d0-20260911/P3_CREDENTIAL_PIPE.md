@@ -216,7 +216,13 @@ Evidence status while that stays open:
 WINDOWS_FUNCTIONAL_RESULT       = PASS_REPORTED
 HARNESS_SOURCE_PRESERVED        = REPORTED
 REPRODUCIBLE_WINDOWS_ACCEPTANCE = OPEN
+MQL5_NATIVE_PIPE_READ           = NOT_PROVEN
+METAEDITOR_COMPILE              = NOT_RUN
 ```
+
+`MQL5_NATIVE_PIPE_READ = NOT_PROVEN` and `METAEDITOR_COMPILE = NOT_RUN` are carried in
+the same block on purpose: the source and test acceptance of this candidate must never
+be read as native MT5 acceptance.
 
 `PASS_REPORTED` means the 16 gates were executed and observed on this host and
 toolchain. It does not mean they have been independently reproduced from reviewed
