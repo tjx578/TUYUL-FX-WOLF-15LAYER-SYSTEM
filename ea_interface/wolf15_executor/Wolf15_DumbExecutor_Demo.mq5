@@ -151,7 +151,7 @@ bool ComputeDemoIntegrityTag(const DemoExecutionState &state, string &tag)
    uchar verification_key[];
    uchar material[];
    uchar digest[];
-   if(!TaggedHexToBytes(InpCommandVerificationKey, "hex:", 32, verification_key) ||
+   if(!TaggedHexToBytes(g_command_verification_key, "hex:", 32, verification_key) ||
       !AsciiToBytes(DemoStateMaterial(state), material) ||
       !HmacSha256Bytes(verification_key, material, digest))
       return false;
@@ -1196,21 +1196,45 @@ int OnInit()
       SymbolPairIndex(InpApprovedCanonicalSymbol, InpApprovedBrokerSymbol) < 0)
       return INIT_PARAMETERS_INCORRECT;
    if(StringFind(InpBaseUrl, "https://") != 0 || StringLen(InpExecutorId) < 30 ||
-      StringLen(InpExecutorToken) < 32 || StringLen(InpLoginHash) != 71)
+      StringLen(InpLoginHash) != 71)
       return INIT_PARAMETERS_INCORRECT;
    if(!ValidateSchedulerIntervals())
       return INIT_PARAMETERS_INCORRECT;
-   uchar verification_key[];
-   if(!IsSafeWireIdentifier(InpCommandVerificationKeyId) ||
-      !TaggedHexToBytes(InpCommandVerificationKey, "hex:", 32, verification_key) ||
-      !RunSignedWireCryptoSelfTest())
+   string credential_reason = "";
+   if(!LoadRuntimeCredentials(credential_reason))
+   {
+      PrintFormat("[W15-D0] Credential loading rejected reason=%s", credential_reason);
+      ClearRuntimeCredentials();
       return INIT_FAILED;
+   }
+   // Structural re-check of the credentials that reached runtime memory. The
+   // server remains the authentication authority; this build never derives or
+   // cryptographically verifies the bearer token itself.
+   uchar verification_key[];
+   if(!IsLowerHexExact(g_executor_token, 64) ||
+      !IsSafeWireIdentifier(g_command_verification_key_id) ||
+      !TaggedHexToBytes(g_command_verification_key, "hex:", 32, verification_key))
+   {
+      ClearRuntimeCredentials();
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(!RunSignedWireCryptoSelfTest())
+   {
+      ClearRuntimeCredentials();
+      return INIT_FAILED;
+   }
    if((string)AccountInfoInteger(ACCOUNT_LOGIN) != InpExpectedAccountId ||
       AccountInfoString(ACCOUNT_SERVER) != InpExpectedBrokerServer)
+   {
+      ClearRuntimeCredentials();
       return INIT_FAILED;
+   }
    string universe_reason = "";
    if(!InitializeSymbolUniverse(universe_reason))
+   {
+      ClearRuntimeCredentials();
       return INIT_FAILED;
+   }
    FolderCreate("Wolf15ExecutorDemo", 0);
    FolderCreate("Wolf15ExecutorDemo", FILE_COMMON);
    DemoExecutionState state;
@@ -1218,6 +1242,7 @@ int OnInit()
    if(!LoadDemoState(state, state_error))
    {
       PrintFormat("[W15-D0] Durable state rejected reason=%s", state_error);
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
    EventSetTimer(1);
@@ -1283,4 +1308,5 @@ void OnDeinit(const int reason)
 {
    EventKillTimer();
    AppendLedger("-", "STOPPED", IntegerToString(reason));
+   ClearRuntimeCredentials();
 }
