@@ -8,14 +8,21 @@ def _read_text(rel_path: str) -> str:
     return (root / rel_path).read_text(encoding="utf-8")
 
 
-def test_api_and_engine_startup_do_not_run_db_migrations() -> None:
-    api_start = _read_text("deploy/railway/start_api.sh").lower()
-    engine_start = _read_text("deploy/railway/start_engine.sh").lower()
+def test_non_migrator_startup_scripts_do_not_run_db_migrations() -> None:
+    railway_dir = Path(__file__).resolve().parents[1] / "deploy" / "railway"
+    forbidden_tokens = (
+        "alembic",
+        "upgrade head",
+        "python -m alembic",
+        "migration_runner",
+    )
 
-    forbidden_tokens = ("alembic", "upgrade head", "python -m alembic")
-    for token in forbidden_tokens:
-        assert token not in api_start
-        assert token not in engine_start
+    for startup_script in sorted(railway_dir.glob("start_*.sh")):
+        if startup_script.name == "start_migrator.sh":
+            continue
+        startup_text = startup_script.read_text(encoding="utf-8").lower()
+        for token in forbidden_tokens:
+            assert token not in startup_text, (startup_script.name, token)
 
 
 def test_migration_ownership_stays_in_migrator_service(monkeypatch) -> None:
