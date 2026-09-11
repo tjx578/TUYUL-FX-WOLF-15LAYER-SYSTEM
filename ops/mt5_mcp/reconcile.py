@@ -59,6 +59,14 @@ BINDING_SQL: Final = """
     ORDER BY executor_id
     LIMIT $1
 """
+# Separate authority from BINDING_SQL. The legacy view answers "is the database
+# internally consistent"; this one answers "which opaque w15ab:v1 identity is
+# trusted for this executor at this key version". Never overlay one onto the other.
+BINDING_IDENTITY_SQL: Final = """
+    SELECT * FROM wolf15_audit.account_binding_identity_v1
+    ORDER BY executor_id, key_id
+    LIMIT $1
+"""
 CONTAINMENT_SQL: Final = "SELECT * FROM wolf15_audit.execution_containment_v1 LIMIT 2"
 LEDGER_SQL: Final = """
     SELECT *
@@ -487,14 +495,47 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
         return "MISMATCH", evidence
 
     candidate = candidates[0]
-    database_identifier = candidate.get("account_binding_identifier")
-    database_source = candidate.get("account_binding_source")
-    if database_identifier is None:
+    executor_id = str(candidate.get("executor_id"))
+
+    # Channel-B identity is a separate authority from the legacy internal-consistency
+    # view. A legacy identifier column is never trusted and never overlaid here.
+    identities = [
+        row
+        for row in database.get("account_binding_identity", [])
+        if isinstance(row, Mapping)
+        and str(row.get("executor_id")) == executor_id
+        and str(row.get("broker_server") or "") == direct["server"]
+        and row.get("retired_at") is None
+    ]
+    evidence["active_account_identity_count"] = len(identities)
+    if not identities:
         return "INCOMPLETE_ACCOUNT_IDENTIFIER", evidence
-    if database_source != account_binding.DATABASE_SOURCE:
+
+    # A bounded rotation overlap legitimately leaves several active key versions.
+    # Only the version the terminal actually presented is eligible: no previous-key
+    # fallback, no recency heuristic, no alternate-account fallback.
+    eligible = [row for row in identities if str(row.get("key_id") or "") == direct["key_id"]]
+    evidence["eligible_account_identity_count"] = len(eligible)
+    if not eligible:
+        return "KEY_VERSION_MISMATCH", evidence
+    if len(eligible) > 1:
+        return "AMBIGUOUS_ACCOUNT_IDENTITY", evidence
+
+    row = eligible[0]
+    evidence["database_identifier_producer_version"] = row.get("producer_version")
+    if row.get("binding_source") != account_binding.DATABASE_SOURCE:
         evidence["database_identifier_source_trusted"] = False
         return "UNTRUSTED_DATABASE_IDENTIFIER", evidence
     evidence["database_identifier_source_trusted"] = True
+    if (
+        row.get("scheme") != account_binding.SCHEME
+        or row.get("contract_version") != account_binding.VERSION
+        or row.get("algorithm") != account_binding.ALGORITHM
+    ):
+        evidence["database_identifier_contract_valid"] = False
+        return "UNTRUSTED_DATABASE_IDENTIFIER", evidence
+
+    database_identifier = row.get("identifier")
     try:
         database_key_id = account_binding.identifier_key_id(database_identifier)
     except account_binding.AccountBindingError:
@@ -502,11 +543,13 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
         return "INVALID_DATABASE_IDENTIFIER", evidence
     evidence["database_identifier_contract_valid"] = True
     evidence["database_key_id"] = database_key_id
+    if database_key_id != direct["key_id"]:
+        # The embedded key id disagreeing with the row's own key_id column means the
+        # row is internally inconsistent, which is stronger than a version mismatch.
+        return "INVALID_DATABASE_IDENTIFIER", evidence
     evidence["direct_account_identifier_match"] = account_binding.identifiers_match(
         direct["identifier"], database_identifier
     )
-    if database_key_id != direct["key_id"]:
-        return "KEY_VERSION_MISMATCH", evidence
     return ("MATCHED", evidence) if evidence["direct_account_identifier_match"] else ("MISMATCH", evidence)
 
 
@@ -595,6 +638,7 @@ def reconcile_snapshots(
             "executor_identity_rows": len(database.get("executor_identity", [])),
             "executor_freshness_rows": len(database.get("executor_freshness", [])),
             "account_binding_rows": len(database.get("account_binding", [])),
+            "account_binding_identity_rows": len(database.get("account_binding_identity", [])),
             "execution_containment_rows": len(database.get("execution_containment", [])),
             "execution_ledger_rows": len(database.get("execution_ledger", [])),
             "broker_mirror_rows": len(database.get("broker_mirror", [])),
@@ -648,9 +692,13 @@ async def _database_snapshot(
         identity = await connection.fetch(IDENTITY_SQL, limit)
         freshness = await connection.fetch(FRESHNESS_SQL, limit)
         binding = await connection.fetch(BINDING_SQL, limit)
+        binding_identity = await connection.fetch(BINDING_IDENTITY_SQL, limit)
         containment = await connection.fetch(CONTAINMENT_SQL)
         ledger = await connection.fetch(LEDGER_SQL, window_from, window_to, limit)
         mirror = await connection.fetch(MIRROR_SQL, window_from, window_to, limit)
+        # D0 reconciliation evidence, kept for attestation only. It is deliberately
+        # NOT merged into the legacy binding rows and is NOT the Channel-B identity
+        # authority: it is snapshot-coupled, DEMO-only, and rewritten per executor.
         backend_identity = []
         if include_backend_identity:
             backend_identity = _clean_database_rows(
@@ -658,21 +706,12 @@ async def _database_snapshot(
                     "SELECT * FROM wolf15_audit.backend_account_identity_v1 ORDER BY executor_id LIMIT $1", limit
                 )
             )
-            # Replace any legacy identifier columns only with the backend projection.
-            projected = {str(row["executor_id"]): row for row in backend_identity}
-            binding = [
-                {
-                    **dict(row),
-                    "account_binding_identifier": projected.get(str(row["executor_id"]), {}).get(
-                        "account_binding_identifier"
-                    ),
-                    "account_binding_source": projected.get(str(row["executor_id"]), {}).get("account_binding_source"),
-                }
-                for row in binding
-            ]
         mutation = _mapping(await connection.fetchrow(MUTATION_SQL))
         truncated = (
-            any(len(rows) > MAX_DATABASE_ROWS for rows in (identity, freshness, binding, ledger, mirror))
+            any(
+                len(rows) > MAX_DATABASE_ROWS
+                for rows in (identity, freshness, binding, binding_identity, ledger, mirror)
+            )
             or len(containment) > 1
         )
         report = {
@@ -683,6 +722,7 @@ async def _database_snapshot(
             "executor_identity": _clean_database_rows(identity[:MAX_DATABASE_ROWS]),
             "executor_freshness": _clean_database_rows(freshness[:MAX_DATABASE_ROWS]),
             "account_binding": _clean_database_rows(binding[:MAX_DATABASE_ROWS]),
+            "account_binding_identity": _clean_database_rows(binding_identity[:MAX_DATABASE_ROWS]),
             "execution_containment": _clean_database_rows(containment[:1]),
             "execution_ledger": _clean_database_rows(ledger[:MAX_DATABASE_ROWS]),
             "broker_mirror": _clean_database_rows(mirror[:MAX_DATABASE_ROWS]),
