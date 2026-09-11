@@ -109,6 +109,24 @@ def collected_fixture(identity: dict[str, Any]) -> tuple[dict[str, Any], dict[st
                 "outbox_v2_binding_mismatch_count": 0,
             }
         ],
+        # Channel-B identity is its own authority now: the reconciler reads this
+        # collection, never an identifier overlaid on the legacy binding row.
+        "account_binding_identity": [
+            {
+                "executor_id": identity["executor_id"],
+                "broker_server": identity["broker_server"],
+                "execution_mode": "DEMO",
+                "key_id": "disposable-identity",
+                "scheme": account_binding.SCHEME,
+                "contract_version": account_binding.VERSION,
+                "algorithm": account_binding.ALGORITHM,
+                "identifier": identity["account_binding_identifier"],
+                "binding_source": account_binding.DATABASE_SOURCE,
+                "generated_at": now.isoformat(),
+                "retired_at": None,
+                "producer_version": "channel-b-account-binding-identity-v1",
+            }
+        ],
         "backend_identity": [identity],
         "execution_ledger": [],
         "broker_mirror": [],

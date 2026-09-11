@@ -82,6 +82,40 @@ def _broker(
     return broker
 
 
+EXECUTOR_ID = "11111111-1111-1111-1111-111111111111"
+
+
+def _identity_row(
+    *,
+    identifier: str,
+    source: str | None,
+    key_id: str = TEST_KEY_ID,
+    broker_server: str = "Broker-Demo",
+    execution_mode: str = "SHADOW",
+    retired_at: object = None,
+    scheme: str | None = None,
+    contract_version: str | None = None,
+    algorithm: str | None = None,
+    executor_id: str = EXECUTOR_ID,
+) -> dict[str, object]:
+    """Build one row as wolf15_audit.account_binding_identity_v1 would project it."""
+
+    return {
+        "executor_id": executor_id,
+        "broker_server": broker_server,
+        "execution_mode": execution_mode,
+        "key_id": key_id,
+        "scheme": account_binding.SCHEME if scheme is None else scheme,
+        "contract_version": account_binding.VERSION if contract_version is None else contract_version,
+        "algorithm": account_binding.ALGORITHM if algorithm is None else algorithm,
+        "identifier": identifier,
+        "binding_source": source,
+        "generated_at": WINDOW_FROM.isoformat(),
+        "retired_at": retired_at,
+        "producer_version": "channel-b-account-binding-identity-v1",
+    }
+
+
 def _database(
     *,
     mirror: list[dict[str, object]] | None = None,
@@ -89,8 +123,10 @@ def _database(
     account_identifier: str | None = None,
     account_identifier_source: str | None = None,
     broker_server: str = "Broker-Demo",
+    account_identity_key_id: str = TEST_KEY_ID,
+    account_identity_rows: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    executor_id = "11111111-1111-1111-1111-111111111111"
+    executor_id = EXECUTOR_ID
     return {
         "measured": True,
         "truncated": False,
@@ -115,14 +151,26 @@ def _database(
                 "reservation_v2_binding_mismatch_count": 0,
                 "outbox_v1_account_mismatch_count": 0,
                 "outbox_v2_binding_mismatch_count": 0,
-                **({"account_binding_identifier": account_identifier} if account_identifier is not None else {}),
-                **(
-                    {"account_binding_source": account_identifier_source}
-                    if account_identifier_source is not None
-                    else {}
-                ),
             }
         ],
+        # Channel-B identity is a separate authority and is never overlaid onto the
+        # legacy internal-consistency row above.
+        "account_binding_identity": (
+            account_identity_rows
+            if account_identity_rows is not None
+            else (
+                [
+                    _identity_row(
+                        identifier=account_identifier,
+                        source=account_identifier_source,
+                        key_id=account_identity_key_id,
+                        broker_server=broker_server,
+                    )
+                ]
+                if account_identifier is not None
+                else []
+            )
+        ),
         "broker_mirror": mirror or [],
         "execution_ledger": ledger or [],
     }
