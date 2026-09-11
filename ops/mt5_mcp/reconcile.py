@@ -499,13 +499,15 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
 
     # Channel-B identity is a separate authority from the legacy internal-consistency
     # view. A legacy identifier column is never trusted and never overlaid here.
+    #
+    # Selection order matters, and the broker server is deliberately NOT part of this
+    # filter. Filtering it away would make "no identity exists" and "an identity
+    # exists but is bound to another server" indistinguishable; the second must block,
+    # so it is compared explicitly once one row is eligible.
     identities = [
         row
         for row in database.get("account_binding_identity", [])
-        if isinstance(row, Mapping)
-        and str(row.get("executor_id")) == executor_id
-        and str(row.get("broker_server") or "") == direct["server"]
-        and row.get("retired_at") is None
+        if isinstance(row, Mapping) and str(row.get("executor_id")) == executor_id and row.get("retired_at") is None
     ]
     evidence["active_account_identity_count"] = len(identities)
     if not identities:
@@ -522,6 +524,11 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
         return "AMBIGUOUS_ACCOUNT_IDENTITY", evidence
 
     row = eligible[0]
+    # Exact-case comparison. A case-folded or normalised server name would let a
+    # neighbouring server satisfy the binding.
+    evidence["account_identity_broker_server_matches"] = str(row.get("broker_server") or "") == direct["server"]
+    if not evidence["account_identity_broker_server_matches"]:
+        return "BROKER_SERVER_MISMATCH", evidence
     evidence["database_identifier_producer_version"] = row.get("producer_version")
     if row.get("binding_source") != account_binding.DATABASE_SOURCE:
         evidence["database_identifier_source_trusted"] = False
@@ -610,6 +617,11 @@ def reconcile_snapshots(
     elif account_state == "MATCHED":
         reconciliation = "MATCHED"
         gate = "EXECUTED_PASS"
+    elif account_state == "BROKER_SERVER_MISMATCH":
+        # Never collapsed into the generic MISMATCH reason: the identifier was never
+        # compared, the executor is bound to a different broker server.
+        reconciliation = "ACCOUNT_IDENTITY_BROKER_SERVER_MISMATCH"
+        gate = "EXECUTED_BLOCKED"
     elif account_state == "INCOMPLETE_ACCOUNT_IDENTIFIER" and hard_mismatches:
         reconciliation = "INCOMPLETE_ACCOUNT_IDENTIFIER_WITH_ENTITY_MISMATCH"
         gate = "EXECUTED_BLOCKED"

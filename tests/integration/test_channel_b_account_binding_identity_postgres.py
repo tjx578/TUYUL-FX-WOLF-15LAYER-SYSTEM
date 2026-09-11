@@ -373,6 +373,218 @@ async def test_audit_view_exposes_only_sanitised_metadata(pool: Any, shadow_exec
     assert {"identifier", "key_id", "scheme", "contract_version", "algorithm", "binding_source"} <= columns
 
 
+# --- P4-C24: a server disagreement must be visible, not filtered away -------
+#
+# The projection used to carry `e.broker_server = b.broker_server`. That hid a
+# wrong-server identity from the auditor entirely and left the reconciler unable
+# to tell it apart from an absent one, so a hard binding failure read as a soft
+# gap. The row is surfaced instead, and the reconciler blocks on it.
+
+
+async def _insert_raw_identity(
+    connection: Any,
+    executor_id: UUID,
+    *,
+    key_id: str = "audit-key",
+    identifier: str | None = None,
+    broker_server: str = BROKER_SERVER,
+) -> str:
+    """Write a canonical row directly, as a privileged writer would."""
+
+    identifier = identifier or ("w15ab:v1:" + key_id + ":" + ("A" * 43))
+    await connection.execute(
+        f"""INSERT INTO {IDENTITY_TABLE}
+              (executor_id, key_id, scheme, contract_version, algorithm,
+               identifier, binding_source, broker_server, producer_version)
+            VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,'p4-test')""",  # noqa: S608 - constant table name
+        str(executor_id),
+        key_id,
+        account_binding.SCHEME,
+        account_binding.VERSION,
+        account_binding.ALGORITHM,
+        identifier,
+        account_binding.DATABASE_SOURCE,
+        broker_server,
+    )
+    return identifier
+
+
+async def test_identity_bound_to_another_server_stays_visible_to_the_auditor(pool: Any, shadow_executor: UUID) -> None:
+    async with pool.acquire() as connection:
+        await _insert_raw_identity(connection, shadow_executor, broker_server=BROKER_SERVER + "-Other")
+        row = await connection.fetchrow(
+            f"SELECT broker_server FROM {AUDIT_VIEW} WHERE executor_id=$1::uuid",  # noqa: S608 - constant view name
+            str(shadow_executor),
+        )
+    assert row is not None, "a wrong-server identity must not be hidden from the audit projection"
+    assert row["broker_server"] == BROKER_SERVER + "-Other"
+
+
+# --- database-side immutability: retirement is the only supported mutation ---
+#
+# The CHECK constraints reject non-canonical values. They do not stop a
+# privileged writer swapping one canonical identifier for a different canonical
+# identifier, so these cases update to values that would pass every CHECK.
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("key_id", "rotated-next"),
+        ("broker_server", BROKER_SERVER + "-Other"),
+        ("producer_version", "tampered-producer"),
+    ],
+)
+async def test_server_refuses_to_rewrite_a_written_identity(
+    pool: Any, shadow_executor: UUID, column: str, value: str
+) -> None:
+    asyncpg = import_module("asyncpg")
+    async with pool.acquire() as connection:
+        await _insert_raw_identity(connection, shadow_executor)
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await connection.execute(
+                f"UPDATE {IDENTITY_TABLE} SET {column}=$1 WHERE executor_id=$2::uuid",  # noqa: S608 - fixed identifiers
+                value,
+                str(shadow_executor),
+            )
+
+
+async def test_rewriting_a_pinned_constant_to_its_own_value_is_a_no_op(pool: Any, shadow_executor: UUID) -> None:
+    """scheme / contract_version / algorithm / binding_source hold exactly one legal value.
+
+    A CHECK already makes any other value impossible, so "changing" one of them to
+    itself is a no-op and the guard correctly has nothing to reject. Asserting a
+    raise here would be asserting the wrong mechanism.
+    """
+
+    async with pool.acquire() as connection:
+        original = await _insert_raw_identity(connection, shadow_executor)
+        await connection.execute(
+            f"""UPDATE {IDENTITY_TABLE}
+                   SET scheme=$1, contract_version=$2, algorithm=$3, binding_source=$4
+                 WHERE executor_id=$5::uuid""",  # noqa: S608 - constant table name
+            account_binding.SCHEME,
+            account_binding.VERSION,
+            account_binding.ALGORITHM,
+            account_binding.DATABASE_SOURCE,
+            str(shadow_executor),
+        )
+        row = await connection.fetchrow(
+            f"SELECT identifier, retired_at FROM {IDENTITY_TABLE} WHERE executor_id=$1::uuid",  # noqa: S608
+            str(shadow_executor),
+        )
+    assert row["identifier"] == original
+    assert row["retired_at"] is None
+
+
+async def test_server_refuses_to_swap_in_a_different_canonical_identifier(pool: Any, shadow_executor: UUID) -> None:
+    """The case the CHECK constraints cannot catch: valid shape, different identity."""
+
+    asyncpg = import_module("asyncpg")
+    async with pool.acquire() as connection:
+        original = await _insert_raw_identity(connection, shadow_executor)
+        substitute = "w15ab:v1:audit-key:" + ("B" * 43)
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await connection.execute(
+                f"UPDATE {IDENTITY_TABLE} SET identifier=$1 WHERE executor_id=$2::uuid",  # noqa: S608
+                substitute,
+                str(shadow_executor),
+            )
+        stored = await connection.fetchval(
+            f"SELECT identifier FROM {IDENTITY_TABLE} WHERE executor_id=$1::uuid",  # noqa: S608
+            str(shadow_executor),
+        )
+    assert stored == original
+
+
+async def test_server_refuses_to_move_an_identity_to_another_executor(pool: Any, shadow_executor: UUID) -> None:
+    asyncpg = import_module("asyncpg")
+    other = await _make_executor(pool, account_id="99887766")
+    try:
+        async with pool.acquire() as connection:
+            await _insert_raw_identity(connection, shadow_executor)
+            with pytest.raises(asyncpg.exceptions.CheckViolationError):
+                await connection.execute(
+                    f"UPDATE {IDENTITY_TABLE} SET executor_id=$1::uuid WHERE executor_id=$2::uuid",  # noqa: S608
+                    str(other),
+                    str(shadow_executor),
+                )
+    finally:
+        await _drop_executor(pool, other)
+
+
+async def test_server_refuses_to_backdate_generation(pool: Any, shadow_executor: UUID) -> None:
+    asyncpg = import_module("asyncpg")
+    async with pool.acquire() as connection:
+        await _insert_raw_identity(connection, shadow_executor)
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await connection.execute(
+                f"UPDATE {IDENTITY_TABLE} SET generated_at = generated_at - interval '1 day'"  # noqa: S608
+                " WHERE executor_id=$1::uuid",
+                str(shadow_executor),
+            )
+
+
+async def test_retirement_is_the_one_permitted_mutation_and_is_final(pool: Any, shadow_executor: UUID) -> None:
+    asyncpg = import_module("asyncpg")
+    async with pool.acquire() as connection:
+        await _insert_raw_identity(connection, shadow_executor)
+
+        # NULL -> timestamp is the supported lifecycle mutation.
+        await connection.execute(
+            f"UPDATE {IDENTITY_TABLE} SET retired_at = clock_timestamp() WHERE executor_id=$1::uuid",  # noqa: S608
+            str(shadow_executor),
+        )
+        retired = await connection.fetchval(
+            f"SELECT retired_at FROM {IDENTITY_TABLE} WHERE executor_id=$1::uuid",  # noqa: S608
+            str(shadow_executor),
+        )
+        assert retired is not None
+
+        # timestamp -> NULL would resurrect a retired key version.
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await connection.execute(
+                f"UPDATE {IDENTITY_TABLE} SET retired_at = NULL WHERE executor_id=$1::uuid",  # noqa: S608
+                str(shadow_executor),
+            )
+        # timestamp -> another timestamp would rewrite when it was retired.
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await connection.execute(
+                f"UPDATE {IDENTITY_TABLE} SET retired_at = clock_timestamp() WHERE executor_id=$1::uuid",  # noqa: S608
+                str(shadow_executor),
+            )
+        still = await connection.fetchval(
+            f"SELECT retired_at FROM {IDENTITY_TABLE} WHERE executor_id=$1::uuid",  # noqa: S608
+            str(shadow_executor),
+        )
+    assert still == retired
+
+
+async def test_deleting_an_executor_cannot_erase_its_identity_provenance(pool: Any, shadow_executor: UUID) -> None:
+    """ON DELETE RESTRICT: retire the identity, never cascade it away."""
+
+    asyncpg = import_module("asyncpg")
+    async with pool.acquire() as connection:
+        await _insert_raw_identity(connection, shadow_executor)
+        with pytest.raises(asyncpg.exceptions.ForeignKeyViolationError):
+            await connection.execute("DELETE FROM executor_instances WHERE executor_id=$1::uuid", str(shadow_executor))
+        surviving = await connection.fetchval(
+            f"SELECT count(*) FROM {IDENTITY_TABLE} WHERE executor_id=$1::uuid",  # noqa: S608
+            str(shadow_executor),
+        )
+    assert surviving == 1
+
+
+async def test_the_producer_retirement_path_is_accepted_by_the_guard(pool: Any, shadow_executor: UUID) -> None:
+    """The guard must not break the one mutation the repository legitimately performs."""
+
+    async with pool.acquire() as connection, connection.transaction():
+        produced = await produce_account_binding_identity(connection, shadow_executor)
+        retired = await retire_account_binding_identity(connection, shadow_executor, produced["key_id"])
+    assert retired["identifier"] == produced["identifier"]
+    assert retired["retired_at"] is not None
+
+
 # --- P4-C17 / P4-C18: auditor privilege containment -------------------------
 #
 # The role is a fixture contract here, not an optional extra: CI provisions
@@ -584,6 +796,23 @@ async def test_migration_survives_downgrade_and_re_upgrade(pool: Any) -> None:
             "account_binding_identity_shape",
             "account_binding_identity_key_id_agrees",
         } <= names
+        # The immutability guard and the restrictive foreign key are part of the
+        # object, not decoration: they must come back with it.
+        assert await connection.fetchval(
+            """SELECT 1 FROM pg_trigger
+                WHERE tgrelid = $1::regclass
+                  AND tgname = 'trg_account_binding_identity_immutable_v1'
+                  AND NOT tgisinternal""",
+            IDENTITY_TABLE,
+        )
+        assert (
+            await connection.fetchval(
+                """SELECT confdeltype FROM pg_constraint
+                WHERE conrelid = $1::regclass AND contype = 'f'""",
+                IDENTITY_TABLE,
+            )
+            == "r"
+        )
         # The migration re-applied its own grants on re-upgrade. Assert those,
         # never a privilege some test granted.
         await _require_auditor(connection)

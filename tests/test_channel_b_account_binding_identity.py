@@ -174,6 +174,67 @@ def test_retirement_is_a_lifecycle_column_not_an_overwrite() -> None:
     assert "ON CONFLICT" not in producer_sql[producer_sql.index("async def produce_account_binding_identity") :]
 
 
+# --- database-side immutability, not writer goodwill -------------------------
+#
+# The CHECK constraints reject non-canonical *values*. They do not stop a
+# privileged writer replacing one canonical identifier with a different canonical
+# identifier, so "the repository never overwrites" is a weaker claim than
+# "the database refuses the overwrite". Only the second survives a compromised or
+# buggy writer, which is the threat this authority exists to bound.
+
+
+@pytest.mark.parametrize(
+    "column",
+    [
+        "executor_id",
+        "key_id",
+        "scheme",
+        "contract_version",
+        "algorithm",
+        "identifier",
+        "binding_source",
+        "broker_server",
+        "generated_at",
+        "producer_version",
+    ],
+)
+def test_every_column_except_retirement_is_frozen_by_a_trigger(column: str) -> None:
+    sql = _migration()[_migration().index("def upgrade():") :]
+    guard = sql[sql.index("CREATE FUNCTION reject_account_binding_identity_mutation_v1") : sql.index("RETURN NEW")]
+    assert f"NEW.{column}" in guard
+    assert f"OLD.{column}" in guard
+
+
+def test_the_immutability_guard_is_bound_as_a_before_update_trigger() -> None:
+    sql = _migration()[_migration().index("def upgrade():") :]
+    assert "CREATE TRIGGER trg_account_binding_identity_immutable_v1" in sql
+    assert "BEFORE UPDATE ON executor_account_binding_identifiers" in sql
+    assert "EXECUTE FUNCTION reject_account_binding_identity_mutation_v1()" in sql
+
+
+def test_retirement_is_final_and_retired_at_is_the_only_writable_column() -> None:
+    sql = _migration()[_migration().index("def upgrade():") :]
+    guard = sql[sql.index("CREATE FUNCTION reject_account_binding_identity_mutation_v1") : sql.index("$immutable$;")]
+    # retired_at is absent from the frozen-column list precisely because it is the
+    # one supported mutation.
+    frozen = guard[: guard.index("END IF;")]
+    assert "NEW.retired_at" not in frozen
+    assert "OLD.retired_at IS NOT NULL AND NEW.retired_at IS DISTINCT FROM OLD.retired_at" in guard
+
+
+def test_deleting_an_executor_cannot_erase_its_identity_provenance() -> None:
+    # Scope to the SQL: the docstring discusses the CASCADE on the D0 table by name.
+    sql = _migration()[_migration().index("def upgrade():") :]
+    assert "REFERENCES executor_instances(executor_id) ON DELETE RESTRICT" in sql
+    assert "ON DELETE CASCADE" not in sql
+
+
+def test_downgrade_removes_the_guard_it_installed() -> None:
+    downgrade = _migration()[_migration().index("def downgrade():") :]
+    assert "DROP TRIGGER trg_account_binding_identity_immutable_v1" in downgrade
+    assert "DROP FUNCTION reject_account_binding_identity_mutation_v1()" in downgrade
+
+
 # --- P4-C13 / P4-C14 / P4-C15 / P4-C16: audit projection --------------------
 
 
@@ -189,7 +250,20 @@ def test_audit_view_excludes_revoked_and_retired() -> None:
     view = view[view.index("CREATE VIEW wolf15_audit.account_binding_identity_v1") :]
     assert "e.revoked_at IS NULL" in view
     assert "b.retired_at IS NULL" in view
-    assert "e.broker_server = b.broker_server" in view
+
+
+def test_audit_view_does_not_hide_a_broker_server_disagreement() -> None:
+    """P4-C24 at the projection boundary.
+
+    Filtering ``e.broker_server = b.broker_server`` would hide a wrong-server
+    identity from the auditor entirely and leave the reconciler unable to tell it
+    apart from an absent one. The disagreement is surfaced and blocked instead.
+    """
+
+    view = _migration()
+    view = view[view.index("CREATE VIEW wolf15_audit.account_binding_identity_v1") :]
+    assert "e.broker_server = b.broker_server" not in view
+    assert "b.broker_server" in view
 
 
 def test_audit_view_is_security_barrier_and_hides_raw_account_fields() -> None:
@@ -365,19 +439,68 @@ def test_duplicate_active_authority_for_one_key_blocks() -> None:
     assert report["account_binding_evidence"]["eligible_account_identity_count"] == 2
 
 
-def test_exact_case_broker_server_mismatch_blocks() -> None:
-    """P4-C24: the server is compared exact-case, not case-folded."""
+@pytest.mark.parametrize("server", ["broker-demo", "Broker-Demo2", "Broker-Demo "])
+def test_exact_case_broker_server_mismatch_blocks(server: str) -> None:
+    """P4-C24: a server disagreement blocks; it never reads as a missing identity.
+
+    The regression this pins: filtering the server away during selection made
+    "no identity exists" and "an identity exists for another server" produce the
+    same INCOMPLETE state, which downgrades a hard binding failure to a soft gap.
+    """
 
     rows = [
         _identity_row(
             identifier=DIRECT_IDENTIFIER,
             source=account_binding.DATABASE_SOURCE,
-            broker_server="broker-demo",
+            broker_server=server,
         )
     ]
     report = _report(account_identity_rows=rows)
-    assert report["ACCOUNT_BINDING_STATE"] == "INCOMPLETE_ACCOUNT_IDENTIFIER"
-    assert report["B-B16"] != "EXECUTED_PASS"
+    assert report["ACCOUNT_BINDING_STATE"] == "BROKER_SERVER_MISMATCH"
+    assert report["BROKER_RECONCILIATION"] == "ACCOUNT_IDENTITY_BROKER_SERVER_MISMATCH"
+    assert report["B-B16"] == "EXECUTED_BLOCKED"
+    evidence = report["account_binding_evidence"]
+    assert evidence["account_identity_broker_server_matches"] is False
+    # The identity was found and rejected, not missed.
+    assert evidence["active_account_identity_count"] == 1
+    assert evidence["eligible_account_identity_count"] == 1
+    # The identifier is never compared once the server disagrees.
+    assert evidence["direct_account_identifier_match"] == "NOT_MEASURED_NOT_EXPOSED_BY_AUDIT_VIEW"
+
+
+def test_server_mismatch_is_distinguishable_from_a_missing_identity() -> None:
+    """The two facts must not collapse onto one state."""
+
+    absent = _report(account_identity_rows=[])
+    wrong_server = _report(
+        account_identity_rows=[
+            _identity_row(
+                identifier=DIRECT_IDENTIFIER,
+                source=account_binding.DATABASE_SOURCE,
+                broker_server="Broker-Other",
+            )
+        ]
+    )
+    assert absent["ACCOUNT_BINDING_STATE"] == "INCOMPLETE_ACCOUNT_IDENTIFIER"
+    assert absent["B-B16"] == "EXECUTED_INCOMPLETE"
+    assert wrong_server["ACCOUNT_BINDING_STATE"] == "BROKER_SERVER_MISMATCH"
+    assert wrong_server["B-B16"] == "EXECUTED_BLOCKED"
+
+
+def test_key_version_is_resolved_before_the_server_is_compared() -> None:
+    """A wrong-server row under another key version is a key mismatch, not a server one."""
+
+    rows = [
+        _identity_row(
+            identifier=OTHER_IDENTIFIER,
+            source=account_binding.DATABASE_SOURCE,
+            key_id=OTHER_KEY_ID,
+            broker_server="Broker-Other",
+        )
+    ]
+    report = _report(account_identity_rows=rows)
+    assert report["ACCOUNT_BINDING_STATE"] == "KEY_VERSION_MISMATCH"
+    assert report["B-B16"] == "EXECUTED_BLOCKED"
 
 
 def test_different_account_identity_mismatches_rather_than_matching() -> None:
