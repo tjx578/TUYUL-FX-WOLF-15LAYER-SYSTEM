@@ -62,9 +62,9 @@ struct DemoExecutionState
 bool     g_demo_registered = false;
 bool     g_demo_blocked = false;
 bool     g_trade_event_pending = false;
-datetime g_demo_last_heartbeat = 0;
-datetime g_demo_last_poll = 0;
-datetime g_demo_last_recovery = 0;
+ulong    g_demo_last_heartbeat_ms = 0;
+ulong    g_demo_last_poll_ms = 0;
+ulong    g_demo_last_recovery_ms = 0;
 
 //+------------------------------------------------------------------+
 void AppendLedger(const string command_id, const string state, const string detail)
@@ -775,7 +775,7 @@ bool ReconcileDemoBrokerState(DemoExecutionState &state,
       reason = "DEMO_RECONCILIATION_LINEAGE_INVALID";
       return false;
    }
-   if(!HistorySelect(issued - 300, TimeCurrent() + 60))
+   if(!HistorySelect(issued - 300, TimeTradeServer() + 60))
    {
       reason = "DEMO_RECONCILIATION_HISTORY_UNAVAILABLE";
       return false;
@@ -1198,6 +1198,8 @@ int OnInit()
    if(StringFind(InpBaseUrl, "https://") != 0 || StringLen(InpExecutorId) < 30 ||
       StringLen(InpExecutorToken) < 32 || StringLen(InpLoginHash) != 71)
       return INIT_PARAMETERS_INCORRECT;
+   if(!ValidateSchedulerIntervals())
+      return INIT_PARAMETERS_INCORRECT;
    uchar verification_key[];
    if(!IsSafeWireIdentifier(InpCommandVerificationKeyId) ||
       !TaggedHexToBytes(InpCommandVerificationKey, "hex:", 32, verification_key) ||
@@ -1226,34 +1228,34 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnTimer()
 {
-   datetime now = TimeCurrent();
+   const ulong now_ms = GetTickCount64();
    if(!g_demo_registered)
    {
       g_demo_registered = RegisterDemoExecutor();
       return;
    }
-   if(now - g_demo_last_heartbeat >= InpHeartbeatSeconds)
+   if(now_ms - g_demo_last_heartbeat_ms >= (ulong)InpHeartbeatSeconds * 1000ULL)
    {
       SendDemoHeartbeat();
-      g_demo_last_heartbeat = now;
+      g_demo_last_heartbeat_ms = now_ms;
    }
    // Keep bounded recovery/reporting alive while new issuance is blocked.
    if(DemoStateExists())
    {
-      if(now - g_demo_last_recovery >= InpRecoveryRetrySeconds || g_trade_event_pending)
+      if(now_ms - g_demo_last_recovery_ms >= (ulong)InpRecoveryRetrySeconds * 1000ULL || g_trade_event_pending)
       {
          RecoverDemoState();
-         g_demo_last_recovery = now;
+         g_demo_last_recovery_ms = now_ms;
          g_trade_event_pending = false;
       }
       return;
    }
    if(g_demo_blocked)
       return;
-   if(now - g_demo_last_poll >= InpPollIntervalSeconds)
+   if(now_ms - g_demo_last_poll_ms >= (ulong)InpPollIntervalSeconds * 1000ULL)
    {
       PollOneDemoCommand();
-      g_demo_last_poll = now;
+      g_demo_last_poll_ms = now_ms;
    }
 }
 
