@@ -95,12 +95,16 @@ def test_preflight_and_main_share_probe_state_and_event_loop(monkeypatch):
 
 @pytest.mark.parametrize("failure", [False, True])
 def test_process_owner_fatal_exit_and_graceful_return(monkeypatch, failure):
-    observed = SimpleNamespace(probe=None, state=None, hold=0)
+    observed = SimpleNamespace(probe=None, state=None, hold=0, closed=0)
+
+    def close():
+        assert observed.state._deadline.cancelled
+        observed.closed += 1
 
     def start(state):
         observed.state = state
         observed.probe = HealthProbe(readiness_check=state.ready)
-        return observed.probe
+        return SimpleNamespace(probe=observed.probe, close=close)
 
     async def main(probe, state):
         assert probe is observed.probe and state is observed.state
@@ -109,6 +113,7 @@ def test_process_owner_fatal_exit_and_graceful_return(monkeypatch, failure):
         state.begin_shutdown()
 
     def hold(**_):
+        assert observed.closed == 0
         observed.hold += 1
         assert observed.state._deadline.cancelled
         assert not observed.state.ready() and not observed.probe._alive
@@ -123,3 +128,24 @@ def test_process_owner_fatal_exit_and_graceful_return(monkeypatch, failure):
     else:
         assert runner.run() is None and observed.hold == 0
     assert observed.state._deadline.cancelled
+    assert observed.closed == 1
+
+
+def test_process_owner_closes_probe_when_diagnostics_raise(monkeypatch):
+    observed = []
+    probe = HealthProbe()
+    owner = SimpleNamespace(probe=probe, close=lambda: observed.append("closed"))
+    monkeypatch.setattr(runner, "_start_health_probe_in_thread", lambda state: owner)
+
+    async def fail(*args):
+        raise RuntimeError("fixture bootstrap failure")
+
+    def interrupted_hold(**kwargs):
+        assert observed == []
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner, "_run_engine", fail)
+    monkeypatch.setattr("services.shared.diagnostics.hold_alive_sync", interrupted_hold)
+    with pytest.raises(KeyboardInterrupt):
+        runner.run()
+    assert observed == ["closed"]

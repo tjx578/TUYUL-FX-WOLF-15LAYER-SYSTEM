@@ -132,7 +132,16 @@ def run() -> None:
     # Start health probe FIRST so Railway sees liveness immediately
     # while the DB preflight and heavy imports proceed.
     runtime = EngineRuntimeState()
-    probe = _start_health_probe_in_thread(runtime)
+    probe_runtime = _start_health_probe_in_thread(runtime)
+    try:
+        _run_with_probe(probe_runtime.probe, runtime)
+    finally:
+        # Keep the listener available throughout fatal diagnostics, then release
+        # its thread and event loop on every synchronous process exit path.
+        probe_runtime.close()
+
+
+def _run_with_probe(probe, runtime: EngineRuntimeState) -> None:
 
     async def owned_runtime():
         try:

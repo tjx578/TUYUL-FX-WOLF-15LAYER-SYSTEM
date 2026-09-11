@@ -48,6 +48,7 @@ class TestConcurrentMultiPairAnalysis:
         processed = {r["symbol"] for r in results}
         assert processed == set(symbols)
 
+    @pytest.mark.benchmark
     def test_concurrent_throughput(self):
         """8 pairs should complete within reasonable time."""
         import time  # noqa: PLC0415
@@ -61,3 +62,11 @@ class TestConcurrentMultiPairAnalysis:
 
         assert len(results) == 8
         assert elapsed < 5.0, f"8-pair concurrent analysis took {elapsed:.1f}s"
+
+    def test_eight_pairs_processed_under_concurrency(self):
+        """All eight synthetic pairs must complete without timing authority."""
+        symbols = [f"PAIR{i}" for i in range(8)]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(self._analyze_pair, symbols))
+
+        assert len(results) == 8

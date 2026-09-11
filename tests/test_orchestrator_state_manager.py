@@ -425,6 +425,7 @@ def test_requested_stop_publishes_shutdown_then_releases_owner():
 
 def test_process_signal_stops_owner_and_restores_handlers(monkeypatch):
     import signal
+    from types import SimpleNamespace
 
     from services.orchestrator import state_manager as mod
 
@@ -447,7 +448,8 @@ def test_process_signal_stops_owner_and_restores_handlers(monkeypatch):
 
     monkeypatch.setattr(mod.signal, "signal", register)
     monkeypatch.setattr(mod, "StateManager", Manager)
-    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: None)
+    owner = SimpleNamespace(probe=SimpleNamespace(), close=lambda: calls.append("probe_closed"))
+    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: owner)
     mod.run()
-    assert calls == ["stop_requested"]
+    assert calls == ["stop_requested", "probe_closed"]
     assert callbacks == {signal.SIGTERM: previous, signal.SIGINT: previous}

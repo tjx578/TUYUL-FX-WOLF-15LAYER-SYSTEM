@@ -1,0 +1,36 @@
+{
+  "scope": "BUILT_ENGINE_PROCESS_WITH_INJECTED_DEPENDENCIES_TEST_ONLY",
+  "accepted": false,
+  "execution_authority": false,
+  "broker_acceptance": "NOT_EXECUTED",
+  "cases": [
+    {
+      "case": "bootstrap_failure",
+      "passed": true,
+      "exit_code": 1,
+      "listener_ports": [
+        18080
+      ],
+      "elapsed_seconds": 2.069,
+      "readiness_scope": "FIXTURE_ANALYSIS_CYCLE_AND_REQUIRED_TASK_LIFECYCLE_ONLY",
+      "pool_closed_while_writer_alive": false
+    }
+  ],
+  "missing_source_paths": [],
+  "source_hashes": {
+    "main.py": "51895b216a224e565e3b69cc1eb634b9d0d2e77aecb6e9f14682f73415428f12",
+    "services/engine/runner.py": "34bc1a850e98a0f84d93ab389a1286a879c63ed141a3ef809e6ccdcb500238a2",
+    "services/engine/runtime_state.py": "e10eb6ba1b2a4ca2f2a6d9601daacdd5a26562ca635afda2f53c4a64930843b1",
+    "startup/task_supervisor.py": "687dea1b5b2991d926913d0a52ebb4de107b971371b7e915819b70d7380f4dff",
+    "startup/graceful_shutdown.py": "e0fe60d7d150c5f17d0bc899631e3591f9232c9678a470ffc70dc26078c8cbe6",
+    "startup/signal_handlers.py": "36e7a9474774e74482c771295a98f101f0f203bb9905bb63d29f27ae37335aa1",
+    "core/health_probe.py": "4f925f9528bc1869690fcb9ab2c3bd80a5c26b4efdc053a1c48366f18372fdeb",
+    "services/shared/health_probe_launcher.py": "d5f661761a6a5e625313468c42b39c1a522dc350dafe02b3589cef1956e173a2",
+    "services/shared/diagnostics.py": "eea7047738712ac93e52bf8186b2fed71903292b4c9970a5117d5326a5a31ae8",
+    "deploy/railway/start_engine.sh": "ed0d29c2eea0494c54c9cfc46aaaaad3b9ca50ca3ea031662cc4a582c421ab55",
+    "deploy/railway/start_engine_consolidated.sh": "e8f15d3ce3f3f45a7dbb6d71597455ef43c6523c70922c5ad1cd0da3aa951227",
+    "scripts/ci/built_engine_acceptance.py": "25fce7c903a135a0f09a6c7b5f585d6f41cca1cca7e7d46cbfc46e6552cdeb4b",
+    "scripts/ci/built_api_acceptance.py": "bf3e24a0a7f229a1b944e21df9c03b621a267268fdef2febcfbd21dda68faea2"
+  },
+  "failure_class": "TimeoutExpired"
+}
