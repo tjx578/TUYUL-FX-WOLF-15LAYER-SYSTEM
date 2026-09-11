@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
+import sys
 from collections.abc import AsyncIterator
 from importlib import import_module
 from pathlib import Path
@@ -389,10 +391,20 @@ async def test_auditor_may_select_the_view_and_not_the_base_table(pool: Any, sha
 
 
 async def test_reading_the_projection_performs_zero_production_mutation(pool: Any, shadow_executor: UUID) -> None:
+    """Mirror how Channel B actually reads: a separate, never-writing session.
+
+    pg_stat_xact_user_tables reports the calling backend, so a pooled connection
+    that just performed the setup INSERTs reports those tuples and the assertion
+    would be measuring the wrong thing. The auditor connects as its own session,
+    so the test must too.
+    """
+
     async with pool.acquire() as connection, connection.transaction():
         await produce_account_binding_identity(connection, shadow_executor)
 
-    async with pool.acquire() as connection:
+    asyncpg = import_module("asyncpg")
+    connection = await asyncpg.connect(dsn=os.environ["DATABASE_URL"])
+    try:
         transaction = connection.transaction(readonly=True, isolation="repeatable_read")
         await transaction.start()
         try:
@@ -409,18 +421,32 @@ async def test_reading_the_projection_performs_zero_production_mutation(pool: An
             assert changed == 0
         finally:
             await transaction.rollback()
+    finally:
+        await connection.close()
 
 
 # --- migration lifecycle: upgrade -> downgrade -> upgrade -------------------
 
 
-def _alembic_config() -> Any:
-    from alembic.config import Config
+def _run_alembic(*arguments: str) -> None:
+    """Drive alembic in a subprocess, never in-process.
 
-    config = Config(str(ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(ROOT / "storage" / "migrations"))
-    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
-    return config
+    storage/migrations/env.py calls logging.config.fileConfig(alembic.ini), which
+    defaults to disable_existing_loggers=True. Importing and calling alembic
+    inside pytest therefore silences every logger already configured, and makes
+    unrelated emitter tests later in the session assert against empty output.
+    A subprocess keeps that blast radius out of this process entirely.
+    """
+
+    completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        [sys.executable, "-m", "alembic", "-c", str(ROOT / "alembic.ini"), *arguments],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert completed.returncode == 0, "alembic " + " ".join(arguments) + " failed: " + completed.stderr
 
 
 async def _objects_present(pool: Any) -> tuple[bool, bool]:
@@ -443,16 +469,12 @@ async def test_migration_survives_downgrade_and_re_upgrade(pool: Any) -> None:
     except ValueError as exc:
         pytest.skip(f"destructive migration round-trip not authorised here: {exc}")
 
-    from alembic import command
-
-    config = _alembic_config()
-
     assert await _objects_present(pool) == (True, True)
 
-    await asyncio.to_thread(command.downgrade, config, "20260910_02")
+    await asyncio.to_thread(_run_alembic, "downgrade", "20260910_02")
     assert await _objects_present(pool) == (False, False)
 
-    await asyncio.to_thread(command.upgrade, config, "20260911_01")
+    await asyncio.to_thread(_run_alembic, "upgrade", "20260911_01")
     assert await _objects_present(pool) == (True, True)
 
     # The re-created object must still enforce the canonical contract and must
