@@ -741,6 +741,10 @@ def test_cli_uses_nonzero_exit_for_blocked_report(monkeypatch: object, capsys: o
     assert "postgresql://must-not-appear" not in output
 
 
+@pytest.mark.slow
+# PowerShell cold start plus AST parsing of the launcher runs close to the suite-wide
+# --timeout=30 in pytest.ini, so this single test gets its own allowance.
+@pytest.mark.timeout(120)
 def test_powershell_process_helper_propagates_nonzero_and_keeps_report(tmp_path: Path) -> None:
     powershell = shutil.which("pwsh") or shutil.which("powershell")
     if powershell is None:
