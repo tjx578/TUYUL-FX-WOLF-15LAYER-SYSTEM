@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from analysis import signal_execution_gates
 from analysis.signal_execution_gates import evaluate_signal_execution_gates
 from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter, SignalJsonGateConfig
@@ -131,6 +132,32 @@ def test_execution_gate_allows_complete_structure_payload():
     assert decision.execution_status == "EXECUTION_GATE_ALLOWED"
     assert decision.live_rr is not None
     assert decision.live_rr["rr"] >= 2.5
+
+
+def test_execution_gate_defers_when_live_exit_price_is_unavailable(monkeypatch):
+    """Lock the fail-closed invariant in _live_rr_gate.
+
+    _live_entry_price and _live_exit_price currently read the same bid/ask sources
+    and share the same _live_price fallback, so one is None exactly when the other
+    is, and this asymmetry is not reachable through normal payloads. It is forced
+    here on purpose: if a future refactor lets the two helpers diverge, the gate
+    must defer rather than compare None against a float.
+
+    Without the guard this call raises TypeError instead of returning a decision.
+    """
+    payload = _final_payload()
+    assert evaluate_signal_execution_gates(payload).decision == "ALLOW"
+
+    monkeypatch.setattr(signal_execution_gates, "_live_exit_price", lambda payload, direction: None)
+
+    assert signal_execution_gates._live_entry_price(payload, "BUY") is not None
+    decision = evaluate_signal_execution_gates(payload)
+
+    assert decision.decision == "DEFER"
+    assert decision.execution_status == "EXECUTION_GATE_DEFERRED"
+    assert "LiveRRRecalculationGate" in decision.blocked_by
+    assert "LIVE_PRICE_MISSING" in decision.reasons
+    assert decision.live_rr is None
 
 
 def test_gate_adapter_disabled_is_strict_noop(caplog):
