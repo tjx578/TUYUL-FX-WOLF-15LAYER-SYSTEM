@@ -260,12 +260,14 @@ fields. `schemas/validator.py` enforces this at runtime via `jsonschema`.
 
 ### Finding 7.1 — CORS Configuration (✅ Correct)
 
-`api/app_factory.py` reads `CORS_ORIGINS` env var plus auto-derives Vercel preview origins.
-Railway deployments must set `CORS_ORIGINS` to include the dashboard's Railway domain.
-The configuration supports wildcard `*.railway.app` via `CORS_ORIGIN_REGEX`.
+**Configuration correction, 2026-09-09:** `api/app_factory.py` reads explicit
+`CORS_ORIGINS`; its default is `https://wolf15-dashboard-frontend-production.up.railway.app`.
+Provider preview origins are not automatically added. `CORS_ORIGIN_REGEX` is optional
+and unset by default; no provider-wide wildcard is enabled by default.
 
-**Note:** If dashboard shows CORS errors in production, check that `CORS_ORIGINS` env var
-on the API Railway service includes the exact dashboard domain (e.g. `https://wolf15-dashboard.up.railway.app`).
+For dashboard CORS troubleshooting, check that the API Railway service permits the
+exact [selected frontend origin](https://wolf15-dashboard-frontend-production.up.railway.app/). This source configuration
+does not prove the current production environment values.
 
 ### Finding 7.2 — Router Registry (✅ Correct)
 

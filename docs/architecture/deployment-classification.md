@@ -363,7 +363,7 @@ v1.0 — Initial deployment classification (flat inventory format)
 v2.0 — Rewritten with 3-tier classification model
        - Railway: canonical cloud (10 active + 3 deprecated tomls)
        - Docker Compose: canonical local/integration (14 services)
-       - Vercel: supported (dashboard frontend, SIN1)
+       - Former frontend hosting target: retired; Railway frontend in section 3.3 supersedes it
        - Hostinger: removed (deploy/hostinger/ deleted from repo)
        - Added: service entrypoints incl. trade, dashboard_bff, ingest_worker
        - Added: Railway consolidation state (API+Orchestrator, Trade=Alloc+Exec)
