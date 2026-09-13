@@ -229,7 +229,9 @@ function buildSnapshot(probes: ProbeState[], receivedAt: string | null, refreshi
     systemState: failedReads > 0 && successfulReads > 0
       ? "PARTIAL"
       : stringField(status.status, coreStatus.status),
-    activeLifecycles: numberField(pairPayload.count),
+    // The pair snapshot counts cached verdicts, not active lifecycles: it retains
+    // HOLD/NO_TRADE and stale entries for the cache TTL and omits pairs with no snapshot.
+    activeLifecycles: null,
     executionState: null,
     incidents: [],
   };

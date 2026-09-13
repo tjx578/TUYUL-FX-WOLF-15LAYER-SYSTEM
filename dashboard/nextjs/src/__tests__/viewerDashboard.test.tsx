@@ -134,7 +134,7 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
 
     const snapshot = dashboard().snapshot;
     expect(snapshot?.overview?.data?.systemState).toBe("ok");
-    expect(snapshot?.overview?.data?.activeLifecycles).toBe(2);
+    expect(snapshot?.overview?.data?.activeLifecycles).toBeNull();
     expect(snapshot?.pairs?.state).toBe("ready");
     expect(snapshot?.pairs?.data?.items).toEqual([
       { symbol: "EURUSD", lifecycleId: "EURUSD", lifecycleState: "NO_TRADE", admission: "ALLOW", quality: "LIVE" },

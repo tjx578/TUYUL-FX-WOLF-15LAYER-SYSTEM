@@ -39,6 +39,24 @@ describe("server-side viewer projection", () => {
     ]});
     expect(JSON.stringify(projected)).not.toContain("CANARY");
   });
+  it("accepts every verdict the core contract declares",()=>{
+    const projected=projectPairStates({mode:"LIVE",verdicts:Object.fromEntries(
+      ["EXECUTE","EXECUTE_BUY","EXECUTE_SELL","NO_TRADE","HOLD","ABORT"].map((verdict,i)=>["SYM"+i,{verdict}]),
+    )});
+    expect((projected.items as Array<Record<string,unknown>>).map(item=>item.lifecycle_state))
+      .toEqual(["EXECUTE","EXECUTE_BUY","EXECUTE_SELL","NO_TRADE","HOLD","ABORT"]);
+  });
+  it("accepts every governance action and never infers an absent one",()=>{
+    const projected=projectPairStates({mode:"LIVE",verdicts:{
+      AAAUSD:{verdict:"HOLD",governance:{action:"ALLOW"}},
+      BBBUSD:{verdict:"HOLD",governance:{action:"ALLOW_REDUCED"}},
+      CCCUSD:{verdict:"HOLD",governance:{action:"BLOCK"}},
+      DDDUSD:{verdict:"HOLD",governance:{}},
+      EEEUSD:{verdict:"HOLD"},
+    }});
+    expect((projected.items as Array<Record<string,unknown>>).map(item=>item.admission))
+      .toEqual(["ALLOW","ALLOW_REDUCED","BLOCK",null,null]);
+  });
   it("reports unmeasured verdict fields as null instead of inferring them",()=>{
     const projected=projectPairStates({mode:"DEGRADED",verdicts:{XAUUSD:{verdict:"CANARY",governance:"CANARY",_meta:"CANARY"}}});
     expect(projected.items).toEqual([{symbol:"XAUUSD",lifecycle_state:null,admission:null,age_seconds:null,quality:null}]);

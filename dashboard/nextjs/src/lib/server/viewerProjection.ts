@@ -6,8 +6,10 @@ const MAX_SYMBOLS = 256;
 const SYMBOL_PATTERN = /^[A-Z][A-Z0-9._-]{2,19}$/;
 const INGEST_STATES = ["HEALTHY", "DEGRADED", "NO_PRODUCER", "UNKNOWN"];
 const VERDICT_MODES = ["LIVE", "DEGRADED", "NO_SNAPSHOT_YET"];
-const VERDICT_STATES = ["EXECUTE_BUY", "EXECUTE_SELL", "EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL", "HOLD", "NO_TRADE", "WAIT"];
-const ADMISSION_STATES = ["ALLOW", "HOLD", "BLOCK", "UNKNOWN"];
+/** Exactly the core verdict contract for /api/v1/verdict/all (tests/contract/test_api_contracts.py). */
+const VERDICT_STATES = ["EXECUTE", "EXECUTE_BUY", "EXECUTE_SELL", "NO_TRADE", "HOLD", "ABORT"];
+/** Exactly GovernanceAction (state/governance_gate.py). Absent or unrecognized stays NOT_MEASURED — never inferred. */
+const ADMISSION_STATES = ["ALLOW", "ALLOW_REDUCED", "HOLD", "BLOCK"];
 /** Mirrors the core verdict staleness threshold; quality is derived, never copied from upstream. */
 const VERDICT_STALE_THRESHOLD_SECONDS = 300;
 type RecordValue = Record<string, unknown>;
@@ -95,6 +97,8 @@ export function projectPairStates(value: unknown): RecordValue {
     items.push({
       symbol,
       lifecycle_state: choice(item.verdict, VERDICT_STATES),
+      // Only an authoritative upstream action is projected. The backend owns governance
+      // normalization; reproducing it here would fork the mapping on the wrong side.
       admission: choice(optionalRecord(item.governance).action, ADMISSION_STATES),
       age_seconds: age,
       quality: age === null ? null : age <= VERDICT_STALE_THRESHOLD_SECONDS ? "LIVE" : "STALE",
