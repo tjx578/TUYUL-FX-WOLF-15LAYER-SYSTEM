@@ -375,6 +375,74 @@ string BuildPendingOrdersJson()
 }
 
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+// DEMO heartbeat reports only the explicitly approved D0 symbol.
+// Full-universe synchronization remains an OnInit qualification concern;
+// a transiently unavailable non-D0 symbol must not starve snapshot freshness.
+// The approved symbol itself remains fail-closed.
+string BuildDemoApprovedSymbolJson()
+{
+   string canonical_symbol = InpApprovedCanonicalSymbol;
+   string broker_symbol = InpApprovedBrokerSymbol;
+
+   if(SymbolPairIndex(canonical_symbol, broker_symbol) < 0)
+   {
+      PrintFormat("[W15-D0] Approved symbol binding unavailable canonical=%s broker=%s",
+                  canonical_symbol, broker_symbol);
+      return "";
+   }
+   if(!SymbolSelect(broker_symbol, true) || !SymbolIsSynchronized(broker_symbol))
+   {
+      PrintFormat("[W15-D0] Approved symbol capability unavailable symbol=%s",
+                  broker_symbol);
+      return "";
+   }
+   if((ENUM_SYMBOL_TRADE_MODE)SymbolInfoInteger(
+         broker_symbol, SYMBOL_TRADE_MODE) != SYMBOL_TRADE_MODE_FULL)
+   {
+      PrintFormat("[W15-D0] Approved symbol trade mode invalid symbol=%s",
+                  broker_symbol);
+      return "";
+   }
+
+   double point = SymbolInfoDouble(broker_symbol, SYMBOL_POINT);
+   double tick_size = SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tick_value_profit =
+      SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_VALUE_PROFIT);
+   double tick_value_loss =
+      SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_VALUE_LOSS);
+   double volume_min = SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MIN);
+   double volume_max = SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MAX);
+   double volume_step = SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_STEP);
+
+   if(point <= 0.0 ||
+      tick_size <= 0.0 ||
+      tick_value_profit <= 0.0 ||
+      tick_value_loss <= 0.0 ||
+      volume_min <= 0.0 ||
+      volume_max < volume_min ||
+      volume_step <= 0.0)
+   {
+      PrintFormat("[W15-D0] Approved symbol capability invalid symbol=%s",
+                  broker_symbol);
+      return "";
+   }
+
+   return StringFormat(
+      "[{\"canonical_symbol\":\"%s\",\"broker_symbol\":\"%s\","
+      "\"digits\":%d,\"point\":%.10f,\"tick_size\":%.10f,"
+      "\"tick_value_profit\":%.8f,\"tick_value_loss\":%.8f,"
+      "\"volume_min\":%.8f,\"volume_max\":%.8f,\"volume_step\":%.8f,"
+      "\"stops_level_points\":%d,\"freeze_level_points\":%d,"
+      "\"expiration_modes\":[\"SPECIFIED\"]}]",
+      EscapeJson(canonical_symbol), EscapeJson(broker_symbol),
+      (int)SymbolInfoInteger(broker_symbol, SYMBOL_DIGITS),
+      point, tick_size, tick_value_profit, tick_value_loss,
+      volume_min, volume_max, volume_step,
+      (int)SymbolInfoInteger(broker_symbol, SYMBOL_TRADE_STOPS_LEVEL),
+      (int)SymbolInfoInteger(broker_symbol, SYMBOL_TRADE_FREEZE_LEVEL));
+}
 bool RegisterDemoExecutor()
 {
    string body = StringFormat(
@@ -404,7 +472,7 @@ bool SendDemoHeartbeat()
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    bool trade_allowed = (bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED);
    bool auto_enabled = (bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
-   string symbols_json = BuildSymbolsJson();
+   string symbols_json = BuildDemoApprovedSymbolJson();
    string positions_json = BuildPositionsJson();
    string orders_json = BuildPendingOrdersJson();
    if(StringLen(symbols_json) == 0 || StringLen(positions_json) == 0 || StringLen(orders_json) == 0)
