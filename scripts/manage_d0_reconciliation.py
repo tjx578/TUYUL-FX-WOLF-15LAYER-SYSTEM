@@ -59,8 +59,15 @@ def main() -> int:
             json.dump(result, output, sort_keys=True, indent=2, default=str)
             output.write("\n")
     except Exception as exc:
-        # Database exceptions can contain DSNs or query arguments.
-        print(f"D0 reconciliation operation failed: {type(exc).__name__}")
+        # ReconciliationEvidenceError carries a deliberately non-secret reason code.
+        # Other exceptions may contain DSNs, SQL text, query arguments, or credentials,
+        # so retain the existing type-only redaction for every other exception class.
+        from execution.broker_reconciliation_evidence import ReconciliationEvidenceError
+
+        if isinstance(exc, ReconciliationEvidenceError):
+            print(f"D0 reconciliation operation failed: {type(exc).__name__}: {exc}")
+        else:
+            print(f"D0 reconciliation operation failed: {type(exc).__name__}")
         return 1
     return 0
 
