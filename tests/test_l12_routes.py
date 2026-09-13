@@ -196,7 +196,9 @@ def test_extract_hold_block_reason_prefers_cached_field() -> None:
         "last_hold_block_reason": "GOVERNANCE_HOLD:stale_preserved",
         "errors": ["WARMUP_INSUFFICIENT:H1"],
     }
-    assert l12_routes._extract_hold_block_reason(raw) == "GOVERNANCE_HOLD:stale_preserved"
+    from api.verdict_normalization import extract_hold_block_reason
+
+    assert extract_hold_block_reason(raw) == "GOVERNANCE_HOLD:stale_preserved"
 
 
 def test_internal_verdict_path_reports_key_and_warmup(monkeypatch) -> None:
