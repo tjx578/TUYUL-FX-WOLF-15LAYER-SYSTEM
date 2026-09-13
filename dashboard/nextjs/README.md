@@ -25,6 +25,7 @@ The proxy accepts only these exact GET routes, with no query parameters:
 | `/api/proxy/dashboard/overview` | `/api/v1/status` and `/healthz` |
 | `/api/proxy/dashboard/feed-status` | `/api/v1/candles/feed-status` |
 | `/api/proxy/dashboard/aggregated-status` | `/api/v1/status` |
+| `/api/proxy/dashboard/pair-states` | `/api/v1/verdict/all` |
 
 The server verifies the viewer JWT and `read:dashboard` scope, then returns an
 explicit sanitized schema. Raw error details, credentials, unknown nested data,

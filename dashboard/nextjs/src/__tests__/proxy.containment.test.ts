@@ -13,8 +13,8 @@ beforeEach(() => {vi.stubEnv("INTERNAL_API_URL","https://core.example");vi.stubG
 afterEach(() => {vi.unstubAllGlobals();vi.unstubAllEnvs();vi.restoreAllMocks();});
 
 describe("direct core viewer proxy containment", () => {
-  it("allows exactly three projection paths", () => {
-    expect(READ_ONLY_PATHS).toEqual(["dashboard/overview","dashboard/feed-status","dashboard/aggregated-status"]);
+  it("allows exactly the declared projection paths", () => {
+    expect(READ_ONLY_PATHS).toEqual(["dashboard/overview","dashboard/feed-status","dashboard/aggregated-status","dashboard/pair-states"]);
     for (const path of READ_ONLY_PATHS) expect(isAllowlistedReadPath(path)).toBe(true);
   });
   it.each(["dashboard", "dashboard/overview/extra", "dashboard/settings", "bff/aggregated-status", "api/v1/status", "api/v1/execution/order", "dashboard/%2e%2e/settings", "dashboard/../settings", "/dashboard/overview", "dashboard/overview/"])("denies %s before fetch", async path => {
@@ -47,10 +47,25 @@ describe("direct core viewer proxy containment", () => {
     expect(JSON.parse(text)).toMatchObject({status:{status:"ok"},health:{status:"alive"},source:"core-api"});
     expect(response.headers.get("x-proxy-surface")).toBe("core-api");expect(response.headers.get("x-bff-cache")).toBeNull();expect(response.headers.get("x-proxy-target")).toBeNull();expect(response.headers.get("set-cookie")).toBeNull();
   });
-  it.each(["dashboard/feed-status","dashboard/aggregated-status"])("maps %s only to its fixed route",async path=>{
-    vi.mocked(fetch).mockResolvedValueOnce(json(viewer)).mockResolvedValueOnce(json(path.includes("feed")?{ingest_status:"UNKNOWN",provider_connected:false,symbols:{}}:{status:"ok"}));
+  it.each([
+    ["dashboard/feed-status","/api/v1/candles/feed-status",{ingest_status:"UNKNOWN",provider_connected:false,symbols:{}}],
+    ["dashboard/aggregated-status","/api/v1/status",{status:"ok"}],
+    ["dashboard/pair-states","/api/v1/verdict/all",{mode:"NO_SNAPSHOT_YET",verdicts:{}}],
+  ] as const)("maps %s only to its fixed route",async(path,corePath,body)=>{
+    vi.mocked(fetch).mockResolvedValueOnce(json(viewer)).mockResolvedValueOnce(json(body));
     expect((await GET(request(path),context(path))).status).toBe(200);
-    expect(vi.mocked(fetch).mock.calls[1][0]).toBe("https://core.example"+(path.includes("feed")?"/api/v1/candles/feed-status":"/api/v1/status"));
+    expect(vi.mocked(fetch).mock.calls[1][0]).toBe("https://core.example"+corePath);
+  });
+  it("removes raw verdict diagnostics before the browser receives pair states",async()=>{
+    vi.mocked(fetch).mockResolvedValueOnce(json(viewer)).mockResolvedValueOnce(json({mode:"LIVE",timestamp:1700000000,stale_seconds:4,verdicts:{
+      EURUSD:{verdict:"NO_TRADE",confidence:0.91,direction:"CANARY",governance:{action:"HOLD",note:"CANARY"},execution_map:{halt_reason:"CANARY"},errors:["CANARY"],_meta:{age_seconds:12}},
+    }}));
+    const response=await GET(request("dashboard/pair-states"),context("dashboard/pair-states"));
+    expect(response.status).toBe(200);
+    const text=await response.text();
+    for(const forbidden of ["CANARY","confidence","direction","execution_map","errors"]) expect(text).not.toContain(forbidden);
+    expect(JSON.parse(text)).toMatchObject({mode:"LIVE",count:1,source:"core-api",
+      items:[{symbol:"EURUSD",lifecycle_state:"NO_TRADE",admission:"HOLD",age_seconds:12,quality:"LIVE"}]});
   });
   it.each(["", "https://dashboard.example"])("rejects missing or recursive upstream before fetch",async origin=>{
     vi.stubEnv("INTERNAL_API_URL",origin);expect((await GET(request("dashboard/overview"),context("dashboard/overview"))).status).toBe(503);expect(fetch).not.toHaveBeenCalled();

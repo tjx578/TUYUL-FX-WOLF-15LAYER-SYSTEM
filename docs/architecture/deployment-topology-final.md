@@ -285,7 +285,7 @@ A service may recover transport, restart successfully, or become reachable while
 
 ### 4.2 Dashboard Recovery
 
-- the selected dashboard repeats only its three explicit GET projections when refreshed; no WebSocket/SSE transport ladder is enabled
+- the selected dashboard repeats only its explicit declared GET projections when refreshed; no WebSocket/SSE transport ladder is enabled
 - frontend recovery must preserve backend freshness class and heartbeat age
 - UI reconnection must not be treated as proof that engine freshness has recovered
 
@@ -410,7 +410,7 @@ The system must force or preserve `HOLD` behavior when any of the following cond
 │ Railway - Viewer            │                  │ EA Bridge (Railway or local host)     │
 │ • Next.js frontend            │                  │ • receives approved execution intent   │
 │ • HttpOnly viewer session     │                  │ • reports ack / fill / reject         │
-│ • Three GET projections       │                  │ • never creates strategy direction     │
+│ • Declared GET projections    │                  │ • never creates strategy direction     │
 └───────────────┬───────────────┘                  └──────────────────┬────────────────────┘
                 │ Server HTTPS                                         │ execution feedback
                 ▼                                                      │
@@ -479,7 +479,7 @@ The selected frontend uses these non-secret repository settings:
 - `PORT=8080`
 - optional local display timezone
 
-No public API/WS variable or BFF variable is needed by this viewer. Browser login and the three read projections use same-origin handlers, with no browser signing/API keys. The standalone legacy Python BFF remains outside the selected path. Core API-only effective startup and production login/data acceptance remain separate HOLD gates.
+No public API/WS variable or BFF variable is needed by this viewer. Browser login and the declared read projections use same-origin handlers, with no browser signing/API keys. The standalone legacy Python BFF remains outside the selected path. Core API-only effective startup and production login/data acceptance remain separate HOLD gates.
 
 ### 7.3 Railway Operational Notes
 

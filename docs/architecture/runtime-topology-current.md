@@ -58,7 +58,7 @@ Responsible for allocation and execution worker runtime behavior.
 
 ### Dashboard
 
-The selected Railway frontend serves the owner as a read-only viewer on port 8080. Username/password login establishes a bounded HttpOnly session. Exactly three GET projections call core directly through server-only `INTERNAL_API_URL`; unrecognized paths and mutations are rejected. It does not control strategy, execution, risk, broker or engine state.
+The selected Railway frontend serves the owner as a read-only viewer on port 8080. Username/password login establishes a bounded HttpOnly session. Exactly the declared GET projections (system overview, feed status, aggregated status and per-pair verdict state) call core directly through server-only `INTERNAL_API_URL`; unrecognized paths and mutations are rejected. It does not control strategy, execution, risk, broker or engine state.
 
 ### Legacy standalone Dashboard-BFF
 
@@ -75,7 +75,7 @@ The following items were previously listed as debt and have been resolved:
 - Selected owner login uses `DASHBOARD_MODE=viewer`, a backend password verifier and a 15-minute viewer JWT; production acceptance remains HOLD.
 - Selected browser session has no machine-key fallback and no WebSocket ticket route.
 - ~~overlapping proxy paths must be removed~~ — resolved: single canonical proxy at `/api/proxy/[...path]`, dead `rewrites()` removed.
-- Selected frontend status comes only through the three scoped projections; core `/healthz` and `/readyz` retain infrastructure semantics.
+- Selected frontend status comes only through the scoped read projections declared in [the dashboard control surface](dashboard-control-surface.md); core `/healthz` and `/readyz` retain infrastructure semantics.
 
 ## Health and Status Semantics
 
