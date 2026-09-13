@@ -150,6 +150,8 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
     await waitFor(() => expect(dashboard().shadowRoot?.innerHTML).toContain("Pasangan dalam snapshot"));
     expect(dashboard().shadowRoot?.innerHTML).toContain("EURUSD");
     expect(dashboard().shadowRoot?.innerHTML).toContain("GBPUSD");
+    // No lifecycle identity means no trace to select, so the symbol must not be a link.
+    expect(dashboard().shadowRoot?.innerHTML).not.toContain('<a class="pair-link"');
 
     window.location.hash = "/risk-account";
     window.dispatchEvent(new HashChangeEvent("hashchange"));

@@ -15,7 +15,10 @@ function unavailable(o,label,ico='signal'){
   return `<div class="empty"><div class="empty-icon">${icon(ico)}</div><h3>${heading}</h3><p>${e(reason)}</p>${link('data-sistem','Lihat Data Sistem →')}<small>${failed?'SOURCE_UNAVAILABLE':o?.state==='ready'?'EMPTY_IN_SCOPE':'NOT_MEASURED'}</small></div>`;
 }
 function kpi(label,value,note,ico='activity',color=''){return `<article class="panel kpi"><div class="kpi-label"><span>${e(label)}</span><span class="kpi-icon">${icon(ico)}</span></div><div class="kpi-value ${color}">${e(value)}</div><div class="kpi-note">${e(note)}</div></article>`;}
-function pairRows(items){return items.map(p=>`<tr><td>${link(`5s-cr?symbol=${encodeURIComponent(p.symbol||'')}&lifecycle=${encodeURIComponent(p.lifecycleId||'')}`,e(text(p.symbol)),'pair-link')}</td><td>${e(text(p.pressure))}</td><td>${status(p.lifecycleState)}</td><td>${e(text(p.strategyStage))}</td><td>${e(text(p.admission))}</td><td>${status(p.quality)}</td></tr>`).join('');}
+// A trace is selected by exact lifecycle identity. Without one the link can only
+// land on an empty trace, so the symbol stays plain text until a source supplies it.
+function pairCell(p){const label=e(text(p.symbol));return p.lifecycleId?link(`5s-cr?symbol=${encodeURIComponent(p.symbol||'')}&lifecycle=${encodeURIComponent(p.lifecycleId)}`,label,'pair-link'):label;}
+function pairRows(items){return items.map(p=>`<tr><td>${pairCell(p)}</td><td>${e(text(p.pressure))}</td><td>${status(p.lifecycleState)}</td><td>${e(text(p.strategyStage))}</td><td>${e(text(p.admission))}</td><td>${status(p.quality)}</td></tr>`).join('');}
 function pairTable(items){return `<div class="table-wrap"><table><thead><tr><th>Pasangan</th><th>Pressure</th><th>Verdict</th><th>Strategy stage</th><th>Admission</th><th>Kualitas</th></tr></thead><tbody>${pairRows(items)}</tbody></table></div>`;}
 function stages(trace){
   const names=['Admission','Lifecycle','Context','Proof','Geometry'];
