@@ -27,7 +27,7 @@ The selected viewer has no route to engine control, broker execution or database
 
 | Service | Platform | Purpose |
 | --- | --- | --- |
-| Dashboard | Railway, port 8080 | Next.js owner-login viewer; three direct core read projections |
+| Dashboard | Railway, port 8080 | Next.js owner-login viewer; the declared direct core read projections |
 | API | Railway | API-only auth and existing read endpoints; no embedded orchestrator for selected login deployment |
 | Engine / trade services | Railway | Separate constitutional, risk and execution responsibilities; unchanged by dashboard revision |
 | Redis | Railway (managed) | Tick streams, context cache, rate-limit state |
@@ -101,7 +101,7 @@ NEXT_PUBLIC_TIMEZONE=Asia/Makassar
 1. Browser posts username/password to same-origin `/api/auth/owner-login`.
 2. Next forwards to core `/api/auth/owner-login`; backend verification issues only a viewer JWT with `read:dashboard`.
 3. Next sets the Secure HttpOnly SameSite `wolf15_session` cookie. JavaScript/localStorage never receive the token.
-4. The three exact GET projections validate the session against core and forward only an explicit Bearer token server-to-server.
+4. The exact declared GET projections validate the session against core and forward only an explicit Bearer token server-to-server.
 5. Core JSON is projected to safe fields before browser delivery; unknown paths, mutation verbs, raw diagnostics and credentials are rejected or removed.
 6. Password-owner access expires within 15 minutes; legacy refresh/reissuance cannot extend it. Logout clears browser access.
 

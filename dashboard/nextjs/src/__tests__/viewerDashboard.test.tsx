@@ -118,7 +118,7 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
           count: 2,
           items: [
             { symbol: "EURUSD", lifecycle_state: "NO_TRADE", admission: "ALLOW", age_seconds: 10, quality: "LIVE" },
-            { symbol: "GBPUSD", lifecycle_state: "WAIT", admission: "HOLD", age_seconds: 900, quality: "STALE" },
+            { symbol: "GBPUSD", lifecycle_state: "HOLD", admission: "ALLOW_REDUCED", age_seconds: 900, quality: "STALE" },
           ],
           source: "core-api",
         }), { status: 200 }));
@@ -137,8 +137,8 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
     expect(snapshot?.overview?.data?.activeLifecycles).toBeNull();
     expect(snapshot?.pairs?.state).toBe("ready");
     expect(snapshot?.pairs?.data?.items).toEqual([
-      { symbol: "EURUSD", lifecycleId: "EURUSD", lifecycleState: "NO_TRADE", admission: "ALLOW", quality: "LIVE" },
-      { symbol: "GBPUSD", lifecycleId: "GBPUSD", lifecycleState: "WAIT", admission: "HOLD", quality: "STALE" },
+      { symbol: "EURUSD", lifecycleId: "", lifecycleState: "NO_TRADE", admission: "ALLOW", quality: "LIVE" },
+      { symbol: "GBPUSD", lifecycleId: "", lifecycleState: "HOLD", admission: "ALLOW_REDUCED", quality: "STALE" },
     ]);
     expect(snapshot?.feed?.data?.items).toEqual([
       expect.objectContaining({ symbol: "EURUSD", state: "STALE", quality: "STALE" }),

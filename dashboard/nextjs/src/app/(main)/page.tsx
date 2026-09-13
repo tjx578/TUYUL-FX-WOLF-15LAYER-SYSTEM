@@ -210,11 +210,12 @@ function buildSnapshot(probes: ProbeState[], receivedAt: string | null, refreshi
     .map((raw) => {
       const item = asRecord(raw);
       const symbol = stringField(item.symbol);
-      // The core keys every lifecycle by pair; no separate lifecycle identity exists upstream.
+      // strategy_lifecycle_id is a distinct durable identity (contracts/strategy_5scr_lifecycle_v2.py)
+      // and the verdict snapshot carries none. Empty means absent; never stand the symbol in for it.
       return symbol
         ? {
             symbol,
-            lifecycleId: symbol,
+            lifecycleId: "",
             lifecycleState: stringField(item.lifecycle_state) ?? undefined,
             admission: stringField(item.admission) ?? undefined,
             quality: stringField(item.quality) ?? undefined,

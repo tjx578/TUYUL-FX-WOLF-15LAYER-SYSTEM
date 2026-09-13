@@ -134,7 +134,7 @@ Required repository contract:
 - `DASHBOARD_MODE=viewer`.
 - `DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app`.
 - Server-only `INTERNAL_API_URL=https://wolf15-api-production.up.railway.app`.
-- Three exact GET projections call existing core routes; no BFF dependency or public API/WS credential path.
+- The exact declared GET projections call existing core routes; no BFF dependency or public API/WS credential path.
 - The selected API must use an API-only entrypoint with embedded orchestrator disabled. The legacy consolidated API configuration in the earlier inventory is not a deployment instruction for owner-login.
 
 Local source/build evidence, provider service identity and production login acceptance must be recorded separately. See [direct API topology](dashboard-hybrid-topology.md).
