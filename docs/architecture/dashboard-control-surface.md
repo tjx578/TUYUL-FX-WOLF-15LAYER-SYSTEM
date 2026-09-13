@@ -1,13 +1,13 @@
 # Dashboard Viewer Authority
 
 **Status:** Canonical repository contract for the selected Railway dashboard.
-**Updated:** 2026-09-09 (dashboard scope only).
+**Updated:** 2026-09-13 (dashboard scope only).
 
 The selected owner interface is `https://wolf15-dashboard-frontend-production.up.railway.app/login`. Its frontend serves on port `8080` and calls `https://wolf15-api-production.up.railway.app` through same-origin Next server handlers. The public login observed during this revision still shows `VIEWER JWT`; the password-login revision is repository work and production acceptance remains HOLD.
 
 ## Allowed operations
 
-The owner may authenticate with username/password, read sanitized system/feed projections, refresh those observations and log out. The authenticated session is deliberately `role=viewer` with `read:dashboard`, not an administrative or execution role.
+The owner may authenticate with username/password, read sanitized system/feed/pair projections, refresh those observations and log out. The authenticated session is deliberately `role=viewer` with `read:dashboard`, not an administrative or execution role.
 
 The selected dashboard cannot synthesize market verdicts, override Layer 12, invoke broker/execution routes, take/close trades, change risk/configuration state or manage engine/orchestrator runtime. Those backend authorities remain separate and are not enabled by owner login.
 
@@ -23,7 +23,7 @@ The selected dashboard cannot synthesize market verdicts, override Layer 12, inv
 
 ## Direct core read boundary
 
-Only GET `/api/proxy/dashboard/overview`, `/api/proxy/dashboard/feed-status` and `/api/proxy/dashboard/aggregated-status` are exposed. The Next server maps them to existing core read endpoints, filters response fields before browser delivery and fails closed on unknown paths, query parameters, mutations or upstream errors. There is no BFF dependency, general API fallback, browser WebSocket or SSE channel.
+Only GET `/api/proxy/dashboard/overview`, `/api/proxy/dashboard/feed-status`, `/api/proxy/dashboard/aggregated-status` and `/api/proxy/dashboard/pair-states` are exposed. The Next server maps them to existing core read endpoints, filters response fields before browser delivery and fails closed on unknown paths, query parameters, mutations or upstream errors. There is no BFF dependency, general API fallback, browser WebSocket or SSE channel.
 
 `INTERNAL_API_URL` is a server-only HTTPS origin. `DASHBOARD_CANONICAL_ORIGIN` binds browser login/logout to the selected Railway origin. Neither origin is a credential or evidence that the candidate is deployed.
 
@@ -32,6 +32,8 @@ See [the direct API topology contract](dashboard-hybrid-topology.md) for exact p
 ## Health and evidence
 
 Core `/healthz` and `/health` describe process liveness. Core readiness, deep diagnostics, data freshness, database identity and broker execution evidence remain distinct. The selected viewer receives sanitized status/feed fields; it does not expose raw diagnostic exceptions, private origins or arbitrary backend payloads.
+
+`dashboard/pair-states` reads core `GET /api/v1/verdict/all` and projects, per pair, only the symbol, the whitelisted constitutional verdict, the whitelisted governance admission action and a quality state derived from the snapshot age. Confidence, direction, gates, scores, execution maps, diagnostics and error strings are dropped before browser delivery; an unrecognized value is reported as `null`, never passed through. The pair snapshot carries one entry per configured pair, so it reads under a wider body limit than the scalar status reads while remaining bounded and streamed. Reading pair state is observation only: it does not make the viewer an originator of verdicts, and Layer 12 authority is unchanged.
 
 Unsupported account/risk/execution/audit projections remain NOT_MEASURED. A reachable page, a healthy process or successful local test does not prove production login, data freshness or trading readiness.
 

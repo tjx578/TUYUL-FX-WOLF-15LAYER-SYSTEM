@@ -15,11 +15,16 @@ const valid = {
 };
 
 describe("viewer contract", () => {
-  it("binds the visual dashboard to exactly three projections", () => {
+  it("binds the visual dashboard to exactly the declared projections", () => {
     expect(VIEWER_ENDPOINTS.map((endpoint) => endpoint.path)).toEqual(
       VIEWER_PROXY_PATHS,
     );
-    expect(VIEWER_PROXY_PATHS).toHaveLength(3);
+    expect(VIEWER_PROXY_PATHS).toEqual([
+      "dashboard/overview",
+      "dashboard/feed-status",
+      "dashboard/aggregated-status",
+      "dashboard/pair-states",
+    ]);
   });
 
   it("accepts only a JWT viewer with read:dashboard", () => {

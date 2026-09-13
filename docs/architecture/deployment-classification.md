@@ -230,7 +230,7 @@ Dalam praktiknya:
 
 * Strict build and matching core auth/read contracts.
 * Exact canonical browser origin, server-only HTTPS core origin and port 8080.
-* HttpOnly viewer session, three GET projections, server-side response filtering and no machine credential exposure.
+* HttpOnly viewer session, the declared read-only GET projections, server-side response filtering and no machine credential exposure.
 * Separate production acceptance evidence before promotion.
 
 ---

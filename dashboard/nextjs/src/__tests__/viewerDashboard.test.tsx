@@ -7,6 +7,7 @@ type DashboardElement = HTMLElement & {
     connection?: string;
     overview?: { state?: string; data?: Record<string, unknown> | null };
     feed?: { state?: string; data?: { items?: Array<Record<string, unknown>> } | null };
+    pairs?: { state?: string; data?: { items?: Array<Record<string, unknown>> } | null };
     evidence?: Record<string, { state?: string }>;
   };
 };
@@ -38,7 +39,7 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
     ]));
   });
 
-  it("loads exactly the three existing GET projections and exposes all nine views", async () => {
+  it("loads exactly the declared GET projections and exposes all nine views", async () => {
     globalThis.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => Promise.resolve(
       new Response(JSON.stringify({ status: "ok", source: "core-api", endpoint: String(input), token: "SECRET_VALUE" }), {
         status: 200,
@@ -51,11 +52,12 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
 
     render(<DashboardPage />);
 
-    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(4));
     expect(vi.mocked(globalThis.fetch).mock.calls.map((call) => call[0])).toEqual([
       "/api/proxy/dashboard/overview",
       "/api/proxy/dashboard/feed-status",
       "/api/proxy/dashboard/aggregated-status",
+      "/api/proxy/dashboard/pair-states",
     ]);
 
     await waitFor(() => expect(dashboard().shadowRoot?.innerHTML).toContain("Command Center"));
@@ -76,13 +78,13 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
     expect(html).toContain("OBSERVATIONAL ONLY");
     expect(html).not.toContain("$154,320");
     expect(html).not.toContain("Ready to Execute");
-    expect(screen.getAllByText(/"source": "core-api"/)).toHaveLength(3);
+    expect(screen.getAllByText(/"source": "core-api"/)).toHaveLength(4);
     expect(document.body.innerHTML).not.toContain("SECRET_VALUE");
-    expect(screen.getAllByText(/REDACTED/)).toHaveLength(3);
-    expect(screen.getAllByTestId(/viewer-probe-/)).toHaveLength(3);
+    expect(screen.getAllByText(/REDACTED/)).toHaveLength(4);
+    expect(screen.getAllByTestId(/viewer-probe-/)).toHaveLength(4);
   });
 
-  it("maps observed feed data while leaving unsupported projections NOT_MEASURED", async () => {
+  it("maps observed feed and pair data while leaving unsupported projections NOT_MEASURED", async () => {
     globalThis.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("dashboard/overview")) {
@@ -108,6 +110,19 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
           },
         }), { status: 200 }));
       }
+      if (url.endsWith("dashboard/pair-states")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          mode: "LIVE",
+          stale_seconds: 12,
+          observed_at: "2026-09-13T15:50:10.000Z",
+          count: 2,
+          items: [
+            { symbol: "EURUSD", lifecycle_state: "NO_TRADE", admission: "ALLOW", age_seconds: 10, quality: "LIVE" },
+            { symbol: "GBPUSD", lifecycle_state: "WAIT", admission: "HOLD", age_seconds: 900, quality: "STALE" },
+          ],
+          source: "core-api",
+        }), { status: 200 }));
+      }
       return Promise.resolve(new Response(JSON.stringify({
         core_status: { status: "ok" },
         source: "core-api",
@@ -119,7 +134,12 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
 
     const snapshot = dashboard().snapshot;
     expect(snapshot?.overview?.data?.systemState).toBe("ok");
-    expect(snapshot?.overview?.data?.activeLifecycles).toBeNull();
+    expect(snapshot?.overview?.data?.activeLifecycles).toBe(2);
+    expect(snapshot?.pairs?.state).toBe("ready");
+    expect(snapshot?.pairs?.data?.items).toEqual([
+      { symbol: "EURUSD", lifecycleId: "EURUSD", lifecycleState: "NO_TRADE", admission: "ALLOW", quality: "LIVE" },
+      { symbol: "GBPUSD", lifecycleId: "GBPUSD", lifecycleState: "WAIT", admission: "HOLD", quality: "STALE" },
+    ]);
     expect(snapshot?.feed?.data?.items).toEqual([
       expect.objectContaining({ symbol: "EURUSD", state: "STALE", quality: "STALE" }),
       expect.objectContaining({ symbol: "GBPUSD", state: "FRESH", quality: "FRESH" }),
@@ -128,11 +148,13 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
     window.location.hash = "/pair-radar";
     window.dispatchEvent(new HashChangeEvent("hashchange"));
     await waitFor(() => expect(dashboard().shadowRoot?.innerHTML).toContain("Pasangan dalam snapshot"));
-    expect(dashboard().shadowRoot?.innerHTML).toContain("NOT_MEASURED");
+    expect(dashboard().shadowRoot?.innerHTML).toContain("EURUSD");
+    expect(dashboard().shadowRoot?.innerHTML).toContain("GBPUSD");
 
     window.location.hash = "/risk-account";
     window.dispatchEvent(new HashChangeEvent("hashchange"));
     await waitFor(() => expect(dashboard().shadowRoot?.innerHTML).toContain("Risk &amp; Account"));
+    expect(dashboard().shadowRoot?.innerHTML).toContain("NOT_MEASURED");
     expect(dashboard().shadowRoot?.innerHTML).not.toContain("$1,000.00");
   });
 

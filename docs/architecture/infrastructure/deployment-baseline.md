@@ -8,7 +8,7 @@
 ```text
 Browser on selected Railway dashboard origin
   -> Railway Next.js viewer, PORT=8080
-  -> same-origin owner-login/session + three GET projections
+  -> same-origin owner-login/session + the declared GET projections
   -> HTTPS core API (API-only; embedded orchestrator disabled)
   -> existing backend read state
 

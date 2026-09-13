@@ -182,10 +182,12 @@ function buildSnapshot(probes: ProbeState[], receivedAt: string | null, refreshi
   const overviewProbe = byPath["dashboard/overview"];
   const feedProbe = byPath["dashboard/feed-status"];
   const aggregatedProbe = byPath["dashboard/aggregated-status"];
+  const pairProbe = byPath["dashboard/pair-states"];
 
   const overviewPayload = asRecord(overviewProbe?.payload);
   const feedPayload = asRecord(feedProbe?.payload);
   const aggregatedPayload = asRecord(aggregatedProbe?.payload);
+  const pairPayload = asRecord(pairProbe?.payload);
   const status = asRecord(overviewPayload.status);
   const coreStatus = asRecord(aggregatedPayload.core_status);
   const symbols = asRecord(feedPayload.symbols);
@@ -204,13 +206,30 @@ function buildSnapshot(probes: ProbeState[], receivedAt: string | null, refreshi
     };
   });
 
+  const pairItems = (Array.isArray(pairPayload.items) ? pairPayload.items : [])
+    .map((raw) => {
+      const item = asRecord(raw);
+      const symbol = stringField(item.symbol);
+      // The core keys every lifecycle by pair; no separate lifecycle identity exists upstream.
+      return symbol
+        ? {
+            symbol,
+            lifecycleId: symbol,
+            lifecycleState: stringField(item.lifecycle_state) ?? undefined,
+            admission: stringField(item.admission) ?? undefined,
+            quality: stringField(item.quality) ?? undefined,
+          }
+        : null;
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+
   const overviewAsOf = stringField(status.as_of, status.observed_at, overviewPayload.as_of);
   const feedAsOf = stringField(feedPayload.as_of, feedPayload.observed_at);
   const overviewData = {
     systemState: failedReads > 0 && successfulReads > 0
       ? "PARTIAL"
       : stringField(status.status, coreStatus.status),
-    activeLifecycles: null,
+    activeLifecycles: numberField(pairPayload.count),
     executionState: null,
     incidents: [],
   };
@@ -235,7 +254,11 @@ function buildSnapshot(probes: ProbeState[], receivedAt: string | null, refreshi
     },
     overview: responseObservation(overviewProbe, overviewData, { asOf: overviewAsOf }),
     feed: responseObservation(feedProbe, feedData, { asOf: feedAsOf }),
-    pairs: emptyObservation(),
+    pairs: responseObservation(
+      pairProbe,
+      { items: pairItems },
+      { asOf: stringField(pairPayload.observed_at) },
+    ),
     traces: emptyObservation(),
     risk: emptyObservation(),
     execution: emptyObservation(),

@@ -18,7 +18,7 @@ These are the selected existing services. The repository revision does not prove
 
 ```text
 Browser on selected Railway origin
-  -> same-origin Next.js owner-login/session and three GET projections
+  -> same-origin Next.js owner-login/session and the declared GET projections
   -> server-only INTERNAL_API_URL
   -> existing core API auth and read endpoints
 ```
@@ -29,9 +29,10 @@ Browser on selected Railway origin
 | GET `/api/proxy/dashboard/overview` | GET `/api/v1/status` and `/healthz` | Sanitized `{status, health, source}` |
 | GET `/api/proxy/dashboard/feed-status` | GET `/api/v1/candles/feed-status` | Sanitized feed metadata and `source` |
 | GET `/api/proxy/dashboard/aggregated-status` | GET `/api/v1/status` | Sanitized `{core_status, source}` |
+| GET `/api/proxy/dashboard/pair-states` | GET `/api/v1/verdict/all` | Sanitized `{mode, stale_seconds, observed_at, count, items, source}` |
 | DELETE `/api/set-session` | No core business request | Clear browser session |
 
-Session validation uses the existing core `/api/auth/session` endpoint. The proxy accepts exactly the three listed GET paths. Unknown paths, extra query parameters and mutations fail before any upstream fetch. There is no general API passthrough, browser WebSocket/SSE route or upstream fallback in this viewer profile.
+Session validation uses the existing core `/api/auth/session` endpoint. The proxy accepts exactly the listed GET paths. Unknown paths, extra query parameters and mutations fail before any upstream fetch. There is no general API passthrough, browser WebSocket/SSE route or upstream fallback in this viewer profile.
 
 ## Authentication and authority
 
@@ -45,7 +46,7 @@ The dashboard observes existing backend state. It cannot create verdicts, alter 
 
 `src/lib/server/viewerProjection.ts` selects explicit safe fields before JSON reaches the browser. It excludes raw `detail`, `router_boot_errors`, arbitrary nested payloads, credential fields and hardcoded placeholder activity/MT5 values. Numeric values must be finite and bounded; enum strings, symbol identifiers and collection size are validated. Missing observations remain null/unknown.
 
-Core responses are capped at 128 KiB and feed collections at 256 symbols. Reads use a five-second timeout, reject redirects and use `cache: no-store`. Failed or malformed core responses yield a generic 502; missing/invalid core configuration yields 503. Responses never expose upstream error bodies, cookies or private origin diagnostics.
+Core responses are capped at 128 KiB, except the per-pair verdict snapshot which reads under a 1 MiB cap because it carries one entry per configured pair; both caps are enforced while streaming, before any parse. Feed and pair collections are capped at 256 symbols. Each projected pair row carries only `symbol`, `lifecycle_state` (whitelisted verdict), `admission` (whitelisted governance action), `age_seconds` and a derived `quality`; every other verdict field is dropped. Reads use a five-second timeout, reject redirects and use `cache: no-store`. Failed or malformed core responses yield a generic 502; missing/invalid core configuration yields 503. Responses never expose upstream error bodies, cookies or private origin diagnostics.
 
 Browser responses carry `cache-control: no-store`, `x-proxy-surface: core-api` and a server-generated `x-request-id`. There is no BFF cache header or user-shared response cache. Backend liveness is separate from freshness, database availability and trading readiness.
 

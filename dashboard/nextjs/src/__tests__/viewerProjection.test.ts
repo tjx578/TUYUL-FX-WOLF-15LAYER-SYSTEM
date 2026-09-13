@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectFeed, projectHealth, projectStatus } from "@/lib/server/viewerProjection";
+import { projectFeed, projectHealth, projectPairStates, projectStatus } from "@/lib/server/viewerProjection";
 
 describe("server-side viewer projection", () => {
   it("projects only explicit status fields and excludes fabricated activity counts", () => {
@@ -27,8 +27,30 @@ describe("server-side viewer projection", () => {
   it("rejects unbounded symbol collections",()=>{
     expect(()=>projectFeed({ingest_status:"UNKNOWN",symbols:Object.fromEntries(Array.from({length:257},(_,i)=>["SYM"+i,{}]))})).toThrow();
   });
+  it("projects only whitelisted verdict fields and derives pair quality from age",()=>{
+    const projected=projectPairStates({mode:"LIVE",timestamp:1700000000,stale_seconds:12,verdicts:{
+      GBPUSD:{verdict:"EXECUTE_BUY",governance:{action:"ALLOW"},_meta:{age_seconds:600},confidence:0.9,secret:"CANARY"},
+      EURUSD:{verdict:"NO_TRADE",governance:{action:"BLOCK"},_meta:{age_seconds:10}},
+      "invalid key/CANARY":{verdict:"NO_TRADE"},
+    }});
+    expect(projected).toEqual({mode:"LIVE",stale_seconds:12,observed_at:"2023-11-14T22:13:20.000Z",count:2,items:[
+      {symbol:"EURUSD",lifecycle_state:"NO_TRADE",admission:"BLOCK",age_seconds:10,quality:"LIVE"},
+      {symbol:"GBPUSD",lifecycle_state:"EXECUTE_BUY",admission:"ALLOW",age_seconds:600,quality:"STALE"},
+    ]});
+    expect(JSON.stringify(projected)).not.toContain("CANARY");
+  });
+  it("reports unmeasured verdict fields as null instead of inferring them",()=>{
+    const projected=projectPairStates({mode:"DEGRADED",verdicts:{XAUUSD:{verdict:"CANARY",governance:"CANARY",_meta:"CANARY"}}});
+    expect(projected.items).toEqual([{symbol:"XAUUSD",lifecycle_state:null,admission:null,age_seconds:null,quality:null}]);
+    expect(projected.observed_at).toBeNull();expect(projected.stale_seconds).toBeNull();
+    expect(JSON.stringify(projected)).not.toContain("CANARY");
+  });
+  it("rejects an unknown snapshot mode and an unbounded verdict collection",()=>{
+    expect(()=>projectPairStates({mode:"CANARY",verdicts:{}})).toThrow();
+    expect(()=>projectPairStates({mode:"LIVE",verdicts:Object.fromEntries(Array.from({length:257},(_,i)=>["SYM"+i,{}]))})).toThrow();
+  });
   it.each([null,[],"CANARY",{error:"CANARY"}])("rejects malformed successful upstream data", value=>{
-    expect(()=>projectStatus(value)).toThrow();expect(()=>projectFeed(value)).toThrow();expect(()=>projectHealth(value)).toThrow();
+    expect(()=>projectStatus(value)).toThrow();expect(()=>projectFeed(value)).toThrow();expect(()=>projectHealth(value)).toThrow();expect(()=>projectPairStates(value)).toThrow();
   });
   it("retains health liveness only",()=>{
     expect(projectHealth({status:"alive",service:"tuyul-fx",secret:"CANARY"})).toEqual({status:"alive",service:"tuyul-fx"});
