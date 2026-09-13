@@ -6,8 +6,14 @@ const MAX_SYMBOLS = 256;
 const SYMBOL_PATTERN = /^[A-Z][A-Z0-9._-]{2,19}$/;
 const INGEST_STATES = ["HEALTHY", "DEGRADED", "NO_PRODUCER", "UNKNOWN"];
 const VERDICT_MODES = ["LIVE", "DEGRADED", "NO_SNAPSHOT_YET"];
-/** Exactly the core verdict contract for /api/v1/verdict/all (tests/contract/test_api_contracts.py). */
-const VERDICT_STATES = ["EXECUTE", "EXECUTE_BUY", "EXECUTE_SELL", "NO_TRADE", "HOLD", "ABORT"];
+/**
+ * The core verdict contract for /api/v1/verdict/all (tests/contract/test_api_contracts.py)
+ * plus the two reduced-risk verdicts constitution/verdict_engine.py actually emits on a
+ * near pass or a governance downgrade. The contract declares six; the emitter produces
+ * eight, and startup/analysis_loop.py persists the raw L12 verdict, so the endpoint can
+ * return either reduced-risk variant.
+ */
+const VERDICT_STATES = ["EXECUTE", "EXECUTE_BUY", "EXECUTE_SELL", "EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL", "NO_TRADE", "HOLD", "ABORT"];
 /** Exactly GovernanceAction (state/governance_gate.py). Absent or unrecognized stays NOT_MEASURED — never inferred. */
 const ADMISSION_STATES = ["ALLOW", "ALLOW_REDUCED", "HOLD", "BLOCK"];
 /** Mirrors the core verdict staleness threshold; quality is derived, never copied from upstream. */

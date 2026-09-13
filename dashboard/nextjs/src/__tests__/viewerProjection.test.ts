@@ -39,12 +39,16 @@ describe("server-side viewer projection", () => {
     ]});
     expect(JSON.stringify(projected)).not.toContain("CANARY");
   });
-  it("accepts every verdict the core contract declares",()=>{
+  it("accepts every verdict the core contract declares and every one Layer 12 emits",()=>{
+    const verdicts=["EXECUTE","EXECUTE_BUY","EXECUTE_SELL","EXECUTE_REDUCED_RISK_BUY","EXECUTE_REDUCED_RISK_SELL","NO_TRADE","HOLD","ABORT"];
     const projected=projectPairStates({mode:"LIVE",verdicts:Object.fromEntries(
-      ["EXECUTE","EXECUTE_BUY","EXECUTE_SELL","NO_TRADE","HOLD","ABORT"].map((verdict,i)=>["SYM"+i,{verdict}]),
+      verdicts.map((verdict,i)=>["SYM"+i,{verdict}]),
     )});
-    expect((projected.items as Array<Record<string,unknown>>).map(item=>item.lifecycle_state))
-      .toEqual(["EXECUTE","EXECUTE_BUY","EXECUTE_SELL","NO_TRADE","HOLD","ABORT"]);
+    expect((projected.items as Array<Record<string,unknown>>).map(item=>item.lifecycle_state)).toEqual(verdicts);
+  });
+  it("still rejects a verdict neither the contract nor the emitter produces",()=>{
+    const projected=projectPairStates({mode:"LIVE",verdicts:{EURUSD:{verdict:"WAIT"},GBPUSD:{verdict:"CANARY"}}});
+    expect((projected.items as Array<Record<string,unknown>>).map(item=>item.lifecycle_state)).toEqual([null,null]);
   });
   it("accepts every governance action and never infers an absent one",()=>{
     const projected=projectPairStates({mode:"LIVE",verdicts:{
