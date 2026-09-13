@@ -21,6 +21,13 @@ from state.data_freshness import (
 )
 from state.governance_gate import GovernanceAction, assess_governance
 
+# Governance short-circuits to HOLD/market_closed outside forex market hours
+# (state/governance_gate.py, section A2), which would mask every stale/warmup
+# assertion below whenever the suite happens to run on a weekend. These tests
+# are about staleness, not market hours, so they pin the clock to a known open
+# instant: Wednesday 2026-09-09 12:00 UTC.
+_MARKET_OPEN_TS = 1788955200.0
+
 # ---------------------------------------------------------------------------
 # P0-1: State machine transitions
 # ---------------------------------------------------------------------------
@@ -460,7 +467,7 @@ class TestP0_6_GovernanceHold:  # noqa: N801
     """Stale-preserved and no-producer must force HOLD, not ALLOW_REDUCED."""
 
     def test_no_producer_forces_hold_even_with_alive_heartbeat(self):
-        now = time.time()
+        now = _MARKET_OPEN_TS
         verdict = assess_governance(
             symbol="EURUSD",
             last_seen_ts=None,  # no tick data
@@ -481,7 +488,7 @@ class TestP0_6_GovernanceHold:  # noqa: N801
 
     def test_stale_preserved_forces_hold(self):
         """Data beyond stale threshold must HOLD — not silently trade."""
-        now = time.time()
+        now = _MARKET_OPEN_TS
         threshold = stale_threshold_seconds()
         verdict = assess_governance(
             symbol="EURUSD",
@@ -495,7 +502,7 @@ class TestP0_6_GovernanceHold:  # noqa: N801
 
     def test_stale_preserved_holds_even_with_fresh_heartbeat(self):
         """Fresh producer heartbeat must not override stale_preserved HOLD policy."""
-        now = time.time()
+        now = _MARKET_OPEN_TS
         threshold = stale_threshold_seconds()
 
         verdict = assess_governance(
@@ -511,7 +518,7 @@ class TestP0_6_GovernanceHold:  # noqa: N801
         assert any("stale_preserved" in reason for reason in verdict.reasons)
 
     def test_fresh_data_allows(self):
-        now = time.time()
+        now = _MARKET_OPEN_TS
         verdict = assess_governance(
             symbol="EURUSD",
             last_seen_ts=now - 5.0,
@@ -561,7 +568,7 @@ class TestP0_6b_WsWarmupGrace:  # noqa: N801
 
     def test_stale_preserved_allows_reduced_during_warmup(self):
         """During warmup grace, stale_preserved → ALLOW_REDUCED."""
-        now = time.time()
+        now = _MARKET_OPEN_TS
         threshold = stale_threshold_seconds()
         verdict = assess_governance(
             symbol="EURUSD",
@@ -577,7 +584,7 @@ class TestP0_6b_WsWarmupGrace:  # noqa: N801
 
     def test_stale_preserved_holds_after_warmup_expires(self):
         """After warmup grace window expires, stale_preserved → HOLD as before."""
-        now = time.time()
+        now = _MARKET_OPEN_TS
         threshold = stale_threshold_seconds()
         verdict = assess_governance(
             symbol="EURUSD",
@@ -594,7 +601,7 @@ class TestP0_6b_WsWarmupGrace:  # noqa: N801
         """Hard stale (>600s) must still HOLD even during warmup grace."""
         from state.governance_gate import HARD_STALE_THRESHOLD_SEC
 
-        now = time.time()
+        now = _MARKET_OPEN_TS
         verdict = assess_governance(
             symbol="EURUSD",
             last_seen_ts=now - HARD_STALE_THRESHOLD_SEC - 100.0,
@@ -608,7 +615,7 @@ class TestP0_6b_WsWarmupGrace:  # noqa: N801
 
     def test_no_producer_holds_even_during_warmup(self):
         """no_producer must still HOLD regardless of warmup grace."""
-        now = time.time()
+        now = _MARKET_OPEN_TS
         verdict = assess_governance(
             symbol="EURUSD",
             last_seen_ts=None,
@@ -622,7 +629,7 @@ class TestP0_6b_WsWarmupGrace:  # noqa: N801
 
     def test_no_ws_connected_at_behaves_as_before(self):
         """When ws_connected_at is None, stale_preserved still forces HOLD."""
-        now = time.time()
+        now = _MARKET_OPEN_TS
         threshold = stale_threshold_seconds()
         verdict = assess_governance(
             symbol="EURUSD",
@@ -691,7 +698,7 @@ class TestP0_7_ConfigErrorForceHold:  # noqa: N801
     """CONFIG_ERROR freshness must produce HOLD, not ALLOW."""
 
     def test_config_error_forces_hold(self):
-        now = time.time()
+        now = _MARKET_OPEN_TS
         verdict = assess_governance(
             symbol="EURUSD",
             last_seen_ts=now - 5.0,  # data is fresh
@@ -718,7 +725,7 @@ class TestP0_7_ConfigErrorForceHold:  # noqa: N801
             threshold_seconds=300.0,
             detail="invalid stale threshold configuration",
         )
-        now = time.time()
+        now = _MARKET_OPEN_TS
         with patch("state.governance_gate.classify_feed_freshness", return_value=fake_snapshot):
             verdict = assess_governance(
                 symbol="EURUSD",

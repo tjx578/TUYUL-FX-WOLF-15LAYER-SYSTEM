@@ -17,6 +17,11 @@ export const VIEWER_ENDPOINTS = Object.freeze([
     label: "Aggregated status",
     description: "Read-only operator status from the core API.",
   },
+  {
+    path: "dashboard/pair-states",
+    label: "Pair states",
+    description: "Per-pair constitutional verdict state reported by the core API.",
+  },
 ] as const);
 
 export const VIEWER_PROXY_PATHS: readonly string[] = Object.freeze(

@@ -1,13 +1,13 @@
 # Dashboard Viewer Authority
 
 **Status:** Canonical repository contract for the selected Railway dashboard.
-**Updated:** 2026-09-09 (dashboard scope only).
+**Updated:** 2026-09-13 (dashboard scope only).
 
 The selected owner interface is `https://wolf15-dashboard-frontend-production.up.railway.app/login`. Its frontend serves on port `8080` and calls `https://wolf15-api-production.up.railway.app` through same-origin Next server handlers. The public login observed during this revision still shows `VIEWER JWT`; the password-login revision is repository work and production acceptance remains HOLD.
 
 ## Allowed operations
 
-The owner may authenticate with username/password, read sanitized system/feed projections, refresh those observations and log out. The authenticated session is deliberately `role=viewer` with `read:dashboard`, not an administrative or execution role.
+The owner may authenticate with username/password, read sanitized system/feed/pair projections, refresh those observations and log out. The authenticated session is deliberately `role=viewer` with `read:dashboard`, not an administrative or execution role.
 
 The selected dashboard cannot synthesize market verdicts, override Layer 12, invoke broker/execution routes, take/close trades, change risk/configuration state or manage engine/orchestrator runtime. Those backend authorities remain separate and are not enabled by owner login.
 
@@ -23,7 +23,7 @@ The selected dashboard cannot synthesize market verdicts, override Layer 12, inv
 
 ## Direct core read boundary
 
-Only GET `/api/proxy/dashboard/overview`, `/api/proxy/dashboard/feed-status` and `/api/proxy/dashboard/aggregated-status` are exposed. The Next server maps them to existing core read endpoints, filters response fields before browser delivery and fails closed on unknown paths, query parameters, mutations or upstream errors. There is no BFF dependency, general API fallback, browser WebSocket or SSE channel.
+Only GET `/api/proxy/dashboard/overview`, `/api/proxy/dashboard/feed-status`, `/api/proxy/dashboard/aggregated-status` and `/api/proxy/dashboard/pair-states` are exposed. The Next server maps them to existing core read endpoints, filters response fields before browser delivery and fails closed on unknown paths, query parameters, mutations or upstream errors. There is no BFF dependency, general API fallback, browser WebSocket or SSE channel.
 
 `INTERNAL_API_URL` is a server-only HTTPS origin. `DASHBOARD_CANONICAL_ORIGIN` binds browser login/logout to the selected Railway origin. Neither origin is a credential or evidence that the candidate is deployed.
 
@@ -32,6 +32,10 @@ See [the direct API topology contract](dashboard-hybrid-topology.md) for exact p
 ## Health and evidence
 
 Core `/healthz` and `/health` describe process liveness. Core readiness, deep diagnostics, data freshness, database identity and broker execution evidence remain distinct. The selected viewer receives sanitized status/feed fields; it does not expose raw diagnostic exceptions, private origins or arbitrary backend payloads.
+
+`dashboard/pair-states` reads core `GET /api/v1/verdict/all` and projects, per pair, only the symbol, the constitutional verdict, the governance admission action and a quality state derived from the snapshot age. The verdict whitelist is the core contract for that endpoint — `EXECUTE`, `EXECUTE_BUY`, `EXECUTE_SELL`, `NO_TRADE`, `HOLD`, `ABORT` — plus `EXECUTE_REDUCED_RISK_BUY` and `EXECUTE_REDUCED_RISK_SELL`, which `constitution/verdict_engine.py` emits on a near pass or a governance downgrade and which the endpoint returns verbatim even though the contract test does not list them. The admission whitelist is exactly `GovernanceAction`. Confidence, direction, gates, scores, execution maps, diagnostics and error strings are dropped before browser delivery; an unrecognized value is reported as `null`, never passed through. The pair snapshot carries one entry per cached verdict — at most one per configured pair, and fewer during warmup, after cache expiry or wherever a pair has no verdict yet — so it reads under a wider body limit than the scalar status reads while remaining bounded and streamed. Reading pair state is observation only: it does not make the viewer an originator of verdicts, and Layer 12 authority is unchanged.
+
+Domain normalization belongs to the backend. Where the verdict snapshot carries no authoritative governance action, admission stays NOT_MEASURED; the viewer never reproduces the core's normalization to infer one, and never derives an active-lifecycle count from cached verdict snapshots. Both remain NOT_MEASURED until a dedicated core projection publishes them as a settled contract.
 
 Unsupported account/risk/execution/audit projections remain NOT_MEASURED. A reachable page, a healthy process or successful local test does not prove production login, data freshness or trading readiness.
 
