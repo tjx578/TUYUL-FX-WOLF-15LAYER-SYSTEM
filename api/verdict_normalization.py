@@ -12,6 +12,7 @@ carries execution authority.
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
@@ -81,9 +82,14 @@ def snapshot_age_seconds(raw: dict[str, Any] | None, now: float | None = None) -
             value = float(stamped)
         except ValueError:
             return None
-    if value is None:
+    if value is None or not math.isfinite(value):
         return None
-    return round((time.time() if now is None else now) - value, 3)
+    age = (time.time() if now is None else now) - value
+    # A snapshot stamped in the future has unverifiable freshness -- the clocks
+    # disagree -- so it is unmeasured rather than a positive live signal.
+    if not math.isfinite(age) or age < 0:
+        return None
+    return round(age, 3)
 
 
 def extract_hold_block_reason(raw: dict[str, Any] | None) -> str | None:
@@ -124,14 +130,35 @@ def extract_governance_action(raw: dict[str, Any] | None) -> str:
 
 
 def admission_state(raw: dict[str, Any] | None) -> str | None:
-    """Governance action constrained to GovernanceAction, or None when unmeasured.
+    """Governance action, but only where the record affirmatively carries one.
 
-    ``extract_governance_action`` reports ``UNKNOWN`` for an absent record and
-    passes a stored action through verbatim.  A projection must publish only
-    declared states, so anything outside the enum becomes None.
+    ``extract_governance_action`` defaults to ``ALLOW`` for a record that simply
+    has no governance block.  That default is right for the internal diagnostic
+    that has always used it, but wrong to publish: a degraded HOLD written after
+    a pipeline timeout or error carries neither an action nor a recognized
+    governance reason, and reporting it as a positive admission would claim
+    governance ran when it did not.
+
+    So this reads the record directly instead of reusing that default:
+
+      * an explicit, declared ``governance.action`` is published;
+      * otherwise a recognized governance reason yields BLOCK or HOLD;
+      * anything else is None -- unmeasured, never assumed.
     """
-    action = extract_governance_action(raw)
-    return action if action in _ADMISSION_ACTIONS else None
+    if not raw:
+        return None
+    governance = raw.get("governance")
+    if isinstance(governance, dict):
+        action = governance.get("action")
+        if isinstance(action, str) and action in _ADMISSION_ACTIONS:
+            return action
+    reason = extract_hold_block_reason(raw)
+    if reason:
+        if reason.startswith("GOVERNANCE_BLOCK"):
+            return GovernanceAction.BLOCK.value
+        if reason.startswith(("GOVERNANCE_HOLD", "WARMUP_INSUFFICIENT")):
+            return GovernanceAction.HOLD.value
+    return None
 
 
 def reason_code(raw: dict[str, Any] | None) -> str | None:

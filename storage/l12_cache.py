@@ -74,6 +74,18 @@ def _mark_read_redis_unavailable() -> None:
     _READ_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
 
 
+def verdict_read_source_ok() -> bool:
+    """Whether verdict reads are currently believed to reach Redis.
+
+    Reads here are fail-soft: a connection failure returns None rather than
+    raising, so a caller cannot tell "no verdict stored" from "store
+    unreachable" by the return value alone. This exposes the failure cooldown
+    the reader already maintains so a caller can tell them apart. It reflects
+    the last observed read; it never issues one.
+    """
+    return not _read_redis_temporarily_unavailable()
+
+
 def _decode_redis_text(raw: Any) -> str:
     return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
 

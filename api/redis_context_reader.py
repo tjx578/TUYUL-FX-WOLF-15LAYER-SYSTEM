@@ -97,6 +97,17 @@ def _mark_redis_unavailable() -> None:
     _REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
 
 
+def context_read_source_ok() -> bool:
+    """Whether context reads are currently believed to reach Redis.
+
+    Same reason as the verdict cache: a Redis failure degrades to zero bars and
+    ``ready: False`` rather than raising, which is indistinguishable from a pair
+    that is genuinely still warming up. This reports the failure cooldown the
+    reader already maintains, without issuing a read of its own.
+    """
+    return not _redis_temporarily_unavailable()
+
+
 def _redis_lrange(key: str, start: int, end: int) -> list[str]:
     """Safe Redis LRANGE returning decoded strings."""
     if _redis_temporarily_unavailable():
@@ -174,6 +185,11 @@ class RedisContextReader:
         from api.redis_context_reader import RedisContextReader
         context_bus = RedisContextReader()
     """
+
+    @property
+    def read_source_ok(self) -> bool:
+        """Whether this reader's Redis reads are currently believed to succeed."""
+        return context_read_source_ok()
 
     def snapshot(self) -> dict[str, Any]:
         """Return full context snapshot from Redis.

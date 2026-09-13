@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from schemas.trade_models import Trade
-from storage.l12_cache import get_verdict
+from storage.l12_cache import get_verdict, verdict_read_source_ok
 from storage.price_feed import PriceFeed
 from storage.trade_ledger import TradeLedger
 
@@ -133,9 +133,20 @@ def dashboard_pair_states() -> dict[str, Any]:
     its declared set is reported as ``null`` -- unmeasured, never guessed -- and
     no confidence, score, gate, execution or diagnostic field is included.
 
-    The response is the available cached-verdict subset: at most one row per
-    configured pair, and fewer while a pair is warming up, its cache has
-    expired, or it has produced no verdict yet.
+    ``items`` is the **configured pair inventory**, one row per configured pair,
+    and ``count`` is the number of inventory rows published -- not a count of
+    cached verdicts.  A pair keeps its row when it has no verdict yet, so an
+    operator can tell configured-but-not-ready apart from not-configured:
+
+      * ``snapshot_present: false`` -- configured, no verdict cached yet;
+      * ``warmup_ready: false``     -- configured, warmup not finished;
+      * ``active: false``           -- configured but disabled.
+
+    ``source_ok`` reports whether the underlying reads are believed to be
+    reaching Redis.  Both readers are fail-soft -- a connection failure becomes
+    a missing verdict and zero warmup bars rather than an exception -- so it is
+    taken from the read-health each reader already tracks, after the reads, and
+    never from a second probe of its own.
     """
     # Imported here: the pair universe is built at import time by the L12 routes,
     # and this endpoint must report exactly the same set as /api/v1/verdict/all.
@@ -143,7 +154,7 @@ def dashboard_pair_states() -> dict[str, Any]:
     from .redis_context_reader import RedisContextReader  # noqa: PLC0415
 
     reader: Any = RedisContextReader()
-    source_ok = True
+    read_failed = False
     items: list[dict[str, Any]] = []
 
     for pair_info in AVAILABLE_PAIRS:
@@ -155,12 +166,12 @@ def dashboard_pair_states() -> dict[str, Any]:
         try:
             raw = get_verdict(symbol)
         except Exception:
-            source_ok = False
+            read_failed = True
 
         try:
             warmup_ready = bool(reader.check_warmup(symbol).get("ready", False))
         except Exception:
-            source_ok = False
+            read_failed = True
             warmup_ready = False
 
         age = snapshot_age_seconds(raw)
@@ -179,6 +190,8 @@ def dashboard_pair_states() -> dict[str, Any]:
         )
 
     items.sort(key=lambda item: str(item["symbol"]))
+    # Read after the loop: a failure during it is what sets the readers' health.
+    source_ok = not read_failed and verdict_read_source_ok() and bool(reader.read_source_ok)
     return {
         "observed_at": datetime.now(UTC).isoformat(),
         "source_ok": source_ok,

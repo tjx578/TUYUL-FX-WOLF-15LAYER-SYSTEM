@@ -20,6 +20,7 @@ class _Reader:
 
     ready = True
     raises = False
+    read_source_ok = True
 
     def check_warmup(self, symbol: str, min_bars: dict[str, int] | None = None) -> dict[str, Any]:
         if self.raises:
@@ -31,7 +32,12 @@ class _Reader:
 def bind(monkeypatch):
     """Bind the endpoint to an explicit pair universe and verdict store."""
 
-    def _bind(pairs: list[dict[str, Any]], verdicts: dict[str, Any], reader: _Reader | None = None):
+    def _bind(
+        pairs: list[dict[str, Any]],
+        verdicts: dict[str, Any],
+        reader: _Reader | None = None,
+        verdict_source_ok: bool = True,
+    ):
         monkeypatch.setattr(l12_routes, "AVAILABLE_PAIRS", pairs)
 
         def _get_verdict(symbol: str) -> dict[str, Any] | None:
@@ -41,7 +47,10 @@ def bind(monkeypatch):
             return value
 
         monkeypatch.setattr(dashboard_routes, "get_verdict", _get_verdict)
-        monkeypatch.setattr(redis_context_reader, "RedisContextReader", lambda *a, **k: reader or _Reader())
+        bound = reader or _Reader()
+        monkeypatch.setattr(redis_context_reader, "RedisContextReader", lambda *a, **k: bound)
+        monkeypatch.setattr(dashboard_routes, "verdict_read_source_ok", lambda: verdict_source_ok)
+        return bound
 
     return _bind
 
@@ -80,14 +89,38 @@ def test_projects_one_row_per_available_verdict(bind) -> None:
     assert rows["EURUSD"]["active"] is True
 
 
-def test_applies_backend_governance_normalization(bind) -> None:
-    """A record with no explicit action still normalizes to ALLOW here.
+def test_publishes_an_explicit_governance_action(bind) -> None:
+    """An action the record actually carries is published as-is.
 
-    This is the reason the endpoint exists: a browser reading the raw verdict
-    would see an absent action and could only report it as unmeasured.
+    This is the reason the endpoint exists: the browser cannot reach the
+    governance record, so the service resolves admission on its behalf.
     """
-    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": _verdict(governance={})})
+    bind(
+        [{"symbol": "EURUSD", "enabled": True}],
+        {"EURUSD": _verdict(governance={"action": "ALLOW"})},
+    )
     assert _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]["admission"] == "ALLOW"
+
+
+def test_never_reports_a_degraded_hold_as_allowed(bind) -> None:
+    """A degraded verdict carries no governance evidence, so admission is null.
+
+    _build_degraded_verdict() persists HOLD after a pipeline timeout or error
+    with neither a governance action nor a recognized governance reason.
+    Publishing ALLOW there would claim governance ran when it did not.
+    """
+    bind(
+        [{"symbol": "EURUSD", "enabled": True}, {"symbol": "GBPUSD", "enabled": True}],
+        {
+            "EURUSD": _verdict(errors=["PIPELINE_TIMEOUT:analysis"]),
+            "GBPUSD": _verdict(),
+        },
+    )
+    rows = _by_symbol(dashboard_routes.dashboard_pair_states())
+
+    assert rows["EURUSD"]["admission"] is None
+    # A record with no governance block at all is equally unmeasured.
+    assert rows["GBPUSD"]["admission"] is None
 
 
 def test_derives_admission_and_reason_from_a_hold(bind) -> None:
@@ -181,6 +214,92 @@ def test_flags_an_unreadable_source_without_failing_the_read(bind) -> None:
     assert response["items"][0]["snapshot_present"] is False
 
 
+def test_flags_a_suppressed_verdict_read_failure(bind) -> None:
+    """A fail-soft Redis failure returns None, not an exception.
+
+    Without the reader's own health signal this is indistinguishable from a pair
+    that simply has no verdict yet, which is exactly the confusion source_ok
+    exists to prevent.
+    """
+    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": None}, verdict_source_ok=False)
+    assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
+
+
+def test_flags_a_suppressed_context_read_failure(bind) -> None:
+    reader = _Reader()
+    reader.read_source_ok = False
+    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": _verdict()}, reader=reader)
+    assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
+
+
+def test_a_missing_snapshot_on_a_healthy_source_is_not_a_failure(bind) -> None:
+    """Warmup is not an outage: no verdict yet, but both readers are healthy."""
+    reader = _Reader()
+    reader.ready = False
+    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": None}, reader=reader)
+    response = dashboard_routes.dashboard_pair_states()
+
+    assert response["source_ok"] is True
+    assert response["items"][0]["snapshot_present"] is False
+    assert response["items"][0]["warmup_ready"] is False
+
+
 def test_reports_a_disabled_pair_as_inactive(bind) -> None:
     bind([{"symbol": "EURUSD", "enabled": False}], {"EURUSD": _verdict()})
     assert _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]["active"] is False
+
+
+def test_publishes_a_row_for_every_configured_pair(bind) -> None:
+    """items is the configured inventory, so count is not a snapshot count."""
+    bind(
+        [
+            {"symbol": "EURUSD", "enabled": True},
+            {"symbol": "GBPUSD", "enabled": True},
+            {"symbol": "USDJPY", "enabled": False},
+        ],
+        {"EURUSD": _verdict()},
+    )
+    response = dashboard_routes.dashboard_pair_states()
+
+    assert response["count"] == 3
+    assert [item["symbol"] for item in response["items"]] == ["EURUSD", "GBPUSD", "USDJPY"]
+    rows = _by_symbol(response)
+    assert rows["GBPUSD"]["snapshot_present"] is False
+    assert rows["USDJPY"]["active"] is False
+
+
+@pytest.mark.parametrize(
+    ("age_offset", "expected"),
+    [
+        (0.0, "LIVE"),
+        (300.0, "LIVE"),
+        (300.5, "STALE"),
+        (900.0, "STALE"),
+    ],
+)
+def test_quality_follows_the_stale_boundary(bind, age_offset: float, expected: str) -> None:
+    bind(
+        [{"symbol": "EURUSD", "enabled": True}],
+        {"EURUSD": _verdict(_cached_at=time.time() - age_offset)},
+    )
+    assert _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]["quality"] == expected
+
+
+@pytest.mark.parametrize(
+    "stamped",
+    [
+        pytest.param(None, id="future"),
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="+inf"),
+        pytest.param(float("-inf"), id="-inf"),
+        pytest.param("not-a-number", id="unparseable"),
+    ],
+)
+def test_an_unverifiable_timestamp_is_never_live(bind, stamped: Any) -> None:
+    """A future or non-finite stamp means the clocks disagree, not that it is fresh."""
+    value = time.time() + 600 if stamped is None else stamped
+    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": _verdict(_cached_at=value)})
+    row = _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]
+
+    assert row["age_seconds"] is None
+    assert row["quality"] is None
