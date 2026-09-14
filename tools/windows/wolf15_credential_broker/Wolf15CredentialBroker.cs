@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -13,503 +14,441 @@ using System.Web.Script.Serialization;
 internal static class Wolf15CredentialBroker
 {
     private const string VaultSchema = "wolf15.lean_d0.executor_credentials.v1";
-    private const string PipeSchema = "wolf15.runtime_credentials.v1";
-    private const int MaximumEnvelopeBytes = 4096;
+    private const string RuntimeSchema = "wolf15.runtime_credentials.v1";
+    private const string PipePrefix = "wolf15-lean-d0-";
+    private const int MaximumPipeInstances = 1;
+
+    private sealed class BrokerOptions
+    {
+        public string VaultPath = string.Empty;
+        public string ExpectedVaultSha256 = string.Empty;
+        public string PipeName = string.Empty;
+        public string ExpectedExecutorId = string.Empty;
+        public string ExpectedAccountReference = string.Empty;
+        public string ExpectedBrokerServer = string.Empty;
+        public string ExpectedVerificationKeyId = string.Empty;
+        public string ExpectedAccountReferenceSha256 = string.Empty;
+        public int TimeoutMs;
+        public string ServeMode = "once";
+        public string? ExpectedUserSid;
+    }
+
+    private sealed class VaultDocument
+    {
+        public string schema { get; set; } = string.Empty;
+        public string executor_id { get; set; } = string.Empty;
+        public string account_reference { get; set; } = string.Empty;
+        public string broker_server { get; set; } = string.Empty;
+        public string verification_key_id { get; set; } = string.Empty;
+        public string base_url { get; set; } = string.Empty;
+        public string authorization_token { get; set; } = string.Empty;
+        public string command_verification_key { get; set; } = string.Empty;
+    }
+
+    private sealed class RuntimeEnvelope
+    {
+        public string schema { get; set; } = RuntimeSchema;
+        public string base_url { get; set; } = string.Empty;
+        public string authorization_token { get; set; } = string.Empty;
+        public string command_verification_key { get; set; } = string.Empty;
+        public string executor_id { get; set; } = string.Empty;
+        public string account_reference { get; set; } = string.Empty;
+        public string broker_server { get; set; } = string.Empty;
+        public string verification_key_id { get; set; } = string.Empty;
+    }
 
     private static int Main(string[] args)
     {
         try
         {
-            Dictionary<string, string> options = ParseArguments(args);
-            SecurityIdentifier currentUserSid = ResolveCurrentUserSid(options);
+            BrokerOptions options = ParseOptions(args);
+            ValidatePipeName(options.PipeName);
+            ValidateCurrentUser(options.ExpectedUserSid);
 
-            string vaultPath = Required(options, "vault");
-            string expectedVaultSha256 = RequiredLowerHex(options, "vault-sha256", 64);
-            string pipeName = Required(options, "pipe-name");
-            string expectedExecutorId = Required(options, "executor-id");
-            string expectedAccountReference = Required(options, "account-reference");
-            string expectedBrokerServer = Required(options, "broker-server");
-            string expectedVerificationKeyId = Required(options, "verification-key-id");
-            string expectedAccountReferenceSha256 = RequiredLowerHex(options, "account-reference-sha256", 64);
-            int timeoutMs = RequiredBoundedInteger(options, "timeout-ms", 100, 60000);
-            string serveMode = OptionalServeMode(options);
-
-            ValidatePipeName(pipeName);
-
-            if (serveMode == "persistent")
+            if (string.Equals(options.ServeMode, "persistent", StringComparison.OrdinalIgnoreCase))
             {
-                ServePersistent(
-                    pipeName,
-                    timeoutMs,
-                    currentUserSid,
-                    vaultPath,
-                    expectedVaultSha256,
-                    expectedExecutorId,
-                    expectedAccountReference,
-                    expectedBrokerServer,
-                    expectedVerificationKeyId,
-                    expectedAccountReferenceSha256
-                );
+                return RunPersistent(options);
+            }
+
+            return RunOnce(options);
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(SanitizeFailure(exception));
+            return 2;
+        }
+    }
+
+    private static int RunOnce(BrokerOptions options)
+    {
+        return ServeSingleConnection(options) ? 0 : 2;
+    }
+
+    private static int RunPersistent(BrokerOptions options)
+    {
+        Console.WriteLine("BROKER_READY mode=persistent");
+        Console.Out.Flush();
+
+        while (true)
+        {
+            try
+            {
+                ServeSingleConnection(options);
+            }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine(SanitizeFailure(exception));
+                Console.Error.Flush();
+                Thread.Sleep(250);
+            }
+        }
+    }
+
+    private static bool ServeSingleConnection(BrokerOptions options)
+    {
+        byte[]? vaultCiphertext = null;
+        byte[]? vaultPlaintext = null;
+        byte[]? runtimeBytes = null;
+
+        try
+        {
+            vaultCiphertext = File.ReadAllBytes(options.VaultPath);
+            VerifySha256(vaultCiphertext, options.ExpectedVaultSha256);
+
+            vaultPlaintext = ProtectedData.Unprotect(
+                vaultCiphertext,
+                null,
+                DataProtectionScope.CurrentUser);
+
+            string vaultJson = Encoding.UTF8.GetString(vaultPlaintext);
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            VaultDocument? vault = serializer.Deserialize<VaultDocument>(vaultJson);
+
+            if (vault == null)
+            {
+                throw new InvalidDataException("VAULT_DESERIALIZATION_FAILED");
+            }
+
+            ValidateVault(vault, options);
+
+            RuntimeEnvelope runtime = new RuntimeEnvelope
+            {
+                base_url = vault.base_url,
+                authorization_token = vault.authorization_token,
+                command_verification_key = vault.command_verification_key,
+                executor_id = vault.executor_id,
+                account_reference = vault.account_reference,
+                broker_server = vault.broker_server,
+                verification_key_id = vault.verification_key_id,
+            };
+
+            string runtimeJson = serializer.Serialize(runtime);
+            runtimeBytes = Encoding.UTF8.GetBytes(runtimeJson);
+
+            PipeSecurity pipeSecurity = BuildCurrentUserOnlyPipeSecurity();
+
+            using (NamedPipeServerStream pipe = new NamedPipeServerStream(
+                options.PipeName,
+                PipeDirection.Out,
+                MaximumPipeInstances,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous,
+                4096,
+                4096,
+                pipeSecurity))
+            {
+                IAsyncResult waitResult = pipe.BeginWaitForConnection(null, null);
+
+                if (!waitResult.AsyncWaitHandle.WaitOne(options.TimeoutMs))
+                {
+                    try
+                    {
+                        pipe.Dispose();
+                    }
+                    catch
+                    {
+                    }
+
+                    throw new TimeoutException("CREDENTIAL_PIPE_TIMEOUT");
+                }
+
+                pipe.EndWaitForConnection(waitResult);
+                pipe.Write(runtimeBytes, 0, runtimeBytes.Length);
+                pipe.Flush();
+                pipe.WaitForPipeDrain();
+            }
+
+            if (string.Equals(options.ServeMode, "persistent", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("CREDENTIAL_HANDOFF_OK mode=persistent");
             }
             else
             {
-                byte[] envelope = BuildEnvelope(
-                    vaultPath,
-                    expectedVaultSha256,
-                    expectedExecutorId,
-                    expectedAccountReference,
-                    expectedBrokerServer,
-                    expectedVerificationKeyId,
-                    expectedAccountReferenceSha256
-                );
-                try
-                {
-                    ServeOnce(pipeName, envelope, timeoutMs, currentUserSid);
-                }
-                finally
-                {
-                    Zero(envelope);
-                }
+                Console.WriteLine("CREDENTIAL_HANDOFF_OK mode=once");
             }
-            return 0;
-        }
-        catch (ControlledFailure error)
-        {
-            Console.Error.WriteLine(error.ReasonCode);
-            return 2;
-        }
-        catch (CryptographicException)
-        {
-            Console.Error.WriteLine("DPAPI_HELPER_REJECTED");
-            return 3;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            Console.Error.WriteLine("DPAPI_HELPER_REJECTED");
-            return 3;
-        }
-        catch (Exception)
-        {
-            Console.Error.WriteLine("DPAPI_HELPER_REJECTED");
-            return 3;
-        }
-    }
 
-    private static byte[] BuildEnvelope(
-        string vaultPath,
-        string expectedVaultSha256,
-        string expectedExecutorId,
-        string expectedAccountReference,
-        string expectedBrokerServer,
-        string expectedVerificationKeyId,
-        string expectedAccountReferenceSha256
-    )
-    {
-        byte[] cipher = null;
-        byte[] plain = null;
-        byte[] envelope = null;
-        try
-        {
-            if (!File.Exists(vaultPath))
-                Fail("CREDENTIAL_VAULT_UNAVAILABLE");
-
-            cipher = File.ReadAllBytes(vaultPath);
-            if (!FixedTimeEquals(Hex(Sha256(cipher)), expectedVaultSha256))
-                Fail("CREDENTIAL_VAULT_DIGEST_MISMATCH");
-
-            plain = ProtectedData.Unprotect(cipher, null, DataProtectionScope.CurrentUser);
-            Dictionary<string, object> vault = ParseExactVault(plain);
-            RequireExactString(vault, "schema", VaultSchema, "CREDENTIAL_SCHEMA_INVALID");
-            RequireExactString(vault, "executor_id", expectedExecutorId, "EXECUTOR_BINDING_MISMATCH");
-            RequireExactString(vault, "account_id_reference", expectedAccountReference, "ACCOUNT_BINDING_MISMATCH");
-            RequireExactString(vault, "broker_server", expectedBrokerServer, "BROKER_BINDING_MISMATCH");
-            RequireExactString(vault, "verification_key_id", expectedVerificationKeyId, "KEY_ID_MISMATCH");
-            RequireExactString(vault, "verification_key_type", "PER_EXECUTOR_HMAC", "VERIFICATION_KEY_TYPE_MISMATCH");
-
-            string token = RequireLowerHexString(vault, "executor_token", 64, "CREDENTIAL_SCHEMA_INVALID");
-            string verificationMaterial = RequireTaggedLowerHexString(
-                vault,
-                "verification_key",
-                "hex:",
-                64,
-                "CREDENTIAL_SCHEMA_INVALID"
-            );
-            string actualAccountReferenceSha256 = Hex(Sha256(Encoding.UTF8.GetBytes(expectedAccountReference)));
-            if (!FixedTimeEquals(actualAccountReferenceSha256, expectedAccountReferenceSha256))
-                Fail("ACCOUNT_BINDING_MISMATCH");
-
-            string canonical = "{\"schema\":\"" + PipeSchema +
-                "\",\"executor_id\":\"" + expectedExecutorId +
-                "\",\"account_reference_sha256\":\"" + expectedAccountReferenceSha256 +
-                "\",\"verification_key_id\":\"" + expectedVerificationKeyId +
-                "\",\"executor_token\":\"" + token +
-                "\",\"verification_material\":\"" + verificationMaterial + "\"}";
-            envelope = Encoding.UTF8.GetBytes(canonical);
-            if (envelope.Length == 0 || envelope.Length > MaximumEnvelopeBytes)
-                Fail("CREDENTIAL_ENVELOPE_OVERSIZE");
-
-            byte[] result = new byte[envelope.Length];
-            Buffer.BlockCopy(envelope, 0, result, 0, envelope.Length);
-            return result;
+            Console.Out.Flush();
+            return true;
         }
         finally
         {
-            Zero(cipher);
-            Zero(plain);
-            Zero(envelope);
+            ZeroBuffer(runtimeBytes);
+            ZeroBuffer(vaultPlaintext);
+            ZeroBuffer(vaultCiphertext);
         }
     }
 
-    private static PipeSecurity BuildPipeSecurity(SecurityIdentifier sid)
+    private static BrokerOptions ParseOptions(string[] args)
     {
-        PipeSecurity security = new PipeSecurity();
-        security.SetAccessRuleProtection(true, false);
-        security.AddAccessRule(new PipeAccessRule(sid, PipeAccessRights.ReadWrite, AccessControlType.Allow));
-        return security;
-    }
-
-    private static bool WaitForConnection(NamedPipeServerStream server, int timeoutMs)
-    {
-        IAsyncResult pending = server.BeginWaitForConnection(null, null);
-        if (!pending.AsyncWaitHandle.WaitOne(timeoutMs))
+        if (args.Length == 0 || args.Length % 2 != 0)
         {
-            try { server.Close(); } catch { }
-            return false;
-        }
-        server.EndWaitForConnection(pending);
-        return true;
-    }
-
-    private static void WriteEnvelope(NamedPipeServerStream server, byte[] envelope)
-    {
-        byte[] header = Encoding.ASCII.GetBytes(envelope.Length.ToString("D8", CultureInfo.InvariantCulture));
-        try
-        {
-            server.Write(header, 0, header.Length);
-            server.Write(envelope, 0, envelope.Length);
-            server.Flush();
-            server.WaitForPipeDrain();
-        }
-        finally
-        {
-            Zero(header);
-        }
-    }
-
-    private static NamedPipeServerStream CreateServer(string pipeName, SecurityIdentifier sid)
-    {
-        return new NamedPipeServerStream(
-            pipeName,
-            PipeDirection.Out,
-            1,
-            PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous | PipeOptions.WriteThrough,
-            4096,
-            4096,
-            BuildPipeSecurity(sid)
-        );
-    }
-
-    private static void ServeOnce(string pipeName, byte[] envelope, int timeoutMs, SecurityIdentifier sid)
-    {
-        using (NamedPipeServerStream server = CreateServer(pipeName, sid))
-        {
-            if (!WaitForConnection(server, timeoutMs))
-                Fail("CREDENTIAL_PIPE_TIMEOUT");
-            WriteEnvelope(server, envelope);
-        }
-    }
-
-    private static void ServePersistent(
-        string pipeName,
-        int timeoutMs,
-        SecurityIdentifier sid,
-        string vaultPath,
-        string expectedVaultSha256,
-        string expectedExecutorId,
-        string expectedAccountReference,
-        string expectedBrokerServer,
-        string expectedVerificationKeyId,
-        string expectedAccountReferenceSha256
-    )
-    {
-        // Persistent mode intentionally keeps no plaintext credential envelope
-        // between clients. Each accepted connection re-reads the immutable DPAPI
-        // vault, re-checks its digest and all bindings, decrypts it for that one
-        // connection, writes the bounded frame, then zeroes temporary byte buffers.
-        while (true)
-        {
-            using (NamedPipeServerStream server = CreateServer(pipeName, sid))
-            {
-                if (!WaitForConnection(server, timeoutMs))
-                    continue;
-
-                byte[] envelope = null;
-                try
-                {
-                    envelope = BuildEnvelope(
-                        vaultPath,
-                        expectedVaultSha256,
-                        expectedExecutorId,
-                        expectedAccountReference,
-                        expectedBrokerServer,
-                        expectedVerificationKeyId,
-                        expectedAccountReferenceSha256
-                    );
-                    WriteEnvelope(server, envelope);
-                }
-                finally
-                {
-                    Zero(envelope);
-                }
-            }
-        }
-    }
-
-    private static Dictionary<string, object> ParseExactVault(byte[] plain)
-    {
-        string json = Encoding.UTF8.GetString(plain);
-        Dictionary<string, object> result;
-        try
-        {
-            result = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
-        }
-        catch (Exception)
-        {
-            Fail("CREDENTIAL_SCHEMA_INVALID");
-            return null;
-        }
-        finally
-        {
-            json = null;
+            throw new ArgumentException("ARGUMENT_CONTRACT_INVALID");
         }
 
-        string[] exactKeys = new[]
-        {
-            "schema", "executor_id", "account_id_reference", "broker_server",
-            "executor_token", "verification_key_id", "verification_key_type",
-            "verification_key", "issued_at_utc", "expires_at_utc"
-        };
-        if (result == null || result.Count != exactKeys.Length)
-            Fail("CREDENTIAL_SCHEMA_INVALID");
-        foreach (string key in exactKeys)
-            if (!result.ContainsKey(key))
-                Fail("CREDENTIAL_SCHEMA_INVALID");
-        if (result["issued_at_utc"] == null || !(result["issued_at_utc"] is string))
-            Fail("CREDENTIAL_SCHEMA_INVALID");
-        if (result["expires_at_utc"] != null)
-            Fail("CREDENTIAL_SCHEMA_INVALID");
-        return result;
-    }
+        Dictionary<string, string> options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-    private static Dictionary<string, string> ParseArguments(string[] args)
-    {
-        if (args == null || args.Length == 0 || args.Length % 2 != 0)
-            Fail("ARGUMENT_CONTRACT_INVALID");
-        Dictionary<string, string> options = new Dictionary<string, string>(StringComparer.Ordinal);
         for (int index = 0; index < args.Length; index += 2)
         {
-            string name = args[index];
-            if (name == null || !name.StartsWith("--", StringComparison.Ordinal) || name.Length < 3)
-                Fail("ARGUMENT_CONTRACT_INVALID");
-            name = name.Substring(2);
-            if (options.ContainsKey(name))
-                Fail("ARGUMENT_CONTRACT_INVALID");
-            options.Add(name, args[index + 1]);
+            string key = args[index];
+            string value = args[index + 1];
+
+            if (!key.StartsWith("--", StringComparison.Ordinal))
+            {
+                throw new ArgumentException("ARGUMENT_CONTRACT_INVALID");
+            }
+
+            options[key.Substring(2)] = value;
         }
 
-        string[] required = new[]
+        HashSet<string> allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "vault", "vault-sha256", "pipe-name", "executor-id", "account-reference",
-            "broker-server", "verification-key-id", "account-reference-sha256", "timeout-ms"
+            "vault",
+            "vault-sha256",
+            "pipe-name",
+            "executor-id",
+            "account-reference",
+            "broker-server",
+            "verification-key-id",
+            "account-reference-sha256",
+            "timeout-ms",
+            "serve-mode",
+            "expected-user-sid",
         };
-        foreach (string name in required)
-            if (!options.ContainsKey(name))
-                Fail("ARGUMENT_CONTRACT_INVALID");
 
-        foreach (string name in options.Keys)
-            if (Array.IndexOf(required, name) < 0 &&
-                name != "expected-user-sid" &&
-                name != "serve-mode")
-                Fail("ARGUMENT_CONTRACT_INVALID");
-        return options;
+        foreach (string key in options.Keys)
+        {
+            if (!allowed.Contains(key))
+            {
+                throw new ArgumentException("ARGUMENT_CONTRACT_INVALID");
+            }
+        }
+
+        BrokerOptions result = new BrokerOptions
+        {
+            VaultPath = Required(options, "vault"),
+            ExpectedVaultSha256 = RequiredLowerHex(options, "vault-sha256", 64),
+            PipeName = Required(options, "pipe-name"),
+            ExpectedExecutorId = Required(options, "executor-id"),
+            ExpectedAccountReference = Required(options, "account-reference"),
+            ExpectedBrokerServer = Required(options, "broker-server"),
+            ExpectedVerificationKeyId = Required(options, "verification-key-id"),
+            ExpectedAccountReferenceSha256 = RequiredLowerHex(options, "account-reference-sha256", 64),
+            TimeoutMs = RequiredBoundedInteger(options, "timeout-ms", 100, 60000),
+            ServeMode = OptionalServeMode(options),
+            ExpectedUserSid = Optional(options, "expected-user-sid"),
+        };
+
+        return result;
     }
 
     private static string OptionalServeMode(Dictionary<string, string> options)
     {
-        string value;
-        if (!options.TryGetValue("serve-mode", out value))
-            return "once";
-        if (value != "once" && value != "persistent")
-            Fail("ARGUMENT_CONTRACT_INVALID");
-        return value;
+        string value = Optional(options, "serve-mode") ?? "once";
+
+        if (!string.Equals(value, "once", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(value, "persistent", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("ARGUMENT_CONTRACT_INVALID");
+        }
+
+        return value.ToLowerInvariant();
     }
 
-    private static string Required(Dictionary<string, string> options, string name)
+    private static string Required(Dictionary<string, string> options, string key)
     {
-        string value;
-        if (!options.TryGetValue(name, out value) || String.IsNullOrEmpty(value))
-            Fail("ARGUMENT_CONTRACT_INVALID");
+        string? value = Optional(options, key);
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("ARGUMENT_CONTRACT_INVALID");
+        }
+
         return value;
     }
 
-    private static int RequiredBoundedInteger(Dictionary<string, string> options, string name, int minimum, int maximum)
+    private static string? Optional(Dictionary<string, string> options, string key)
     {
-        int value;
-        if (!Int32.TryParse(Required(options, name), NumberStyles.None, CultureInfo.InvariantCulture, out value) ||
-            value < minimum || value > maximum)
-            Fail("ARGUMENT_CONTRACT_INVALID");
-        return value;
+        return options.TryGetValue(key, out string? value) ? value : null;
     }
 
-    private static string RequiredLowerHex(Dictionary<string, string> options, string name, int length)
+    private static string RequiredLowerHex(Dictionary<string, string> options, string key, int length)
     {
-        string value = Required(options, name);
-        if (!IsLowerHex(value, length))
-            Fail("ARGUMENT_CONTRACT_INVALID");
+        string value = Required(options, key).Trim().ToLowerInvariant();
+
+        if (value.Length != length || value.Any(character => !Uri.IsHexDigit(character)))
+        {
+            throw new ArgumentException("ARGUMENT_CONTRACT_INVALID");
+        }
+
         return value;
     }
 
-    private static SecurityIdentifier ResolveCurrentUserSid(Dictionary<string, string> options)
+    private static int RequiredBoundedInteger(
+        Dictionary<string, string> options,
+        string key,
+        int minimum,
+        int maximum)
+    {
+        string value = Required(options, key);
+
+        if (!int.TryParse(value, out int parsed) || parsed < minimum || parsed > maximum)
+        {
+            throw new ArgumentException("ARGUMENT_CONTRACT_INVALID");
+        }
+
+        return parsed;
+    }
+
+    private static void ValidatePipeName(string pipeName)
+    {
+        if (!pipeName.StartsWith(PipePrefix, StringComparison.Ordinal) ||
+            pipeName.Any(character => !(char.IsLower(character) || char.IsDigit(character) || character == '-')))
+        {
+            throw new ArgumentException("PIPE_NAME_INVALID");
+        }
+    }
+
+    private static void ValidateCurrentUser(string? expectedUserSid)
     {
         WindowsIdentity identity = WindowsIdentity.GetCurrent();
-        SecurityIdentifier sid = identity == null ? null : identity.User;
+        string currentSid = identity.User?.Value ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(currentSid))
+        {
+            throw new InvalidOperationException("CURRENT_USER_SID_UNAVAILABLE");
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedUserSid) &&
+            !string.Equals(currentSid, expectedUserSid, StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException("CURRENT_USER_SID_MISMATCH");
+        }
+    }
+
+    private static PipeSecurity BuildCurrentUserOnlyPipeSecurity()
+    {
+        WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        SecurityIdentifier? sid = identity.User;
+
         if (sid == null)
-            Fail("WINDOWS_IDENTITY_UNAVAILABLE");
-
-        string expected;
-        if (options.TryGetValue("expected-user-sid", out expected))
         {
-            if (String.IsNullOrEmpty(expected) || !IsWindowsSid(expected))
-                Fail("ARGUMENT_CONTRACT_INVALID");
-            if (!String.Equals(sid.Value, expected, StringComparison.OrdinalIgnoreCase))
-                Fail("WRONG_WINDOWS_USER");
+            throw new InvalidOperationException("CURRENT_USER_SID_UNAVAILABLE");
         }
-        return sid;
+
+        PipeSecurity security = new PipeSecurity();
+        security.SetAccessRuleProtection(true, false);
+        security.AddAccessRule(new PipeAccessRule(
+            sid,
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        security.SetOwner(sid);
+
+        return security;
     }
 
-    private static bool IsWindowsSid(string value)
+    private static void VerifySha256(byte[] content, string expectedSha256)
     {
-        if (value == null || value.Length < 8 || value.Length > 184)
-            return false;
-        if (!value.StartsWith("S-1-", StringComparison.Ordinal))
-            return false;
-        foreach (char character in value)
-            if (!((character >= '0' && character <= '9') || character == '-' || character == 'S'))
-                return false;
-        try
+        using (SHA256 sha = SHA256.Create())
         {
-            new SecurityIdentifier(value);
+            string actual = BitConverter.ToString(sha.ComputeHash(content)).Replace("-", string.Empty).ToLowerInvariant();
+
+            if (!string.Equals(actual, expectedSha256, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("VAULT_SHA256_MISMATCH");
+            }
         }
-        catch (ArgumentException)
+    }
+
+    private static void ValidateVault(VaultDocument vault, BrokerOptions options)
+    {
+        if (!string.Equals(vault.schema, VaultSchema, StringComparison.Ordinal))
         {
-            return false;
+            throw new InvalidDataException("VAULT_SCHEMA_INVALID");
         }
-        return true;
+
+        if (!string.Equals(vault.executor_id, options.ExpectedExecutorId, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("EXECUTOR_BINDING_INVALID");
+        }
+
+        if (!string.Equals(vault.account_reference, options.ExpectedAccountReference, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("ACCOUNT_REFERENCE_BINDING_INVALID");
+        }
+
+        if (!string.Equals(vault.broker_server, options.ExpectedBrokerServer, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("BROKER_SERVER_BINDING_INVALID");
+        }
+
+        if (!string.Equals(vault.verification_key_id, options.ExpectedVerificationKeyId, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("VERIFICATION_KEY_BINDING_INVALID");
+        }
+
+        string accountReferenceSha256 = Sha256Hex(vault.account_reference);
+        if (!string.Equals(accountReferenceSha256, options.ExpectedAccountReferenceSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("ACCOUNT_REFERENCE_SHA256_INVALID");
+        }
+
+        if (string.IsNullOrWhiteSpace(vault.base_url) ||
+            string.IsNullOrWhiteSpace(vault.authorization_token) ||
+            string.IsNullOrWhiteSpace(vault.command_verification_key))
+        {
+            throw new InvalidDataException("VAULT_REQUIRED_SECRET_MISSING");
+        }
     }
 
-    private static void ValidatePipeName(string value)
+    private static string Sha256Hex(string value)
     {
-        if (!value.StartsWith("wolf15-lean-d0-", StringComparison.Ordinal) || value.Length > 100)
-            Fail("ARGUMENT_CONTRACT_INVALID");
-        foreach (char character in value)
-            if (!((character >= 'a' && character <= 'z') ||
-                  (character >= '0' && character <= '9') || character == '-'))
-                Fail("ARGUMENT_CONTRACT_INVALID");
+        using (SHA256 sha = SHA256.Create())
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(value);
+            try
+            {
+                return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", string.Empty).ToLowerInvariant();
+            }
+            finally
+            {
+                ZeroBuffer(bytes);
+            }
+        }
     }
 
-    private static void RequireExactString(
-        Dictionary<string, object> values,
-        string name,
-        string expected,
-        string reasonCode
-    )
+    private static void ZeroBuffer(byte[]? buffer)
     {
-        object raw;
-        if (!values.TryGetValue(name, out raw) || !(raw is string) ||
-            !String.Equals((string)raw, expected, StringComparison.Ordinal))
-            Fail(reasonCode);
+        if (buffer == null)
+        {
+            return;
+        }
+
+        Array.Clear(buffer, 0, buffer.Length);
     }
 
-    private static string RequireLowerHexString(
-        Dictionary<string, object> values,
-        string name,
-        int length,
-        string reasonCode
-    )
+    private static string SanitizeFailure(Exception exception)
     {
-        object raw;
-        if (!values.TryGetValue(name, out raw) || !(raw is string) || !IsLowerHex((string)raw, length))
-            Fail(reasonCode);
-        return (string)raw;
-    }
-
-    private static string RequireTaggedLowerHexString(
-        Dictionary<string, object> values,
-        string name,
-        string prefix,
-        int hexLength,
-        string reasonCode
-    )
-    {
-        object raw;
-        if (!values.TryGetValue(name, out raw) || !(raw is string))
-            Fail(reasonCode);
-        string value = (string)raw;
-        if (!value.StartsWith(prefix, StringComparison.Ordinal) ||
-            !IsLowerHex(value.Substring(prefix.Length), hexLength))
-            Fail(reasonCode);
-        return value;
-    }
-
-    private static bool IsLowerHex(string value, int exactLength)
-    {
-        if (value == null || value.Length != exactLength)
-            return false;
-        foreach (char character in value)
-            if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')))
-                return false;
-        return true;
-    }
-
-    private static byte[] Sha256(byte[] value)
-    {
-        using (SHA256 algorithm = SHA256.Create())
-            return algorithm.ComputeHash(value);
-    }
-
-    private static string Hex(byte[] value)
-    {
-        StringBuilder result = new StringBuilder(value.Length * 2);
-        foreach (byte item in value)
-            result.Append(item.ToString("x2", CultureInfo.InvariantCulture));
-        return result.ToString();
-    }
-
-    private static bool FixedTimeEquals(string left, string right)
-    {
-        if (left == null || right == null || left.Length != right.Length)
-            return false;
-        int difference = 0;
-        for (int index = 0; index < left.Length; index++)
-            difference |= left[index] ^ right[index];
-        return difference == 0;
-    }
-
-    private static void Zero(byte[] value)
-    {
-        if (value != null)
-            Array.Clear(value, 0, value.Length);
-    }
-
-    private static void Fail(string reasonCode)
-    {
-        throw new ControlledFailure(reasonCode);
-    }
-
-    private sealed class ControlledFailure : Exception
-    {
-        internal readonly string ReasonCode;
-        internal ControlledFailure(string reasonCode) { ReasonCode = reasonCode; }
+        string message = exception.Message ?? exception.GetType().Name;
+        return message.Replace(Environment.NewLine, " ").Replace("\r", " ").Replace("\n", " ");
     }
 }
