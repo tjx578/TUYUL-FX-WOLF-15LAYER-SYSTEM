@@ -72,7 +72,7 @@ def direction_quality(
         return "CONFLICT"
     if any(event.direction_quality == "UNKNOWN" for event in observations):
         return "UNKNOWN"
-    return next(iter(known), "UNKNOWN")
+    return next(iter(known)) if known else "UNKNOWN"
 
 
 def observation_hash(observations: tuple[RawActivityObservationV31, ...]) -> str:
