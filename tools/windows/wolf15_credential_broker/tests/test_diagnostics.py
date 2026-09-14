@@ -1,7 +1,7 @@
 """Execute only the CI-built broker, with synthetic failure fixtures, on Windows.
 
 No compilation, real vault, MT5 connection, or trading endpoint is used here.
-An unset executable skips local runs; a configured but missing EXE fails CI.
+Requires Windows and an explicit CI-built executable; missing prerequisites fail.
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from pathlib import Path
 import pytest
 
 EXE = os.environ.get("WOLF15_BROKER_TEST_EXE", "")
-pytestmark = pytest.mark.skipif(os.name != "nt" or not EXE, reason="Requires explicitly selected Windows CI artifact")
+if os.name != "nt" or not EXE:
+    raise RuntimeError("Windows and WOLF15_BROKER_TEST_EXE are required")
 SENTINEL = "SYNTHETIC_PRIVATE_VALUE_DO_NOT_LOG"
 
 
