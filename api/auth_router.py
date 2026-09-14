@@ -215,6 +215,7 @@ async def owner_login(body: OwnerLoginRequest, response: Response) -> OwnerLogin
             # Release in the worker, not when a disconnected caller cancels.
             gate.release()
 
+    valid: bool = False
     with anyio.CancelScope(shield=True):
         valid = await anyio.to_thread.run_sync(verify, abandon_on_cancel=False)
     if not valid:
