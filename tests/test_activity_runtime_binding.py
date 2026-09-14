@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from unittest.mock import Mock
 
@@ -9,7 +10,7 @@ from pydantic import ValidationError
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer
 from analysis.strategy_5scr_activity_service import activity_runtime_from_environment
 from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
-from contracts.strategy_5scr_activity_runtime import ActivityRuntimeBindingV1
+from contracts.strategy_5scr_activity_runtime import SELECTED_SSOT_SHA256, ActivityRuntimeBindingV1
 
 START = datetime(2026, 9, 9, tzinfo=UTC)
 
@@ -83,12 +84,39 @@ def test_factory_missing_dsn_or_wrong_deployment_is_explicit(tmp_path):
         {"execution_authority": True},
         {"environment_class": "LIVE"},
         {"ssot_sha256": "wrong"},
+        {"ssot_sha256": "0" * 64},
         {"recovery_overlap_seconds": -1},
     ],
 )
 def test_binding_rejects_authority_and_unbound_identity(override):
     with pytest.raises(ValidationError):
         binding(**override)
+
+
+def test_default_and_explicit_selected_ssot_have_same_persisted_identity():
+    default = binding()
+    explicit = binding(ssot_sha256=SELECTED_SSOT_SHA256)
+    restored = ActivityRuntimeBindingV1.model_validate_json(default.model_dump_json())
+    assert restored == default == explicit
+    assert restored.ssot_sha256 == SELECTED_SSOT_SHA256
+    assert restored.binding_hash == explicit.binding_hash
+    assert restored.execution_authority is False
+
+
+def test_factory_rejects_well_formed_but_unselected_ssot(tmp_path):
+    payload = binding().model_dump(mode="json")
+    payload["ssot_sha256"] = "0" * 64
+    source = tmp_path / "binding.json"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+    runtime = activity_runtime_from_environment(
+        {
+            "WOLF15_PAIR_ACTIVITY_BINDING_PATH": str(source),
+            "WOLF15_PAIR_ACTIVITY_DATABASE_URL": "never-connected",
+            "DEPLOYMENT_ID": "deployment-test",
+        }
+    )
+    assert runtime.snapshot()["reason_code"] == "ACTIVITY_RUNTIME_BINDING_INVALID"
+    assert runtime.snapshot()["execution_authority"] is False
 
 
 def test_live_caller_persists_enriched_fact_and_exposes_runtime_reason(monkeypatch):

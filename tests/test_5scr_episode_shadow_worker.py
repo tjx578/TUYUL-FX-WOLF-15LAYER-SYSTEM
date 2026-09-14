@@ -8,6 +8,7 @@ persist, and in every case it produces no execution effect.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 
@@ -23,10 +24,12 @@ from services.pressure_outbox.lifecycle_shadow_worker import (
     LifecycleShadowWorker,
     episode_event_from_outbox_row,
 )
+from storage.strategy_5scr_lifecycle_v2_repository import StrategyLifecycleV2Repository
 
 START = datetime(2026, 7, 17, 13, 0, 0, tzinfo=UTC)
 
 
+# Injection casts below are limited to this double's exercised repository surface.
 class _FakeRepository:
     """In-memory stand-in exposing the repository surface the worker uses."""
 
@@ -83,7 +86,7 @@ def test_flags_default_off(monkeypatch):
 async def test_disabled_worker_does_nothing(monkeypatch):
     monkeypatch.delenv("STRATEGY_5SCR_LIFECYCLE_V2_ENABLED", raising=False)
     repository = _FakeRepository()
-    worker = LifecycleShadowWorker(repository=repository)
+    worker = LifecycleShadowWorker(repository=cast(StrategyLifecycleV2Repository, repository))
 
     assert await worker.process_event(_event()) is None
     assert repository.persisted == []
@@ -95,7 +98,10 @@ async def test_worker_refuses_when_shadow_only_is_false(monkeypatch):
     monkeypatch.setenv("STRATEGY_5SCR_LIFECYCLE_V2_SHADOW_ONLY", "false")
     repository = _FakeRepository()
 
-    assert await LifecycleShadowWorker(repository=repository).process_event(_event()) is None
+    assert (
+        await LifecycleShadowWorker(repository=cast(StrategyLifecycleV2Repository, repository)).process_event(_event())
+        is None
+    )
     assert repository.persisted == []
 
 
@@ -124,7 +130,9 @@ async def test_dual_write_off_does_not_persist(enabled, monkeypatch):
     monkeypatch.setenv("STRATEGY_5SCR_LIFECYCLE_V2_DUAL_WRITE_ENABLED", "false")
     repository = _FakeRepository()
 
-    lifecycle = await LifecycleShadowWorker(repository=repository).process_event(_event())
+    lifecycle = await LifecycleShadowWorker(repository=cast(StrategyLifecycleV2Repository, repository)).process_event(
+        _event()
+    )
 
     assert lifecycle is not None
     assert repository.persisted == []
@@ -135,7 +143,7 @@ async def test_dual_write_on_persists_episode_and_link(enabled, monkeypatch):
     monkeypatch.setenv("STRATEGY_5SCR_LIFECYCLE_V2_DUAL_WRITE_ENABLED", "true")
     repository = _FakeRepository()
 
-    await LifecycleShadowWorker(repository=repository).process_event(_event())
+    await LifecycleShadowWorker(repository=cast(StrategyLifecycleV2Repository, repository)).process_event(_event())
 
     assert len(repository.persisted) == 1
     lifecycle, link = repository.persisted[0]
@@ -152,12 +160,15 @@ async def test_dual_write_on_persists_episode_and_link(enabled, monkeypatch):
 async def test_restart_continues_a_recovered_episode(enabled, monkeypatch):
     monkeypatch.setenv("STRATEGY_5SCR_LIFECYCLE_V2_DUAL_WRITE_ENABLED", "false")
 
-    first = await LifecycleShadowWorker(repository=_FakeRepository()).process_event(_event(1))
+    first = await LifecycleShadowWorker(
+        repository=cast(StrategyLifecycleV2Repository, _FakeRepository())
+    ).process_event(_event(1))
+    assert first is not None
 
     # A fresh worker recovers the episode from the repository, as after restart.
-    resumed = await LifecycleShadowWorker(repository=_FakeRepository(active=first)).process_event(
-        _event(2, offset_seconds=120)
-    )
+    resumed = await LifecycleShadowWorker(
+        repository=cast(StrategyLifecycleV2Repository, _FakeRepository(active=first))
+    ).process_event(_event(2, offset_seconds=120))
 
     assert resumed is not None
     assert resumed.strategy_lifecycle_id == first.strategy_lifecycle_id
@@ -168,10 +179,13 @@ async def test_restart_continues_a_recovered_episode(enabled, monkeypatch):
 async def test_restart_after_gap_opens_a_new_episode(enabled, monkeypatch):
     monkeypatch.setenv("STRATEGY_5SCR_LIFECYCLE_V2_DUAL_WRITE_ENABLED", "false")
 
-    first = await LifecycleShadowWorker(repository=_FakeRepository()).process_event(_event(1))
-    resumed = await LifecycleShadowWorker(repository=_FakeRepository(active=first)).process_event(
-        _event(2, offset_seconds=1200)
-    )
+    first = await LifecycleShadowWorker(
+        repository=cast(StrategyLifecycleV2Repository, _FakeRepository())
+    ).process_event(_event(1))
+    assert first is not None
+    resumed = await LifecycleShadowWorker(
+        repository=cast(StrategyLifecycleV2Repository, _FakeRepository(active=first))
+    ).process_event(_event(2, offset_seconds=1200))
 
     assert resumed is not None
     assert resumed.strategy_lifecycle_id != first.strategy_lifecycle_id
@@ -187,7 +201,9 @@ async def test_batch_reports_compression_without_execution_impact(enabled, monke
     monkeypatch.setenv("STRATEGY_5SCR_LIFECYCLE_V2_DUAL_WRITE_ENABLED", "false")
     events = [_event(i, offset_seconds=i * 60) for i in range(10)]
 
-    summary = await LifecycleShadowWorker(repository=_FakeRepository()).process_batch(events)
+    summary = await LifecycleShadowWorker(
+        repository=cast(StrategyLifecycleV2Repository, _FakeRepository())
+    ).process_batch(events)
 
     assert summary["pressure_events_total"] == 10
     assert summary["strategy_lifecycles_v2_total"] == 1
@@ -200,7 +216,9 @@ async def test_batch_reports_compression_without_execution_impact(enabled, monke
 async def test_batch_disabled_returns_disabled_summary(monkeypatch):
     monkeypatch.delenv("STRATEGY_5SCR_LIFECYCLE_V2_ENABLED", raising=False)
 
-    summary = await LifecycleShadowWorker(repository=_FakeRepository()).process_batch([_event()])
+    summary = await LifecycleShadowWorker(
+        repository=cast(StrategyLifecycleV2Repository, _FakeRepository())
+    ).process_batch([_event()])
 
     assert summary == {"enabled": False}
 

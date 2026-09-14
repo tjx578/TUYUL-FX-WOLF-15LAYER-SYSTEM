@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from analysis.strategy_5scr_raw_admission_blocks import (
     is_raw_signal_throttle_authority,
@@ -59,9 +59,9 @@ def normalize_pair_activity_observations(raw_events: Iterable[Any]) -> PairActiv
     Logical observations are not Microboost pulses or execution authority.
     """
     observations: dict[str, RawActivityObservationV31] = {}
-    bindings: dict[str, tuple[str | None, str | None]] = {}
+    bindings: dict[str, tuple[str | None, Literal["signal-throttle-observation.v1"] | None]] = {}
     groups: dict[str, list[RawActivityObservationV31]] = {}
-    group_bindings: dict[str, tuple[str | None, str | None]] = {}
+    group_bindings: dict[str, tuple[str | None, Literal["signal-throttle-observation.v1"] | None]] = {}
     duplicates = skipped = 0
     for event in raw_events:
         if not is_raw_signal_throttle_authority(event):

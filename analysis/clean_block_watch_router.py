@@ -128,6 +128,7 @@ def route_clean_block_to_watch(
         )
 
     assert signal_price is not None  # for type checkers; guarded above
+    assert direction is not None  # missing direction adds a blocker above
     return CleanBlockWatchRoute(
         event="signal_watch_json",
         payload=_watch_payload(
@@ -761,6 +762,8 @@ def _field(source: Any, name: str) -> Any:
     if isinstance(source, Mapping):
         return source.get(name)
     if is_dataclass(source):
+        if isinstance(source, type):
+            raise TypeError("asdict() should be called on dataclass instances")
         return asdict(source).get(name)
     return getattr(source, name, None)
 

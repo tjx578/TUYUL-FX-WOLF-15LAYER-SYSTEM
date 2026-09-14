@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Literal, TypedDict, Unpack
 from uuid import uuid4
 
 import pytest
@@ -11,6 +12,7 @@ from contracts.mt5_execution_protocol import AccountSnapshotV1, MarginMode, Symb
 from risk.s5_campaign_risk import (
     CampaignRiskLock,
     CampaignRiskPolicy,
+    PositionRiskResult,
     S5RiskReason,
     authorize_campaign_risk,
     campaign_risk_lock_fingerprint,
@@ -35,7 +37,6 @@ def _symbol(**overrides: float) -> SymbolCapability:
         "freeze_level_points": 0,
         "expiration_modes": ["SPECIFIED"],
     }
-    payload.update(overrides)
     return SymbolCapability.model_validate(payload)
 
 
@@ -180,18 +181,39 @@ def test_stale_snapshot_fails_closed() -> None:
     assert result.reason == S5RiskReason.SNAPSHOT_STALE
 
 
-def _authorize(candidate, **overrides):
-    args = dict(
-        risk_lock=_risk_lock(),
-        candidate=candidate,
-        entry_role="PARENT",
-        parent_is_open=False,
-        child_already_exists=False,
-        committed_or_reserved_campaign_risk_usd=0,
-        account_total_open_risk_usd=0,
-        policy=CampaignRiskPolicy(),
-    )
-    args.update(overrides)
+class _AuthorizationArgs(TypedDict):
+    risk_lock: CampaignRiskLock
+    candidate: PositionRiskResult
+    entry_role: str
+    parent_is_open: bool
+    child_already_exists: bool
+    committed_or_reserved_campaign_risk_usd: float | Decimal
+    account_total_open_risk_usd: float | Decimal
+    policy: CampaignRiskPolicy
+
+
+class _AuthorizationOverrides(TypedDict, total=False):
+    risk_lock: CampaignRiskLock
+    entry_role: str
+    parent_is_open: bool
+    child_already_exists: bool
+    committed_or_reserved_campaign_risk_usd: float | Decimal
+    account_total_open_risk_usd: float | Decimal
+    policy: CampaignRiskPolicy
+
+
+def _authorize(candidate: PositionRiskResult, **overrides: Unpack[_AuthorizationOverrides]):
+    args: _AuthorizationArgs = {
+        "risk_lock": _risk_lock(),
+        "candidate": candidate,
+        "entry_role": "PARENT",
+        "parent_is_open": False,
+        "child_already_exists": False,
+        "committed_or_reserved_campaign_risk_usd": 0,
+        "account_total_open_risk_usd": 0,
+        "policy": CampaignRiskPolicy(),
+        **overrides,
+    }
     return authorize_campaign_risk(**args)
 
 
@@ -229,8 +251,13 @@ def test_inconsistent_sizing_cannot_authorize(changes):
 
 @pytest.mark.parametrize("field", ["committed_or_reserved_campaign_risk_usd", "account_total_open_risk_usd"])
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
-def test_invalid_ledger_numbers_return_rejection(field, value):
-    assert _authorize(_sized_parent(), **{field: value}) == S5RiskReason.RISK_STATE_INVALID
+def test_invalid_ledger_numbers_return_rejection(
+    field: Literal["committed_or_reserved_campaign_risk_usd", "account_total_open_risk_usd"],
+    value: float,
+):
+    overrides: _AuthorizationOverrides = {}
+    overrides[field] = value
+    assert _authorize(_sized_parent(), **overrides) == S5RiskReason.RISK_STATE_INVALID
 
 
 def test_current_lock_valid_candidate_is_still_approved():
@@ -251,10 +278,15 @@ def test_one_risk_unit_is_rechecked_even_when_campaign_cap_has_room():
         ("account_total_open_risk_usd", S5RiskReason.ACCOUNT_OPEN_RISK_EXCEEDED),
     ],
 )
-def test_decimal_ledger_excess_is_not_rounded_down_at_cap(field, reason):
+def test_decimal_ledger_excess_is_not_rounded_down_at_cap(
+    field: Literal["committed_or_reserved_campaign_risk_usd", "account_total_open_risk_usd"],
+    reason,
+):
     total = Decimal("50.000000000000000000000000001")
     assert float(total) == 50.0  # The old repository conversion lost this excess.
-    assert _authorize(_sized_parent(), **{field: total}) == reason
+    overrides: _AuthorizationOverrides = {}
+    overrides[field] = total
+    assert _authorize(_sized_parent(), **overrides) == reason
 
 
 @pytest.mark.parametrize(

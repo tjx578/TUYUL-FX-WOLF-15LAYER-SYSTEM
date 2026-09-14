@@ -40,9 +40,10 @@ class AccountManager:
             async for key in client.scan_iter(match="ACCOUNT:*"):
                 raw_id = str(key).split(":", 1)[1]
                 account_id = str(raw_id)
+                # The shared client decodes hash fields and values to strings.
                 payload = await client.hgetall(str(key))  # type: ignore[misc]  # redis.asyncio ResponseT
                 if payload:
-                    accounts[account_id] = self._from_payload(account_id, payload)
+                    accounts[account_id] = self._from_payload(account_id, cast(dict[str, str], payload))
 
         return sorted(accounts.values(), key=lambda a: a.account_id)
 

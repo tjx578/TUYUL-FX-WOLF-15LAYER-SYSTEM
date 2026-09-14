@@ -662,11 +662,14 @@ def _metric_for_scope(pressure_tier: Mapping[str, Any] | None) -> Mapping[str, A
         return {}
     scope = str(pressure_tier.get("tier_scope") or "live").lower()
     if scope.startswith("live"):
-        return metrics.get("live") if isinstance(metrics.get("live"), Mapping) else {}
+        metric = metrics.get("live")
+        return metric if isinstance(metric, Mapping) else {}
     if scope.startswith("session"):
-        return metrics.get("session") if isinstance(metrics.get("session"), Mapping) else {}
+        metric = metrics.get("session")
+        return metric if isinstance(metric, Mapping) else {}
     if scope.startswith("archive"):
-        return metrics.get("archive") if isinstance(metrics.get("archive"), Mapping) else {}
+        metric = metrics.get("archive")
+        return metric if isinstance(metric, Mapping) else {}
     return {}
 
 
@@ -718,6 +721,8 @@ def _field(source: Any, name: str) -> Any:
     if isinstance(source, Mapping):
         return source.get(name)
     if is_dataclass(source):
+        if isinstance(source, type):
+            raise TypeError("asdict() should be called on dataclass instances")
         return asdict(source).get(name)
     return getattr(source, name, None)
 

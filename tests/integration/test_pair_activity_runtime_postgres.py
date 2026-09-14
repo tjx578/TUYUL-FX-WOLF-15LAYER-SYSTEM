@@ -9,12 +9,13 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal, TypeVar
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 import psycopg
 import pytest
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 from psycopg.types.json import Jsonb
 
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer, SignalThrottleLogEvent
@@ -48,32 +49,36 @@ def pg_dsn():
     assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
     with psycopg.connect(dsn) as connection:
         require_server_address(
-            connection.execute("SELECT inet_server_addr()::text").fetchone()[0],
+            _required_row(connection.execute("SELECT inet_server_addr()::text").fetchone())[0],
             os.environ.get("WOLF15_POSTGRES_TEST_SERVER_ADDRESS", ""),
         )
-        assert connection.execute("SELECT current_database()").fetchone()[0] == expected
+        assert _required_row(connection.execute("SELECT current_database()").fetchone())[0] == expected
         assert (
-            connection.execute("SELECT current_setting('wolf15.environment_class',true)").fetchone()[0]
+            _required_row(connection.execute("SELECT current_setting('wolf15.environment_class',true)").fetchone())[0]
             == "DISPOSABLE_TEST"
         )
         assert (
-            connection.execute("SELECT current_setting('wolf15.destructive_tests_allowed',true)").fetchone()[0]
+            _required_row(
+                connection.execute("SELECT current_setting('wolf15.destructive_tests_allowed',true)").fetchone()
+            )[0]
             == "true"
         )
-        present = connection.execute("SELECT to_regclass('public.pair_activity_ledgers_v31')").fetchone()[0]
+        present = _required_row(
+            connection.execute("SELECT to_regclass('public.pair_activity_ledgers_v31')").fetchone()
+        )[0]
         assert present is not None, "explicit migrator setup must create the v3.1 schema before acceptance tests"
     strict = evidence_directory() is not None
+
+    def observe():
+        with psycopg.connect(dsn, connect_timeout=3, options="-c statement_timeout=5000") as connection:
+            return observe_postgres(
+                connection,
+                expected,
+                os.environ["WOLF15_PAIR_ACTIVITY_EXPECTED_MIGRATION_HEAD"],
+                int(os.environ["WOLF15_PAIR_ACTIVITY_EXPECTED_PG_MAJOR"]),
+            )
+
     if strict:
-
-        def observe():
-            with psycopg.connect(dsn, connect_timeout=3, options="-c statement_timeout=5000") as connection:
-                return observe_postgres(
-                    connection,
-                    expected,
-                    os.environ["WOLF15_PAIR_ACTIVITY_EXPECTED_MIGRATION_HEAD"],
-                    int(os.environ["WOLF15_PAIR_ACTIVITY_EXPECTED_PG_MAJOR"]),
-                )
-
         write_fixture_phase("before", observe())
     yield dsn
     if strict:
@@ -119,7 +124,7 @@ def fixture_binding(*, policy=True):
     )
 
 
-def checkpoint(binding, expected_events, *, end=300, status="COMPLETE"):
+def checkpoint(binding, expected_events, *, end=300, status: Literal["COMPLETE", "INCOMPLETE", "UNKNOWN"] = "COMPLETE"):
     expected = normalize_pair_activity_observations(expected_events)
     return ActivityCoverageCheckpointV1(
         binding_hash=binding.binding_hash,
@@ -143,13 +148,16 @@ def runtime(dsn, binding, cp, *, second=300, after_evaluations=None):
     )
 
 
-def rows(dsn, binding):
-    with psycopg.connect(dsn, row_factory=dict_row) as connection:
+def rows(dsn: str, binding):
+    with psycopg.Connection[DictRow].connect(dsn, row_factory=dict_row) as connection:
         counts = {}
         for name in ("raw", "observations", "evaluations", "attachments", "snapshots"):
-            counts[name] = connection.execute(
-                f"SELECT count(*) AS n FROM public.pair_activity_{name}_v31 WHERE ledger_id=%s", (binding.ledger_id,)
-            ).fetchone()["n"]
+            counts[name] = _required_row(
+                connection.execute(
+                    f"SELECT count(*) AS n FROM public.pair_activity_{name}_v31 WHERE ledger_id=%s",
+                    (binding.ledger_id,),
+                ).fetchone()
+            )["n"]
         counts["ledger"] = connection.execute(
             "SELECT revision,evaluated_through,raw_watermark FROM public.pair_activity_ledgers_v31 WHERE ledger_id=%s",
             (binding.ledger_id,),
@@ -376,7 +384,7 @@ def test_postgres_itself_rejects_authority_escalation_or_null(pg_dsn, bad, key):
     binding = fixture_binding()
     service = runtime(pg_dsn, binding, None)
     service.append([raw(0)])
-    payload = dict.fromkeys(
+    payload: dict[str, bool | str] = dict.fromkeys(
         ["hypothesis_authority", "risk_authority", "execution_authority", "valid_for_execution"], False
     )
     payload.update(evaluation_id="invalid", activity_id="invalid")
@@ -470,7 +478,7 @@ def test_snapshot_database_guard_requires_boolean_false_for_all_authorities(pg_d
 def test_database_authority_guards_accept_actual_boolean_false_control(pg_dsn):
     binding = fixture_binding()
     runtime(pg_dsn, binding, None).append([raw(0)])
-    payload = dict.fromkeys(
+    payload: dict[str, bool | str] = dict.fromkeys(
         ["hypothesis_authority", "risk_authority", "execution_authority", "valid_for_execution"], False
     )
     payload.update(evaluation_id="positive", activity_id="positive")
@@ -483,3 +491,11 @@ def test_database_authority_guards_accept_actual_boolean_false_control(pg_dsn):
             "INSERT INTO public.pair_activity_snapshots_v31(ledger_id,snapshot_id,revision,report) VALUES (%s,%s,%s,%s)",
             (binding.ledger_id, "positive", 0, Jsonb(payload)),
         )
+
+
+_Row = TypeVar("_Row")
+
+
+def _required_row(row: _Row | None) -> _Row:
+    assert row is not None, "expected the database query to return a row"
+    return row

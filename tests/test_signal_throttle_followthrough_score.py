@@ -176,6 +176,7 @@ def test_followthrough_score_penalizes_buy_blocked_by_htf_structure():
     assert "HTF_BUY_PLAYBOOK_BLOCKED" in score["risk_flags"]
     assert "HTF_BUY_AT_PREMIUM_OR_SUPPLY_NO_CHASE" in score["risk_flags"]
     context = followthrough_context_for_symbol(scores, "GBPNZD")
+    assert context is not None
     assert context["htf_daily_bias"] == "BEARISH"
     assert context["htf_blocked_playbook"] == ["BUY_LIMIT", "BUY_BREAKOUT_CHASE"]
     assert context["valid_for_execution"] is False
@@ -202,6 +203,8 @@ def test_followthrough_log_payload_and_watch_context_are_execution_neutral():
 
     payload = signal_throttle_followthrough_score_log_payload(scores)
     context = followthrough_context_for_symbol(scores, "GBPUSD")
+    assert payload is not None
+    assert context is not None
 
     assert payload["event"] == "signal_throttle_followthrough_score_snapshot"
     assert payload["execution_impact"] is False

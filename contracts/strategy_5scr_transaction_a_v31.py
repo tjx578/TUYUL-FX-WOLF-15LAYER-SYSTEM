@@ -93,6 +93,9 @@ class TransactionABundleV31(GeometryContract):
 
     def records(self):
         r = self.request
+        volume = self.reservation.sizing.volume
+        if volume is None:
+            raise ValueError("TRANSACTION_A_RESERVATION_BINDING_MISMATCH")
         common = {"profile": "TEST_ONLY", "execution_authority": False, "capital_reservation_authority": False}
         campaign = {**common, "campaign_id": str(r.campaign_id), "bundle": self.model_dump(mode="json")}
         leg = {
@@ -118,7 +121,7 @@ class TransactionABundleV31(GeometryContract):
             "entry": str(self.reservation.sizing.candidate_entry),
             "sl": str(r.sizing.geometry.stop_price),
             "tp": str(r.sizing.geometry.target_price),
-            "volume": self.reservation.sizing.volume.model_dump(mode="json"),
+            "volume": volume.model_dump(mode="json"),
         }
         outbox = {
             **common,

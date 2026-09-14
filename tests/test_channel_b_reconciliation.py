@@ -8,6 +8,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TypedDict, cast
 
 import pytest
 
@@ -25,7 +26,38 @@ DIRECT_IDENTIFIER = account_binding.identifier(
 )
 
 
-def _payload(records: list[dict[str, object]]) -> dict[str, object]:
+class _Snapshot(TypedDict, total=False):
+    measurement_state: str
+    record_count: int | None
+    source_record_count: int | None
+    truncated: bool | None
+    records: list[dict[str, object]] | None
+    window: dict[str, str]
+    observed_at_utc: str | None
+    account_binding: dict[str, object]
+    terminal: dict[str, object]
+
+
+class _BrokerFixture(TypedDict):
+    tool_surface_exact: bool
+    collection_interval: dict[str, str]
+    window: dict[str, str]
+    snapshots: dict[str, _Snapshot]
+
+
+class _DatabaseFixture(TypedDict):
+    measured: bool
+    truncated: bool
+    mutation_evidence: dict[str, object]
+    executor_identity: list[dict[str, object]]
+    executor_freshness: list[dict[str, object]]
+    account_binding: list[dict[str, object]]
+    account_binding_identity: list[dict[str, object]]
+    broker_mirror: list[dict[str, object]]
+    execution_ledger: list[dict[str, object]]
+
+
+def _payload(records: list[dict[str, object]]) -> _Snapshot:
     return {
         "measurement_state": "MEASURED" if records else "MEASURED_EMPTY",
         "record_count": len(records),
@@ -43,13 +75,13 @@ def _broker(
     history_orders_records: list[dict[str, object]] | None = None,
     identifier: str = DIRECT_IDENTIFIER,
     server: str = "Broker-Demo",
-) -> dict[str, object]:
+) -> _BrokerFixture:
     account = _payload([{"server": "Broker-Demo"}])
     history_deals = _payload(history_deals_records or [])
     history_deals["window"] = {"from_utc": WINDOW_FROM.isoformat(), "to_utc": WINDOW_TO.isoformat()}
     history_orders = _payload(history_orders_records or [])
     history_orders["window"] = {"from_utc": WINDOW_FROM.isoformat(), "to_utc": WINDOW_TO.isoformat()}
-    broker = {
+    broker: _BrokerFixture = {
         "tool_surface_exact": True,
         "collection_interval": {
             "started_at_utc": WINDOW_TO.isoformat(),
@@ -125,7 +157,7 @@ def _database(
     broker_server: str = "Broker-Demo",
     account_identity_key_id: str = TEST_KEY_ID,
     account_identity_rows: list[dict[str, object]] | None = None,
-) -> dict[str, object]:
+) -> _DatabaseFixture:
     executor_id = EXECUTOR_ID
     return {
         "measured": True,
@@ -248,6 +280,7 @@ def test_identifier_mismatch_and_untrusted_source_fail_closed() -> None:
 
 def test_all_five_mt5_calls_must_have_one_account_and_terminal_identity() -> None:
     broker = _broker()
+    assert "terminal" in broker["snapshots"]["mt5_orders_get"]
     broker["snapshots"]["mt5_orders_get"]["terminal"]["version"] = [500, 10000, "24 Aug 2026"]
 
     report = reconcile.reconcile_snapshots(
@@ -366,7 +399,10 @@ def test_old_unattributed_active_entity_blocks_regardless_of_age(
             account_identifier=DIRECT_IDENTIFIER,
             account_identifier_source=account_binding.DATABASE_SOURCE,
         ),
-        broker=_broker(**{broker_collection: [entity]}),
+        broker=_broker(
+            positions=[entity] if broker_collection == "positions" else None,
+            orders=[entity] if broker_collection == "orders" else None,
+        ),
         window_from=WINDOW_FROM,
         window_to=WINDOW_TO,
     )
@@ -645,7 +681,7 @@ def test_truncated_or_failed_broker_collection_never_executes_gate(
     payload_update: dict[str, object],
 ) -> None:
     broker = _broker()
-    broker["snapshots"]["mt5_orders_get"].update(payload_update)
+    cast(dict[str, object], broker["snapshots"]["mt5_orders_get"]).update(payload_update)
 
     report = reconcile.reconcile_snapshots(
         database=_database(
@@ -662,7 +698,7 @@ def test_truncated_or_failed_broker_collection_never_executes_gate(
     assert report["B-B16"] == "NOT_EXECUTED"
 
 
-def test_database_snapshot_stops_before_views_on_audit_session_mismatch(monkeypatch: object) -> None:
+def test_database_snapshot_stops_before_views_on_audit_session_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeTransaction:
         def __init__(self) -> None:
             self.started = False
@@ -725,7 +761,7 @@ def test_database_snapshot_stops_before_views_on_audit_session_mismatch(monkeypa
 
 
 def test_cli_requires_local_hmac_environment_before_any_collection(
-    monkeypatch: object, capsys: object, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     monkeypatch.setenv("AUDIT_DATABASE_URL", "postgresql://must-not-appear")
     monkeypatch.delenv(account_binding.KEY_ENV, raising=False)
@@ -764,7 +800,9 @@ def test_exit_code_contract_is_zero_only_for_executed_pass(gate: str, expected: 
     assert reconcile.exit_code_for_gate(gate) == expected
 
 
-def test_cli_uses_nonzero_exit_for_blocked_report(monkeypatch: object, capsys: object, tmp_path: Path) -> None:
+def test_cli_uses_nonzero_exit_for_blocked_report(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
 
     async def fake_run_reconciliation(**_kwargs: object) -> dict[str, object]:
@@ -1046,8 +1084,8 @@ def _replay_bundle():
     sources = {"fixture.py": "sha256:" + "1" * 64}
     report = seal_report(
         reconcile.reconcile_snapshots(database=database, broker=broker, window_from=WINDOW_FROM, window_to=WINDOW_TO),
-        database=database,
-        broker=broker,
+        database=dict(database),
+        broker=dict(broker),
         sources_before=sources,
         sources_after=sources,
     )
@@ -1217,7 +1255,8 @@ def test_replay_bundle_rejects_malformed_storage(change):
             node = ["list", [node]]
         encoded = json.dumps([SCHEMA, node]).encode()
     with pytest.raises(ValueError):
-        decode_replay_bundle(encoded)
+        # Invalid str input is intentional in the replay decoder rejection case.
+        decode_replay_bundle(cast(bytes, encoded))
 
 
 def _retention_caller(monkeypatch, tmp_path, **kwargs):

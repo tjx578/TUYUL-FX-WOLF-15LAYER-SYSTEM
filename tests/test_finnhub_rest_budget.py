@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,7 +16,7 @@ from ingest.finnhub_rest_budget import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_shared_budget() -> None:
+def _reset_shared_budget() -> Iterator[None]:
     finnhub_rest_budget.reset_for_tests()
     yield
     finnhub_rest_budget.reset_for_tests()

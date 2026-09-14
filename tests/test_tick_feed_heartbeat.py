@@ -108,7 +108,7 @@ def test_pipeline_wiring_emits_alarm_log(monkeypatch):
             return {"EURUSD": 1_000_000.0}
 
     pipe = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
-    pipe._context_bus = _Bus()
+    monkeypatch.setattr(pipe, "_context_bus", _Bus(), raising=False)
     heartbeat = TickFeedHeartbeat.from_env()
     # Pre-warm the state machine past startup grace so the wiring call alarms.
     heartbeat.check(freshest_tick_epoch=1_000_000.0, market_open=True, now=1_000_000.0)

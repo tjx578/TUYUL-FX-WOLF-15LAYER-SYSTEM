@@ -23,7 +23,7 @@ def _event(
     *,
     symbol="CHFJPY",
     offset_seconds=0,
-    direction="BUY",
+    direction: str | None = "BUY",
     clean_block=None,
     watch=None,
     transport=None,

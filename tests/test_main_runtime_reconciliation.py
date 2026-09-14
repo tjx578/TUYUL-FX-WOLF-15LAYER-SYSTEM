@@ -20,7 +20,7 @@ from startup.graceful_shutdown import GracefulShutdown
 def entrypoint(monkeypatch):
     source = Path(__file__).resolve().parents[1] / "main.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
-    selected = [
+    selected: list[ast.stmt] = [
         node
         for node in tree.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {"main", "_run_main", "run"}
@@ -116,6 +116,7 @@ def test_direct_process_owner_cancels_deadline_after_asyncio_cleanup(entrypoint,
                 started.set()
                 await asyncio.Event().wait()
             finally:
+                assert isinstance(state._deadline, Mock)
                 state._deadline.cancel.assert_not_called()
                 events.append("asyncio_cleanup")
 
@@ -128,6 +129,7 @@ def test_direct_process_owner_cancels_deadline_after_asyncio_cleanup(entrypoint,
     entrypoint["main"] = main
     assert entrypoint["run"]() == (1 if failure else 0)
     assert events == ["asyncio_cleanup"]
+    assert isinstance(state._deadline, Mock)
     state._deadline.cancel.assert_called_once()
 
 
@@ -140,6 +142,7 @@ def test_async_main_releases_only_local_deadline_after_quiescent_cleanup(entrypo
 
     async def run_main(probe, tasks, coordinator):
         async def cleanup():
+            assert isinstance(state._deadline, Mock)
             state._deadline.cancel.assert_not_called()
             events.append("cleanup")
             if cleanup_failed:
@@ -148,7 +151,7 @@ def test_async_main_releases_only_local_deadline_after_quiescent_cleanup(entrypo
         coordinator.register_cleanup("fixture resource", cleanup)
 
     entrypoint["_run_main"] = run_main
-    kwargs = {"health_probe": Mock()}
+    kwargs: dict[str, Mock | EngineRuntimeState] = {"health_probe": Mock()}
     if external_state:
         kwargs["runtime_state"] = state
     if cleanup_failed:
@@ -158,8 +161,10 @@ def test_async_main_releases_only_local_deadline_after_quiescent_cleanup(entrypo
         asyncio.run(entrypoint["main"](**kwargs))
     assert events == ["cleanup"]
     if not external_state and not cleanup_failed:
+        assert isinstance(state._deadline, Mock)
         state._deadline.cancel.assert_called_once()
     else:
+        assert isinstance(state._deadline, Mock)
         state._deadline.cancel.assert_not_called()
     # Fixture cleanup only; failed production cleanup must retain the deadline.
     state.cancel_process_deadline()

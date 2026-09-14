@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.routing import Route
 
 from api import app_factory
 from api.middleware.executor_auth import derive_executor_token
@@ -125,6 +126,8 @@ def test_all_mounted_bridge_routes_require_machine_auth(factory):
     app.dependency_overrides[get_mt5_command_repository] = lambda: repository
     client = TestClient(app)
     for route in router.routes:
+        assert isinstance(route, Route)
+        assert route.methods is not None
         resource = route.path.replace("{executor_id}", str(EXECUTOR)).replace("{command_id}", str(COMMAND))
         for method in route.methods:
             response = client.request(method, resource, json={})

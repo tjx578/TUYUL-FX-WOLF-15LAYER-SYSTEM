@@ -102,6 +102,7 @@ async def test_gunicorn_worker_maps_raised_server_failure_to_master_failure(monk
         sys.modules, "uvicorn.workers", SimpleNamespace(UvicornWorker=type("Base", (), {"CONFIG_KWARGS": {}}))
     )
     spec = importlib.util.spec_from_file_location("c06_worker_under_test", Path("deploy/uvicorn_worker.py"))
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     worker = module.UvicornWorker()

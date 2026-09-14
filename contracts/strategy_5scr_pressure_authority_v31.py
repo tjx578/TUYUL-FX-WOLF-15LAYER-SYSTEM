@@ -141,7 +141,11 @@ def evaluate_pressure_direction(
     reason = "PRESSURE_DIRECTION_GATE_PASSED"
     if bound is None or bound.approval_state != "APPROVED":
         reason = "PRESSURE_POLICY_UNBOUND_OR_REVOKED"
-    elif not bound.approved_at_utc <= now < bound.valid_until_utc:
+    elif (
+        bound.approved_at_utc is None
+        or bound.valid_until_utc is None
+        or not bound.approved_at_utc <= now < bound.valid_until_utc
+    ):
         reason = "PRESSURE_POLICY_NOT_CURRENT"
     elif source.observed_at_utc > now:
         reason = "FUTURE_PRESSURE_EVIDENCE"

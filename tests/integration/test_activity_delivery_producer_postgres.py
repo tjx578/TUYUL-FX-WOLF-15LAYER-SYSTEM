@@ -4,11 +4,13 @@ Uses the existing disposable guard; migrations must be applied explicitly.
 No production credentials, implicit DDL, or replacement of the original 45 tests.
 """
 
+from collections.abc import Callable
 from datetime import timedelta
+from typing import TypeVar, cast
 
 import psycopg
 import pytest
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 
 from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
 from scripts.ci.pair_activity_run_evidence import record_runtime_fixture
@@ -48,8 +50,8 @@ def setup_runtime(dsn):
     return worker, scope
 
 
-def outbox(dsn, ledger):
-    with psycopg.connect(dsn, row_factory=dict_row) as c:
+def outbox(dsn: str, ledger: str):
+    with psycopg.Connection[DictRow].connect(dsn, row_factory=dict_row) as c:
         return c.execute(
             "SELECT * FROM public.pair_activity_delivery_outbox_v1 WHERE ledger_id=%s ORDER BY sequence", (ledger,)
         ).fetchall()
@@ -94,9 +96,11 @@ def test_producer_outbox_failure_rolls_back_evaluation_snapshot_and_counter(pg_d
             "pair_activity_delivery_cursors_v1",
         ):
             assert (
-                c.execute(
-                    f"SELECT count(*) FROM public.{table} WHERE ledger_id=%s", (worker.binding.ledger_id,)
-                ).fetchone()[0]
+                _required_row(
+                    c.execute(
+                        f"SELECT count(*) FROM public.{table} WHERE ledger_id=%s", (worker.binding.ledger_id,)
+                    ).fetchone()
+                )[0]
                 == 0
             )
     worker.evaluate()
@@ -177,9 +181,18 @@ def test_relay_waits_for_predecessor_ack(pg_dsn):
         connect=worker._connect,
         ledger_id=worker.binding.ledger_id,
         scope=scope,
-        send=lambda wire: sent.append(wire),
+        # Deliberately return no acknowledgment to exercise the predecessor fence.
+        send=cast(Callable[[bytes], tuple[str, str, str]], lambda wire: sent.append(wire)),
         lease_seconds=60,
     )
     assert relay.poll_once() == "UNACKNOWLEDGED"
     assert relay.poll_once() == "NO_READY_DELIVERY"
     assert len(sent) == 1
+
+
+_Row = TypeVar("_Row")
+
+
+def _required_row(row: _Row | None) -> _Row:
+    assert row is not None, "expected the database query to return a row"
+    return row

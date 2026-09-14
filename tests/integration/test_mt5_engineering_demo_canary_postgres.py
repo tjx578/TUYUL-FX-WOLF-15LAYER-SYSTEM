@@ -15,6 +15,7 @@ import execution.mt5_command_repository as command_repository_module
 import execution.mt5_executor_governance as governance_module
 from contracts.mt5_execution_protocol import (
     ENGINEERING_DEMO_CANARY_EA_VERSION,
+    EngineeringDemoCanaryGuards,
     ExecutionCommandV1,
     ExecutorMode,
     sha256_tag,
@@ -1138,6 +1139,7 @@ async def test_reconciliation_faults_block_each_gate(client, postgres, registere
     monkeypatch.setenv("WOLF15_ENABLE_ENGINEERING_DEMO_CANARY_ISSUANCE", "true")
     repository = _commands(postgres)
     snapshot = await repository.latest_snapshot(registered)
+    assert snapshot is not None
     identity, evidence = await repository.load_engineering_reconciliation(snapshot)
     request = _request(registered, snapshot_id)
     command = build_engineering_demo_canary_command(
@@ -1216,13 +1218,17 @@ async def test_false_snapshot_passes_all_three_gates_only_with_authenticated_evi
 ):
     command, request = await _issue_queued(client, postgres, registered, monkeypatch)
     snapshot = await _commands(postgres).latest_snapshot(registered)
+    assert snapshot is not None
     assert snapshot.broker_ledger_reconciled is False
+    assert isinstance(command.guards, EngineeringDemoCanaryGuards)
     assert command.guards.reconciliation_evidence_id is not None
     armed = await _commands(postgres).arm_engineering_demo_canary(
         request.canary_id, actor="test", reason="valid independent evidence"
     )
     assert armed["window_state"] == "ARMED"
-    assert (await _commands(postgres).latest_snapshot(registered)).broker_ledger_reconciled is False
+    current_snapshot = await _commands(postgres).latest_snapshot(registered)
+    assert current_snapshot is not None
+    assert current_snapshot.broker_ledger_reconciled is False
 
 
 @pytest.mark.asyncio
@@ -1245,7 +1251,9 @@ async def test_true_heartbeat_without_evidence_never_authorizes_d0(client, postg
         },
     )
     assert response.status_code == 200, response.text
-    assert (await _commands(postgres).latest_snapshot(registered)).broker_ledger_reconciled is True
+    current_snapshot = await _commands(postgres).latest_snapshot(registered)
+    assert current_snapshot is not None
+    assert current_snapshot.broker_ledger_reconciled is True
     async with postgres.transaction() as connection:
         await produce_backend_identity(connection, registered)
     monkeypatch.setenv("WOLF15_ENABLE_ENGINEERING_DEMO_CANARY_ISSUANCE", "true")
@@ -1256,10 +1264,10 @@ async def test_true_heartbeat_without_evidence_never_authorizes_d0(client, postg
 @pytest.mark.asyncio
 @pytest.mark.parametrize("change", ["replacement", "binding", "snapshot"])
 async def test_evidence_or_binding_change_after_enqueue_blocks_arm(client, postgres, registered, monkeypatch, change):
-
     command, request = await _issue_queued(client, postgres, registered, monkeypatch)
     repository = _commands(postgres)
     snapshot = await repository.latest_snapshot(registered)
+    assert snapshot is not None
     identity, _ = await repository.load_engineering_reconciliation(snapshot)
     if change == "replacement":
         async with postgres.transaction() as connection:
@@ -1360,6 +1368,7 @@ async def test_duplicate_receipt_cannot_reactivate_revoked_evidence(client, post
     await _prepare_demo_executor(client, postgres, registered, snapshot_id=snapshot_id)
     repository = _commands(postgres)
     snapshot = await repository.latest_snapshot(registered)
+    assert snapshot is not None
     _, evidence = await repository.load_engineering_reconciliation(snapshot)
     await postgres.execute(
         "UPDATE broker_reconciliation_evidence SET status='REVOKED' WHERE executor_id=$1::uuid", str(registered)

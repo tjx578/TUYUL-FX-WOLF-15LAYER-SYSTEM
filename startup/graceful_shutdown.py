@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
 from loguru import logger
 
@@ -57,7 +57,7 @@ class GracefulShutdown:
         """Register an async cleanup function to run during shutdown."""
         self._cleanups.append((name, coro_fn))
 
-    async def shutdown(self, tasks: list[asyncio.Task[object]]) -> None:
+    async def shutdown(self, tasks: Sequence[asyncio.Task[object]]) -> None:
         """Execute the full shutdown sequence.
 
         1. Cancel all tasks

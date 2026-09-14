@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -19,9 +19,12 @@ from analysis.strategy_5scr_v3.episode_hash import (
     build_strategy_lifecycle_id,
 )
 from contracts.strategy_5scr_lifecycle_v2 import (
+    DirectionState,
+    LifecycleState,
     StrategyLifecycleEventLink,
     StrategyLifecycleV2,
 )
+from storage.postgres_client import PostgresClient
 from storage.strategy_5scr_lifecycle_v2_repository import (
     LIFECYCLE_TABLE,
     LINK_TABLE,
@@ -41,6 +44,7 @@ class _FakeTransactionConnection:
         return await self._postgres.execute(query, *args)
 
 
+# Injection casts below are limited to this double's exercised repository surface.
 class _FakePostgres:
     """Minimal in-memory stand-in for the queries this repository issues."""
 
@@ -131,7 +135,14 @@ class _FakePostgres:
             raise
 
 
-def _lifecycle(*, symbol="CHFJPY", direction="BUY", offset=0, event_count=1, state="ANALYSIS_OPEN"):
+def _lifecycle(
+    *,
+    symbol="CHFJPY",
+    direction: DirectionState = "BUY",
+    offset=0,
+    event_count=1,
+    state: LifecycleState = "ANALYSIS_OPEN",
+):
     opened = START
     material = START + timedelta(seconds=offset)
     return StrategyLifecycleV2(
@@ -170,7 +181,7 @@ def _link(lifecycle, *, event_id="evt-1", clean_block=None):
 @pytest.fixture
 def repo():
     pg = _FakePostgres()
-    return StrategyLifecycleV2Repository(pg=pg), pg
+    return StrategyLifecycleV2Repository(pg=cast(PostgresClient, pg)), pg
 
 
 @pytest.mark.asyncio
@@ -378,7 +389,7 @@ def _good_constraints():
 
 @pytest.mark.asyncio
 async def test_schema_status_is_ready_when_everything_matches():
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres()).schema_status()
+    status = await StrategyLifecycleV2Repository(pg=cast(PostgresClient, _SchemaProbePostgres())).schema_status()
 
     assert not any(status.values())
 
@@ -388,7 +399,9 @@ async def test_same_named_constraint_on_another_table_is_not_accepted():
     """Name alone must not satisfy a guarantee."""
     wrong = _good_constraints()
     wrong[0]["table_name"] = "some_other_table"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(constraints=wrong))
+    ).schema_status()
 
     assert "ck_5scr_lifecycle_v2_shadow_only" in status["missing_constraints"]
 
@@ -398,7 +411,9 @@ async def test_altered_check_definition_is_not_accepted():
     """A CHECK that no longer forbids execution authority is not the guarantee."""
     wrong = _good_constraints()
     wrong[0]["definition"] = "CHECK ((execution_authority = true))"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(constraints=wrong))
+    ).schema_status()
 
     assert "ck_5scr_lifecycle_v2_shadow_only" in status["missing_constraints"]
 
@@ -407,7 +422,9 @@ async def test_altered_check_definition_is_not_accepted():
 async def test_check_downgraded_to_another_constraint_type_is_not_accepted():
     wrong = _good_constraints()
     wrong[0]["contype"] = "u"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(constraints=wrong))
+    ).schema_status()
 
     assert "ck_5scr_lifecycle_v2_shadow_only" in status["missing_constraints"]
 
@@ -416,7 +433,9 @@ async def test_check_downgraded_to_another_constraint_type_is_not_accepted():
 async def test_foreign_key_pointing_elsewhere_is_not_accepted():
     wrong = _good_constraints()
     wrong[1]["definition"] = "FOREIGN KEY (strategy_lifecycle_id) REFERENCES unrelated_table(id)"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(constraints=wrong))
+    ).schema_status()
 
     assert "fk_5scr_lifecycle_v2_event_link" in status["missing_constraints"]
 
@@ -426,7 +445,9 @@ async def test_check_widened_with_or_true_is_not_accepted():
     """Contains the expected fragment, forbids nothing."""
     wrong = _good_constraints()
     wrong[0]["definition"] = "CHECK (((execution_authority = false) OR true))"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(constraints=wrong))
+    ).schema_status()
 
     assert "ck_5scr_lifecycle_v2_shadow_only" in status["missing_constraints"]
 
@@ -436,7 +457,9 @@ async def test_foreign_key_on_the_wrong_source_column_is_not_accepted():
     """Mentions the right target table, constrains the wrong column."""
     wrong = _good_constraints()
     wrong[1]["definition"] = f"FOREIGN KEY (transport_lifecycle_id) REFERENCES {LIFECYCLE_TABLE}(strategy_lifecycle_id)"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(constraints=wrong))
+    ).schema_status()
 
     assert "fk_5scr_lifecycle_v2_event_link" in status["missing_constraints"]
 
@@ -446,7 +469,9 @@ async def test_default_not_false_is_not_accepted():
     """``(NOT false)`` contains "false" while meaning true."""
     wrong = _good_columns()
     wrong[0]["column_default"] = "(NOT false)"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(columns=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(columns=wrong))
+    ).schema_status()
 
     assert f"{LIFECYCLE_TABLE}.execution_authority" in status["missing_columns"]
 
@@ -456,7 +481,9 @@ async def test_nullable_execution_authority_is_not_accepted():
     """A nullable flag defeats the CHECK it exists to support."""
     wrong = _good_columns()
     wrong[0]["is_nullable"] = "YES"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(columns=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(columns=wrong))
+    ).schema_status()
 
     assert f"{LIFECYCLE_TABLE}.execution_authority" in status["missing_columns"]
 
@@ -465,7 +492,9 @@ async def test_nullable_execution_authority_is_not_accepted():
 async def test_execution_authority_without_false_default_is_not_accepted():
     wrong = _good_columns()
     wrong[0]["column_default"] = "true"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(columns=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(columns=wrong))
+    ).schema_status()
 
     assert f"{LIFECYCLE_TABLE}.execution_authority" in status["missing_columns"]
 
@@ -475,14 +504,16 @@ async def test_wrong_column_type_is_not_accepted():
     """pressure_event_id as UUID would reject replay ids at insert time."""
     wrong = _good_columns()
     wrong[2]["data_type"] = "uuid"
-    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(columns=wrong)).schema_status()
+    status = await StrategyLifecycleV2Repository(
+        pg=cast(PostgresClient, _SchemaProbePostgres(columns=wrong))
+    ).schema_status()
 
     assert f"{LINK_TABLE}.pressure_event_id" in status["missing_columns"]
 
 
 @pytest.mark.asyncio
 async def test_schema_status_reports_missing_when_unavailable():
-    repository = StrategyLifecycleV2Repository(pg=_FakePostgres(available=False))
+    repository = StrategyLifecycleV2Repository(pg=cast(PostgresClient, _FakePostgres(available=False)))
 
     status = await repository.schema_status()
 

@@ -25,9 +25,7 @@ class ActivityRuntimeBindingV1(FrozenActivityModel):
     source_scope_id: str = Field(..., min_length=1, max_length=200)
     coverage_attestor_id: str = Field(..., min_length=1, max_length=200)
     environment_class: Literal["DISPOSABLE_TEST", "SHADOW"]
-    ssot_sha256: Literal[
-        "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"
-    ] = SELECTED_SSOT_SHA256
+    ssot_sha256: Literal["6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"] = SELECTED_SSOT_SHA256
     policy: PairActivityPolicyV31 | None = None
     window_start_utc: datetime
     maximum_ledger_events: int = Field(..., ge=3, le=100_000)

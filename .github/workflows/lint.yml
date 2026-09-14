@@ -1,6 +1,5 @@
-# Candidate: qualify on GitHub before adoption.
-# Ruff remains enforced by ci.yml -> ruff -> CI Gate.
-# Retain the existing workflow name and job ID during this migration.
+# Python type checks. Ruff is enforced separately by ci.yml.
+# Keep the workflow name and final lint check stable during migration.
 name: Lint
 
 on:
@@ -8,6 +7,7 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -21,127 +21,131 @@ env:
   PYRIGHT_VERSION: "1.1.414"
 
 jobs:
-  lint:
-    runs-on: ubuntu-24.04
+  typecheck:
+    name: Pyright (${{ matrix.scope }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: core
+            os: ubuntu-24.04
+          - scope: native-mcp
+            os: windows-2022
     defaults:
       run:
         shell: bash
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 ref, verified 2026-09-14
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 ref, verified 2026-09-14
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
 
-      - name: Setup Node for the upstream Pyright CLI
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4 ref, verified 2026-09-14
+      - name: Record source and prepare analysis scope
+        id: source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          TYPECHECK_SCOPE: ${{ matrix.scope }}
+        run: python scripts/ci/typecheck_evidence.py prepare --scope "$TYPECHECK_SCOPE"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
 
-      - name: Install type-check environment
+      - name: Install isolated analysis environment
         run: |
           python -m venv .venv
-          .venv/bin/python -m pip install -r requirements.txt
-          .venv/bin/python -m pip check
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          executable = Path(".venv") / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.write(f"VENV_PYTHON={executable.absolute().as_posix()}\n")
+          PY
+
+      - name: Install type-check dependencies
+        run: |
+          "$VENV_PYTHON" -m pip install -r artifacts/typecheck/requirements-input.txt
+          "$VENV_PYTHON" -m pip check
           npm install --global --ignore-scripts --no-audit --no-fund "pyright@${PYRIGHT_VERSION}"
 
-      - name: Record analysis inputs
-        id: evidence
+      - name: Record installed tools
+        id: environment
         run: |
-          mkdir -p artifacts/typecheck
-          git rev-parse HEAD > artifacts/typecheck/checked-sha.txt
-          .venv/bin/python --version > artifacts/typecheck/python-version.txt
-          .venv/bin/python -m pip freeze > artifacts/typecheck/python-dependencies.txt
+          "$VENV_PYTHON" --version > artifacts/typecheck/python-version.txt
+          "$VENV_PYTHON" -m pip --version > artifacts/typecheck/pip-version.txt
+          "$VENV_PYTHON" -m pip freeze > artifacts/typecheck/python-dependencies.txt
           node --version > artifacts/typecheck/node-version.txt
+          npm --version > artifacts/typecheck/npm-version.txt
           pyright --version > artifacts/typecheck/pyright-version.txt
-          sha256sum requirements.txt pyproject.toml pyrightconfig.json > artifacts/typecheck/config-sha256.txt
+          "$VENV_PYTHON" - <<'PY'
+          import os
+          from pathlib import Path
+          expected = f"pyright {os.environ['PYRIGHT_VERSION']}"
+          actual = Path("artifacts/typecheck/pyright-version.txt").read_text().strip()
+          if actual != expected:
+              raise SystemExit(f"Unexpected analyzer: {actual!r}; expected {expected!r}")
+          PY
 
       - name: Run Pyright without suppressing failures
         id: typecheck
         run: |
-          # Explicit bash uses -eo pipefail in GitHub Actions: tee does not hide a failure.
-          pyright --project pyrightconfig.json \
-            --pythonpath "$GITHUB_WORKSPACE/.venv/bin/python" \
-            --outputjson | tee artifacts/typecheck/pyright.json
+          set +e
+          pyright --project .pyright-ci.json --pythonpath "$VENV_PYTHON" --outputjson \
+            > artifacts/typecheck/pyright.json 2> artifacts/typecheck/pyright-stderr.txt
+          status=$?
+          set -e
+          printf '%s\n' "$status" > artifacts/typecheck/pyright-exit-code.txt
+          exit "$status"
 
-      - name: Validate and summarize the report
-        if: ${{ !cancelled() && steps.evidence.outcome == 'success' }}
+      - name: Validate and summarize report
+        if: ${{ !cancelled() && steps.environment.outcome == 'success' }}
+        env:
+          TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
+        run: '"$VENV_PYTHON" scripts/ci/typecheck_evidence.py summarize'
+
+      - name: Upload typecheck evidence
+        if: ${{ !cancelled() && steps.source.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: typecheck-${{ matrix.scope }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/typecheck/
+          if-no-files-found: error
+          retention-days: 14
+
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [typecheck]
+    if: ${{ always() }}
+    steps:
+      - name: Require all typecheck scopes to pass
+        shell: bash
+        env:
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
         run: |
-          .venv/bin/python - <<'PY'
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          folder = Path("artifacts/typecheck")
-          try:
-              report = json.loads((folder / "pyright.json").read_text(encoding="utf-8"))
-              sha = (folder / "checked-sha.txt").read_text(encoding="utf-8").strip()
-          except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-              raise SystemExit(f"Cannot read Pyright evidence: {exc}") from exc
-
-          if not isinstance(report, dict) or not isinstance(report.get("summary"), dict):
-              raise SystemExit("Invalid Pyright report: summary is missing or invalid")
-
-          summary = report["summary"]
-          counts = {key: summary.get(key) for key in ("filesAnalyzed", "errorCount", "warningCount")}
-          if any(type(value) is not int or value < 0 for value in counts.values()):
-              raise SystemExit("Invalid Pyright report counts")
-          if counts["filesAnalyzed"] == 0:
-              raise SystemExit("No files analyzed; this is not a passing type check")
-          if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
-              raise SystemExit("Invalid checked commit SHA")
-
-          diagnostics = report.get("generalDiagnostics")
-          if not isinstance(diagnostics, list) or any(not isinstance(item, dict) for item in diagnostics):
-              raise SystemExit("Invalid Pyright diagnostics")
-          if any(item.get("severity") not in {"error", "warning", "information"} for item in diagnostics):
-              raise SystemExit("Invalid Pyright diagnostic severity")
-
-          errors = [item for item in diagnostics if item["severity"] == "error"]
-          warnings = [item for item in diagnostics if item["severity"] == "warning"]
-          if len(errors) != counts["errorCount"] or len(warnings) != counts["warningCount"]:
-              raise SystemExit("Pyright summary does not match diagnostic counts")
-
-          result = (
-              f"Files: {counts['filesAnalyzed']} | "
-              f"Errors: {counts['errorCount']} | "
-              f"Warnings: {counts['warningCount']}"
-          )
-          print(f"Checked commit: {sha}", flush=True)
-          print(result, flush=True)
-
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
-              output.write(f"### Pyright\n\nChecked commit: `{sha}`\n\n{result}\n\n")
-              output.write("Full diagnostics: `pyright.json` in the typecheck artifact.\n")
-
-          for item in errors[:30]:
-              start = item["range"]["start"]
-              print(
-                  json.dumps(
-                      {
-                          "file": item["file"],
-                          "line": start["line"] + 1,
-                          "column": start["character"] + 1,
-                          "rule": item.get("rule"),
-                          "message": item["message"],
-                      },
-                      ensure_ascii=True,
-                  ),
-                  flush=True,
-              )
-
-          if len(errors) > 30:
-              print(f"Showing 30 of {len(errors)} errors; see pyright.json for all diagnostics.", flush=True)
-          if counts["errorCount"]:
-              raise SystemExit(f"Pyright failed: {counts['errorCount']} type errors; see the report")
-          print("Pyright report validated: no type errors.", flush=True)
-          PY
+          printf 'Typecheck result: %s\n' "$TYPECHECK_RESULT"
+          if [[ "$TYPECHECK_RESULT" != "success" ]]; then
+            echo "::error::All typecheck scopes must complete successfully."
+            exit 1
+          fi
+          echo "All typecheck scopes passed."

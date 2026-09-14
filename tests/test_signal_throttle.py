@@ -489,7 +489,7 @@ class TestPipelineSignalThrottle:
         capsys.readouterr()
 
         errors: list[str] = []
-        l12_verdict = {"verdict": "EXECUTE_SELL", "direction": "SELL"}
+        l12_verdict: dict[str, object] = {"verdict": "EXECUTE_SELL", "direction": "SELL"}
         pipe._apply_effective_verdict_controls(
             symbol="LOG_ALLOWED_TEST",
             synthesis={},
@@ -515,6 +515,7 @@ class TestPipelineSignalThrottle:
         assert captured.err == ""
         assert pipe._signal_throttle.get_count("LOG_ALLOWED_TEST") == 1
         intel_payload = l12_verdict["signal_throttle_intel"]
+        assert isinstance(intel_payload, dict)
         assert intel_payload["verdict_features_hash"]
         assert len(intel_payload["verdict_features_hash"]) == 16
         intel_payload_without_hash = dict(intel_payload)

@@ -27,20 +27,20 @@ def scope(**changes):
         environment_class="DISPOSABLE_TEST",
     )
     data.update(changes)
-    return ActivityConsumerScopeV1(**data)
+    return ActivityConsumerScopeV1.model_validate(data)
 
 
 def delivery(evaluation=None, **changes):
-    args = dict(
-        scope=scope(),
-        source_snapshot_id="sha256:" + "3" * 64,
-        source_revision=3,
-        activity_sequence=1,
-        previous_delivery_id=None,
-        evaluation=evaluation or evaluate(mixed()).evaluations[0],
+    selected = evaluation or evaluate(mixed()).evaluations[0]
+    return activity_delivery(
+        scope=changes.pop("scope", scope()),
+        source_snapshot_id=changes.pop("source_snapshot_id", "sha256:" + "3" * 64),
+        source_revision=changes.pop("source_revision", 3),
+        activity_sequence=changes.pop("activity_sequence", 1),
+        previous_delivery_id=changes.pop("previous_delivery_id", None),
+        evaluation=selected,
+        **changes,
     )
-    args.update(changes)
-    return activity_delivery(**args)
 
 
 def link(event=None, **changes):
@@ -51,7 +51,7 @@ def link(event=None, **changes):
         emission_purpose="ACTIVITY_ATTACHED",
     )
     args.update(changes)
-    return ActivityLifecycleEmissionLinkV1(**args)
+    return ActivityLifecycleEmissionLinkV1.model_validate(args)
 
 
 def test_mixed_direction_300_seconds_keeps_evaluation_and_has_no_authority():

@@ -53,6 +53,7 @@ def test_bootstrap_cycle_restart_and_stale_generation_readiness():
     state.begin_shutdown()
     state.analysis_cycle(second)
     assert not state.ready()
+    assert isinstance(state._deadline, Deadline)
     assert state._deadline.started
     state.cancel_process_deadline()
     assert state._deadline.cancelled
