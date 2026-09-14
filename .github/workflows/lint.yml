@@ -1,6 +1,3 @@
-# Candidate: qualify on GitHub before adoption.
-# Ruff remains enforced by ci.yml -> ruff -> CI Gate.
-# Retain the existing workflow name and job ID during this migration.
 name: Lint
 
 on:
