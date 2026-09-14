@@ -22,7 +22,9 @@ def test_required_worker_loss_exhausts_retries_and_marks_probe_unready(fault):
             if fault == "cancelled":
                 raise asyncio.CancelledError
             if fault == "self_cancel":
-                asyncio.current_task().cancel()
+                task = asyncio.current_task()
+                assert task is not None
+                task.cancel()
                 await asyncio.sleep(0)
 
         with pytest.raises(RequiredTaskFailedError) as captured:

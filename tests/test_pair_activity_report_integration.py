@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
@@ -43,7 +44,9 @@ def events() -> list[SignalThrottleLogEvent]:
     ]
 
 
-def context(raw: list[SignalThrottleLogEvent], *, status: str = "COMPLETE") -> PairActivityReportContextV31:
+def context(
+    raw: list[SignalThrottleLogEvent], *, status: Literal["COMPLETE", "INCOMPLETE", "UNKNOWN"] = "COMPLETE"
+) -> PairActivityReportContextV31:
     return PairActivityReportContextV31(
         coverage=RawActivityCoverageV31(
             status=status,

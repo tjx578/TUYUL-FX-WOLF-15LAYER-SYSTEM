@@ -23,7 +23,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 import redis.asyncio as aioredis
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -308,7 +308,8 @@ class StreamConsumer:
             if not response:
                 return 0
 
-            for _stream_name, messages in response:
+            # Shared pool: decoded strings and the default legacy stream response shape.
+            for _stream_name, messages in cast(list[tuple[str, list[tuple[str, dict[str, str]]]]], response):
                 for message_id, fields in messages:
                     if not fields:
                         # Empty fields = already delivered, just ACK
@@ -422,7 +423,8 @@ class StreamConsumer:
             if not response:
                 break
 
-            for _stream_name, messages in response:
+            # Shared pool: decoded strings and the default legacy stream response shape.
+            for _stream_name, messages in cast(list[tuple[str, list[tuple[str, dict[str, str]]]]], response):
                 for message_id, fields in messages:
                     if await self._process_and_ack(binding, message_id, fields):
                         replayed += 1
@@ -466,7 +468,8 @@ class StreamConsumer:
                 if not response:
                     continue
 
-                for _stream_name, messages in response:
+                # Shared pool: decoded strings and the default legacy stream response shape.
+                for _stream_name, messages in cast(list[tuple[str, list[tuple[str, dict[str, str]]]]], response):
                     for message_id, fields in messages:
                         await self._process_and_ack(
                             binding,

@@ -1,6 +1,8 @@
-from datetime import timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta
 from decimal import Decimal, localcontext
 from fractions import Fraction
+from typing import Literal, TypedDict
 from uuid import UUID
 
 import pytest
@@ -16,6 +18,7 @@ from contracts.strategy_5scr_context_route_v31 import (
 )
 from contracts.strategy_5scr_net_geometry_v31 import NetGeometryContextV31, NetGeometryRequestV31
 from contracts.strategy_5scr_ordered_proof_v31 import ordered_proof_hash_v31
+from contracts.strategy_5scr_risk_adapter_v31 import ParentSizingRequestV31
 from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
 from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31, propose_canonical_parent_v31
 from risk.strategy_5scr_capacity_v31 import CapacityRejectedError
@@ -28,7 +31,7 @@ from tests.test_strategy_5scr_ordered_proof_v31 import reference_policy
 from tests.test_strategy_5scr_target_selection_v31 import fixture as target_fixture
 
 
-def bundle(direction="BUY"):
+def bundle(direction: Literal["BUY", "SELL"] = "BUY"):
     ledger = seed()
     request = request_for(ledger)
     request = request.model_copy(
@@ -45,6 +48,11 @@ def bundle(direction="BUY"):
         context=NetGeometryContextV31(**geometry.model_dump(exclude={"target_price", "target_evidence_hash"})),
         verify_universe=lambda _, digest: digest == universe_hash,
     ).geometry
+    assert solved is not None
+    assert solved.candidate_entry is not None
+    assert solved.feasible_interval is not None
+    assert solved.net_rr is not None
+    assert geometry.policy is not None
     gross = abs(Fraction(geometry.target_price) - Fraction(solved.candidate_entry)) / abs(
         Fraction(solved.candidate_entry) - Fraction(geometry.stop_price)
     )
@@ -111,11 +119,22 @@ def bundle(direction="BUY"):
     return ledger, handoff, request
 
 
+class _ProposeArgs(TypedDict):
+    reservation_id: UUID
+    expires_at: datetime
+    now: datetime
+    owner_epoch: int
+    expected_version: int
+    verify_handoff: Callable[[CandidateHandoffV31, str], bool] | None
+    verify_universe: Callable[[TargetUniverseV31, str], bool] | None
+    verify_risk_inputs: Callable[[ParentSizingRequestV31, str], bool] | None
+
+
 def propose(ledger, handoff, request, **overrides):
     handoff_hash = candidate_handoff_hash_v31(handoff)
     risk_hash = parent_sizing_request_hash_v31(request)
     universe_hash = target_universe_hash_v31(handoff.target_universe)
-    kwargs = dict(
+    kwargs: _ProposeArgs = dict(
         reservation_id=UUID(int=21),
         expires_at=NOW + timedelta(seconds=1),
         now=NOW,
@@ -190,7 +209,7 @@ def test_context_binding_rejected_before_risk_verifiers(fault, reason):
             now=NOW,
             owner_epoch=ledger.owner_epoch,
             expected_version=ledger.version,
-            verify_handoff=lambda *args: calls.append(args),
+            verify_handoff=lambda *args: calls.append(args) or False,
             verify_universe=None,
             verify_risk_inputs=None,
         )
@@ -255,7 +274,7 @@ def test_ordered_proof_binding_rejected_before_risk(fault, reason):
             now=NOW,
             owner_epoch=ledger.owner_epoch,
             expected_version=ledger.version,
-            verify_handoff=lambda *args: calls.append(args),
+            verify_handoff=lambda *args: calls.append(args) or False,
             verify_universe=None,
             verify_risk_inputs=None,
         )

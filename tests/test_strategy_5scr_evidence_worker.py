@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from contracts.strategy_5scr_pressure_outbox import (
 )
 from services.pressure_outbox.evidence_worker import (
     EvidenceRuntimeConfig,
+    EvidenceWorkItem,
     PostgresEvidenceRepository,
     Strategy5SCREvidenceWorker,
 )
@@ -98,9 +100,13 @@ class _CrashWindowRepository:
         self.failure_records = 0
         self.failure_errors: list[str] = []
 
-    async def load_waiting(self, *, limit: int) -> tuple[PressureOutboxEnvelope, ...]:
+    async def load_waiting(self, *, limit: int) -> tuple[EvidenceWorkItem, ...]:
         assert limit == 1
-        return () if self.outcome_committed else (self.envelope,)
+        return (
+            ()
+            if self.outcome_committed
+            else (EvidenceWorkItem(envelope=self.envelope, lifecycle_anchor_at=self.envelope.signal_valid_at),)
+        )
 
     async def record_outcome(self, *_: Any, **__: Any) -> bool:
         self.outcome_attempts += 1
@@ -215,7 +221,7 @@ class _SnapshotPostgres:
         self.conn = _SnapshotConnection()
 
     @asynccontextmanager
-    async def transaction(self) -> Any:
+    async def transaction(self) -> AsyncIterator[_SnapshotConnection]:
         yield self.conn
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import TypedDict
 from uuid import uuid4
 
 import pytest
@@ -11,6 +12,7 @@ from contracts.mt5_execution_protocol import AccountSnapshotV1, MarginMode, Symb
 from risk.s5_campaign_risk import (
     CampaignRiskLock,
     CampaignRiskPolicy,
+    PositionRiskResult,
     S5RiskReason,
     authorize_campaign_risk,
     campaign_risk_lock_fingerprint,
@@ -180,8 +182,19 @@ def test_stale_snapshot_fails_closed() -> None:
     assert result.reason == S5RiskReason.SNAPSHOT_STALE
 
 
+class _AuthorizationArgs(TypedDict):
+    risk_lock: CampaignRiskLock
+    candidate: PositionRiskResult
+    entry_role: str
+    parent_is_open: bool
+    child_already_exists: bool
+    committed_or_reserved_campaign_risk_usd: float | Decimal
+    account_total_open_risk_usd: float | Decimal
+    policy: CampaignRiskPolicy
+
+
 def _authorize(candidate, **overrides):
-    args = dict(
+    args: _AuthorizationArgs = dict(
         risk_lock=_risk_lock(),
         candidate=candidate,
         entry_role="PARENT",

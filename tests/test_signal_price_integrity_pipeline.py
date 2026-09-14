@@ -3,10 +3,11 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from context.live_context_bus import LiveContextBus
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 
-class _PriceContextBus:
+class _PriceContextBus(LiveContextBus):
     def __init__(self, *, bid: float, ask: float, feed_timestamp: float, low: float, high: float) -> None:
         self.tick = {"symbol": "CHFJPY", "bid": bid, "ask": ask}
         self.feed_timestamp = feed_timestamp
@@ -106,6 +107,7 @@ def test_old_tick_stays_stale_even_when_shared_bus_timestamp_is_fresh(monkeypatc
             high=200.673,
         )
     )
+    assert isinstance(pipeline._context_bus, _PriceContextBus)
     pipeline._context_bus.tick["last_seen_ts"] = time.time() - 10.0
     payload = _payload()
 
@@ -149,6 +151,7 @@ def test_pipeline_fails_closed_when_independent_range_is_unavailable(monkeypatch
             high=0.0,
         )
     )
+    assert isinstance(pipeline._context_bus, _PriceContextBus)
     pipeline._context_bus.candle = {}
     payload = _payload()
 

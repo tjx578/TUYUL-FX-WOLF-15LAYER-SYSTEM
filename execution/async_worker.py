@@ -173,7 +173,8 @@ class AsyncExecutionWorker:
                         continue
 
                     tasks: list[asyncio.Task[None]] = []
-                    for stream_name, messages in response:
+                    # Shared pool: decoded strings and the default legacy stream response shape.
+                    for stream_name, messages in cast(list[tuple[str, list[tuple[str, dict[str, str]]]]], response):
                         for msg_id, msg in messages:
                             tasks.append(
                                 asyncio.create_task(

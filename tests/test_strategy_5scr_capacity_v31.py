@@ -1,5 +1,8 @@
-from datetime import timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta
+from decimal import Decimal
 from fractions import Fraction
+from typing import Literal, NotRequired, TypedDict
 from uuid import UUID
 
 import pytest
@@ -36,7 +39,7 @@ def seed():
         executor_id=payload["expected_executor_id"],
         account_snapshot_id=payload["snapshot"]["snapshot_id"],
         account_snapshot_hash=capacity_content_hash_v31(request.snapshot),
-        closed_balance_usd=str(request.snapshot.balance),
+        closed_balance_usd=Decimal(str(request.snapshot.balance)),
         risk_policy_hash=payload["policy"]["policy_hash"],
         risk_policy_content_hash=capacity_content_hash_v31(request.policy),
         owner_epoch=1,
@@ -68,10 +71,29 @@ def request_for(ledger, n=1, now=NOW):
     return ParentSizingRequestV31.model_validate(payload)
 
 
+class _ReserveArgs(TypedDict):
+    reservation_id: UUID
+    expires_at: datetime
+    now: datetime
+    owner_epoch: int
+    expected_version: int
+    verify_inputs: Callable[[ParentSizingRequestV31, str], bool] | None
+
+
+class _TransitionArgs(TypedDict):
+    reservation_id: UUID
+    action: str
+    now: datetime
+    owner_epoch: int
+    expected_version: int
+    release_evidence: NotRequired[CapacityReleaseEvidenceV31 | None]
+    verify_release: NotRequired[Callable[[CapacityReleaseEvidenceV31, str], bool] | None]
+
+
 def reserve(ledger, request=None, *, n=1, now=NOW, **overrides):
     request = request or request_for(ledger, n, now)
     pinned = parent_sizing_request_hash_v31(request)
-    args = dict(
+    args: _ReserveArgs = dict(
         reservation_id=UUID(int=n),
         expires_at=now + timedelta(seconds=1),
         now=now,
@@ -84,7 +106,7 @@ def reserve(ledger, request=None, *, n=1, now=NOW, **overrides):
 
 
 def transition(ledger, action, *, now=NOW, **overrides):
-    args = dict(
+    args: _TransitionArgs = dict(
         reservation_id=UUID(int=1),
         action=action,
         now=now,
@@ -121,6 +143,7 @@ def test_sizing_reserve_restart_lost_ack_and_duplicate_are_one_record():
     assert replay.ledger == result.ledger
     assert replay.reservation == result.reservation
     assert len(restored.reservations) == restored.version == 1
+    assert result.reservation.sizing.planned_loss_usd is not None
     assert capacity_used_v31(restored) == Fraction(
         result.reservation.sizing.planned_loss_usd.numerator, result.reservation.sizing.planned_loss_usd.denominator
     )
@@ -245,6 +268,7 @@ def test_release_cannot_free_capacity_on_incomplete_evidence(change, reason):
 def test_rational_baseline_is_not_rounded_between_ledger_and_sizing():
     ledger = seed().model_copy(update={"baseline_external_risk_usd": exact(Fraction(1, 3))})
     result = reserve(ledger)
+    assert result.reservation.sizing.planned_loss_usd is not None
     used = Fraction(
         result.reservation.sizing.planned_loss_usd.numerator, result.reservation.sizing.planned_loss_usd.denominator
     )
@@ -255,9 +279,34 @@ def test_rational_baseline_is_not_rounded_between_ledger_and_sizing():
 
 @pytest.mark.parametrize("control", ["owner", "version"])
 def test_boolean_control_token_is_not_integer_revision(control):
-    kwargs = {"owner_epoch": True} if control == "owner" else {"expected_version": False}
+    kwargs: dict[Literal["owner_epoch", "expected_version"], bool] = (
+        {"owner_epoch": True} if control == "owner" else {"expected_version": False}
+    )
     with pytest.raises(CapacityRejectedError):
         reserve(seed(), **kwargs)
+
+
+@pytest.mark.parametrize("state", ["HELD_UNISSUED", "PENDING_RECONCILIATION"])
+def test_active_capacity_missing_planned_loss_fails_closed_after_model_copy(state):
+    ledger = reserve(seed()).ledger
+    original = ledger.model_dump_json()
+    reservation = ledger.reservations[0]
+    # model_copy intentionally bypasses validation to exercise the runtime boundary.
+    malformed = ledger.model_copy(
+        update={
+            "reservations": (
+                reservation.model_copy(
+                    update={
+                        "state": state,
+                        "sizing": reservation.sizing.model_copy(update={"planned_loss_usd": None}),
+                    }
+                ),
+            ),
+        }
+    )
+    with pytest.raises(CapacityRejectedError, match="CAPACITY_SIZING_AMOUNT_UNBOUND"):
+        capacity_used_v31(malformed)
+    assert ledger.model_dump_json() == original
 
 
 def test_schema_rejects_duplicate_tombstones_and_negative_exact_exposure():
@@ -348,6 +397,7 @@ def test_new_campaign_after_release_uses_available_capacity_without_reusing_tomb
     next_campaign = reserve(released, n=2, now=now)
     assert len(next_campaign.ledger.reservations) == 2
     assert next_campaign.ledger.reservations[0].state == "RELEASED"
+    assert next_campaign.reservation.sizing.planned_loss_usd is not None
     assert capacity_used_v31(next_campaign.ledger) == Fraction(
         next_campaign.reservation.sizing.planned_loss_usd.numerator,
         next_campaign.reservation.sizing.planned_loss_usd.denominator,

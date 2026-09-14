@@ -1,5 +1,7 @@
+from collections.abc import Callable
 from datetime import timedelta
 from decimal import Decimal
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
@@ -45,31 +47,44 @@ def fixture(direction="BUY"):
     return universe, context
 
 
-def solve(data, context, verifier="BOUND_TEST_RECEIPT"):
+def solve(
+    data,
+    context,
+    verifier: Callable[[TargetUniverseV31, str], bool] | None | Literal["BOUND_TEST_RECEIPT"] = "BOUND_TEST_RECEIPT",
+):
     universe = TargetUniverseV31(**data)
     if verifier == "BOUND_TEST_RECEIPT":
         expected = target_universe_hash_v31(universe)
 
-        def verifier(snapshot, digest):
+        def bound_verifier(snapshot: TargetUniverseV31, digest: str) -> bool:
             return digest == expected and snapshot.policy_hash == H
 
+        selected_verifier = bound_verifier
+    else:
+        selected_verifier = verifier
+
     return solve_target_geometry_v31(
-        universe=universe, context=NetGeometryContextV31(**context), verify_universe=verifier
+        universe=universe, context=NetGeometryContextV31(**context), verify_universe=selected_verifier
     )
 
 
 @pytest.mark.parametrize("direction", ["BUY", "SELL"])
 def test_nearest_selected_before_net_solver_and_farther_never_used_to_rescue_rr(direction):
     data, context = fixture(direction)
-    assert solve(data, context).geometry.status == "FEASIBLE_TEST_ONLY"
+    initial_geometry = solve(data, context).geometry
+    assert initial_geometry is not None
+    assert initial_geometry.status == "FEASIBLE_TEST_ONLY"
     data["targets"][0]["price"] = Decimal("1.1002") if direction == "BUY" else Decimal("1.0998")
     result = solve(data, context)
     assert result.selected_target_id == "nearest"
+    assert result.geometry is not None
     assert result.geometry.status == "NO_VALID_ENTRY_DOMAIN"
     assert not result.execution_authority and not result.geometry.execution_authority
     assert not result.capital_reservation_authority and not result.hypothesis_authority
     only_far = dict(data, targets=[data["targets"][1]])
-    assert solve(only_far, context).geometry.status == "FEASIBLE_TEST_ONLY"
+    far_geometry = solve(only_far, context).geometry
+    assert far_geometry is not None
+    assert far_geometry.status == "FEASIBLE_TEST_ONLY"
 
 
 @pytest.mark.parametrize("source", SOURCES)
@@ -78,6 +93,7 @@ def test_all_declared_legal_source_kinds_feed_same_caller(source):
     data["targets"][0]["source"] = source
     result = solve(data, context)
     assert result.selected_target_id == "nearest"
+    assert result.geometry is not None
     assert result.geometry.status == "FEASIBLE_TEST_ONLY"
 
 
@@ -171,6 +187,7 @@ def test_missing_cost_preserves_selected_target_without_searching_farther():
     context["costs"] = None
     result = solve(data, context)
     assert result.selected_target_id == "nearest"
+    assert result.geometry is not None
     assert result.geometry.status == "WAIT"
     assert result.geometry.reason == "COST_EVIDENCE_UNBOUND"
 
@@ -184,4 +201,6 @@ def test_equal_price_tie_is_stable_and_evidence_change_changes_geometry_binding(
     data["targets"][0]["evidence_hash"] = "sha256:" + "2" * 64
     second = solve(data, context)
     assert second.selected_target_id == first.selected_target_id
+    assert first.geometry is not None
+    assert second.geometry is not None
     assert second.geometry.request_hash != first.geometry.request_hash

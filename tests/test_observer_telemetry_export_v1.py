@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
@@ -201,7 +202,9 @@ def test_coverage_not_applicable_is_distinct_from_unknown() -> None:
 
 
 @pytest.mark.parametrize("admission_class", ["CANONICAL_RAW", "MATURE_ADVISORY"])
-def test_analysis_admission_preserves_authority_class(admission_class: str) -> None:
+def test_analysis_admission_preserves_authority_class(
+    admission_class: Literal["CANONICAL_RAW", "MATURE_ADVISORY"],
+) -> None:
     body = StrategyAnalysisAdmissionV1(
         analysis_admission_id=f"analysis-admission:{admission_class.lower()}",
         strategy_lifecycle_id="5scr-lifecycle:" + "d" * 32,

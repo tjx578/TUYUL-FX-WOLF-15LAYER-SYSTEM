@@ -410,6 +410,7 @@ def test_release_entrypoint_enforces_real_governance_with_fixture_reads(
         spec = importlib.util.spec_from_file_location(
             "release_standalone_fixture", ROOT / "scripts/ci/railway_release_source_gate.py"
         )
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         governance_module = importlib.import_module("p1_governance_gate")

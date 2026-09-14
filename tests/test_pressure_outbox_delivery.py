@@ -131,9 +131,11 @@ class _CountingProcessor(Strategy5SCRPressureProcessor):
         super().__init__()
         self.calls = 0
 
-    def process(self, envelope: PressureOutboxEnvelope) -> PressureInboxOutcome:
+    def process(
+        self, envelope: PressureOutboxEnvelope, *, evidence: Strategy5SCRMarketEvidence | None = None
+    ) -> PressureInboxOutcome:
         self.calls += 1
-        return super().process(envelope)
+        return super().process(envelope, evidence=evidence)
 
 
 def test_inbox_delivery_decision_detects_duplicate_and_hash_conflict() -> None:

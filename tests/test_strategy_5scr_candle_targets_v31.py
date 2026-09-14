@@ -70,6 +70,7 @@ def test_canonical_candles_derive_targets_and_reach_net_geometry(direction):
     assert len(universe.targets) == 2
     selected = next(t for t in universe.targets if t.target_id == result.selected_target_id)
     assert abs(float(selected.price) - 1.1) == pytest.approx(0.0012)
+    assert result.geometry is not None
     assert result.geometry.status == "FEASIBLE_TEST_ONLY"
     assert not result.execution_authority and not result.geometry.execution_authority
 

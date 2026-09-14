@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 
 from analysis.frozen_quote_detector import FrozenQuoteDetector
 from analysis.market_context_validator import MarketContext
+from context.live_context_bus import LiveContextBus
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 
+# Injection casts expose only the read methods used by the price guard.
 class _FakeContextBus:
     def __init__(
         self,
@@ -136,10 +139,13 @@ def test_allowed_quorum_labels_stale_live_tick_reference_price(warmed_up: bool) 
                 observed_at=datetime.fromtimestamp(tick_ts, tz=UTC) - timedelta(seconds=seconds),
                 source="LIVE_TICK_MID",
             )
-    pipeline._context_bus = _FakeContextBus(
-        status="STALE_PRESERVED",
-        age_seconds=382.125,
-        timestamp=tick_ts,
+    pipeline._context_bus = cast(
+        LiveContextBus,
+        _FakeContextBus(
+            status="STALE_PRESERVED",
+            age_seconds=382.125,
+            timestamp=tick_ts,
+        ),
     )
     market_context = MarketContext(
         symbol="EURUSD",
@@ -180,7 +186,9 @@ def test_allowed_quorum_labels_stale_live_tick_reference_price(warmed_up: bool) 
 
 def test_allowed_quorum_m15_reference_price_is_not_labeled_live() -> None:
     pipeline = _pipeline()
-    pipeline._context_bus = _FakeContextBus(status="NO_PRODUCER", age_seconds=None, timestamp=None)
+    pipeline._context_bus = cast(
+        LiveContextBus, _FakeContextBus(status="NO_PRODUCER", age_seconds=None, timestamp=None)
+    )
     market_context = MarketContext(
         symbol="EURUSD",
         raw_allowed_direction="BUY",
@@ -212,20 +220,23 @@ def test_allowed_quorum_m15_reference_price_is_not_labeled_live() -> None:
 def test_allowed_quorum_h1_reference_price_gets_candle_lineage() -> None:
     pipeline = _pipeline()
     candle_ts = datetime(2026, 7, 3, 1, 0, tzinfo=UTC).timestamp()
-    pipeline._context_bus = _FakeContextBus(
-        status="DEGRADED_BUT_REFRESHING",
-        age_seconds=None,
-        timestamp=None,
-        candles={
-            ("EURUSD", "H1"): [
-                {
-                    "symbol": "EURUSD",
-                    "timeframe": "H1",
-                    "close": 1.24125,
-                    "timestamp": candle_ts,
-                }
-            ]
-        },
+    pipeline._context_bus = cast(
+        LiveContextBus,
+        _FakeContextBus(
+            status="DEGRADED_BUT_REFRESHING",
+            age_seconds=None,
+            timestamp=None,
+            candles={
+                ("EURUSD", "H1"): [
+                    {
+                        "symbol": "EURUSD",
+                        "timeframe": "H1",
+                        "close": 1.24125,
+                        "timestamp": candle_ts,
+                    }
+                ]
+            },
+        ),
     )
     market_context = MarketContext(
         symbol="EURUSD",

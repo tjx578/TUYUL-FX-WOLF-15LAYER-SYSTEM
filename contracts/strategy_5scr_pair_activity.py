@@ -63,7 +63,9 @@ class RawActivityObservationV31(FrozenActivityModel):
     direction_quality: Literal["BUY", "SELL", "UNKNOWN"]
 
 
-def direction_quality(observations: tuple[RawActivityObservationV31, ...]) -> str:
+def direction_quality(
+    observations: tuple[RawActivityObservationV31, ...],
+) -> Literal["BUY", "SELL", "CONFLICT", "UNKNOWN"]:
     known = {event.direction_quality for event in observations} - {"UNKNOWN"}
     if len(known) > 1:
         return "CONFLICT"
@@ -150,7 +152,10 @@ class PairActivityEvaluationV31(FrozenActivityModel):
             if (
                 self.policy is None
                 or self.coverage.status != "COMPLETE"
-                or any(value is None for value in admission_values)
+                or self.admission_id is None
+                or self.admission_lineage_hash is None
+                or self.admitted_at_utc is None
+                or self.valid_until_utc is None
             ):
                 raise ValueError("grant requires policy, complete coverage and admission lineage")
             if (

@@ -99,6 +99,7 @@ async def _assert_released(socket_server):
             return json.load(response)
 
     deadline = time.monotonic() + 5
+    state = await asyncio.to_thread(read_state)
     while time.monotonic() < deadline:
         state = await asyncio.to_thread(read_state)
         if all(count == 0 for manager in state.values() for count in manager.values()):
