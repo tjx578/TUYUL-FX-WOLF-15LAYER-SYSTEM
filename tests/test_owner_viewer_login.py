@@ -252,6 +252,55 @@ def test_worker_exception_releases_slot(monkeypatch):
     router._owner_login_gate.release()
 
 
+def test_suppressed_scope_cancellation_without_result_rejects_login(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import anyio
+    from fastapi import HTTPException, Response
+
+    import api.auth_router as router
+
+    credentials = Mock(return_value=True)
+    token = Mock(side_effect=AssertionError("unverified login must not issue a token"))
+    monkeypatch.setattr(router, "_owner_credentials_valid", credentials)
+    monkeypatch.setattr(router, "create_token", token)
+
+    async def scenario():
+        scope = anyio.CancelScope(shield=True)
+
+        def login_scope(*, shield):
+            assert shield is True
+            return scope
+
+        async def interrupted_result(verify, *, abandon_on_cancel):
+            assert abandon_on_cancel is False
+            # Fault injection: verification releases its slot, but cancellation
+            # is suppressed by the real scope before its result is assigned.
+            assert verify() is True
+            scope.cancel()
+            await anyio.lowlevel.checkpoint()
+            raise AssertionError("cancelled scope must interrupt result delivery")
+
+        monkeypatch.setattr(
+            router,
+            "anyio",
+            SimpleNamespace(CancelScope=login_scope, to_thread=SimpleNamespace(run_sync=interrupted_result)),
+        )
+        with pytest.raises(HTTPException) as rejected:
+            await router.owner_login(router.OwnerLoginRequest(username=USERNAME, password=PASSWORD), Response())
+        assert scope.cancelled_caught is True
+        assert rejected.value.status_code == 401
+        assert rejected.value.detail == "Invalid credentials"
+        assert rejected.value.headers == {"Cache-Control": "no-store"}
+
+    asyncio.run(scenario())
+    credentials.assert_called_once_with(USERNAME, PASSWORD)
+    token.assert_not_called()
+    assert router._owner_login_gate.acquire()
+    router._owner_login_gate.release()
+
+
 @pytest.mark.parametrize("password", ["short", "x" * 1025, "界" * 1024 + "x", "😀" * 600, "\x01" * 600])
 def test_hash_generator_rejects_out_of_bounds_input_without_output(monkeypatch, capsys, password):
     from scripts import generate_dashboard_owner_password_hash as generator
