@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-EXE = os.environ.get("WOLF15_BROKER_TEST_EXE")
+EXE = os.environ.get("WOLF15_BROKER_TEST_EXE", "")
 pytestmark = pytest.mark.skipif(os.name != "nt" or not EXE, reason="Requires explicitly selected Windows CI artifact")
 SENTINEL = "SYNTHETIC_PRIVATE_VALUE_DO_NOT_LOG"
 
