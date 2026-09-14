@@ -3,7 +3,7 @@
 Lightweight ingestion endpoints for MT5 EA → backend data flow:
 heartbeats, status changes, and portfolio snapshots.
 
-Authentication: standard JWT/API-key via verify_token (same as other routers).
+Authentication: verified machine API key only; dashboard JWTs/cookies cannot ingest.
 
 Prefix: /api/v1/agent-ingest
 Tags:   Agent Ingest
@@ -12,7 +12,7 @@ Tags:   Agent Ingest
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -29,10 +29,24 @@ __all__ = ["router"]
 
 logger = logging.getLogger(__name__)
 
+
+def require_agent_ingest_machine_auth(
+    principal: Annotated[dict[str, Any], Depends(verify_token)],
+) -> dict[str, Any]:
+    """Allow the existing EA machine credential, never a dashboard session.
+
+    verify_token sets auth_method from the verified credential type and
+    overwrites any caller-supplied JWT claim with the same name.
+    """
+    if principal.get("auth_method") != "api_key":
+        raise HTTPException(status_code=403, detail="Agent ingest requires machine API key authentication")
+    return principal
+
+
 router = APIRouter(
     prefix="/api/v1/agent-ingest",
     tags=["Agent Ingest"],
-    dependencies=[Depends(verify_token)],
+    dependencies=[Depends(require_agent_ingest_machine_auth)],
 )
 
 _service = AgentManagerService()
@@ -76,7 +90,10 @@ async def ingest_heartbeat(body: IngestHeartbeatRequest) -> dict[str, Any]:
 
 
 @router.post("/status-change")
-async def ingest_status_change(body: IngestStatusChangeRequest) -> dict[str, Any]:
+async def ingest_status_change(
+    body: IngestStatusChangeRequest,
+    principal: Annotated[dict[str, Any], Depends(require_agent_ingest_machine_auth)],
+) -> dict[str, Any]:
     """Record a status change notification from an MT5 EA.
 
     Updates the agent's status field and emits a STATUS_CHANGE event.
@@ -86,7 +103,7 @@ async def ingest_status_change(body: IngestStatusChangeRequest) -> dict[str, Any
         Updated agent row.
     """
     try:
-        agent = await _service.change_status(body, performed_by="EA_INGEST")
+        agent = await _service.change_status(body, performed_by=str(principal["sub"]))
     except AgentError as exc:
         raise _http_from_agent_error(exc) from exc
     return agent
