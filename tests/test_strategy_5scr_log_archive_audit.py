@@ -62,7 +62,7 @@ def test_archive_audit_deduplicates_the_same_event_across_overlapping_exports(
         encoding="utf-8",
     )
     with (tmp_path / "logs.2.csv").open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter[str](handle, fieldnames=("message", "timestamp"))
+        writer: csv.DictWriter[str] = csv.DictWriter(handle, fieldnames=("message", "timestamp"))
         writer.writeheader()
         writer.writerow(record)
 

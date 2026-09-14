@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from decimal import Decimal
 from fractions import Fraction
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, Unpack
 from uuid import UUID
 
 import pytest
@@ -57,16 +57,22 @@ class _RefreshArgs(TypedDict):
     verify_refresh: Callable[[CapacityBaselineRefreshV31, str], bool] | None
 
 
-def refresh(ledger, evidence=None, *, now=NOW + timedelta(seconds=2), **overrides):
+class _RefreshOverrides(TypedDict, total=False):
+    owner_epoch: int
+    expected_version: int
+    verify_refresh: Callable[[CapacityBaselineRefreshV31, str], bool] | None
+
+
+def refresh(ledger, evidence=None, *, now=NOW + timedelta(seconds=2), **overrides: Unpack[_RefreshOverrides]):
     evidence = evidence or evidence_for(ledger, now=now)
     pinned = baseline_refresh_hash_v31(evidence)
-    kwargs: _RefreshArgs = dict(
-        now=now,
-        owner_epoch=ledger.owner_epoch,
-        expected_version=ledger.version,
-        verify_refresh=lambda _, digest: digest == pinned,
-    )
-    kwargs.update(overrides)
+    kwargs: _RefreshArgs = {
+        "now": now,
+        "owner_epoch": ledger.owner_epoch,
+        "expected_version": ledger.version,
+        "verify_refresh": lambda _, digest: digest == pinned,
+        **overrides,
+    }
     return refresh_capacity_baseline_v31(ledger, evidence, **kwargs)
 
 

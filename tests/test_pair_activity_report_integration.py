@@ -93,7 +93,9 @@ def test_process_buffer_without_bound_context_stays_unbound() -> None:
 
 
 @pytest.mark.parametrize("status", ["INCOMPLETE", "UNKNOWN"])
-def test_unverified_coverage_preserves_activity_but_cannot_grant(status: str) -> None:
+def test_unverified_coverage_preserves_activity_but_cannot_grant(
+    status: Literal["INCOMPLETE", "UNKNOWN"],
+) -> None:
     raw = events()
     report = analyze_signal_throttle_events(raw, pair_activity_context=context(raw, status=status))
     rows = report["pair_activity_v31"]["audit"]["evaluations"]

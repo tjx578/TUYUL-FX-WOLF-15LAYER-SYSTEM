@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
 
 from context.live_context_bus import LiveContextBus
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 
-class _PriceContextBus(LiveContextBus):
+class _PriceContextBus:
     def __init__(self, *, bid: float, ask: float, feed_timestamp: float, low: float, high: float) -> None:
         self.tick = {"symbol": "CHFJPY", "bid": bid, "ask": ask}
         self.feed_timestamp = feed_timestamp
@@ -34,7 +34,10 @@ class _PriceContextBus(LiveContextBus):
 
 def _pipeline(bus: _PriceContextBus) -> WolfConstitutionalPipeline:
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
-    pipeline._context_bus = bus
+    # This fixture deliberately supplies only the observed-price interface.
+    # Inheriting LiveContextBus would add optional timestamp methods and change
+    # the fallback path this test is designed to exercise.
+    pipeline._context_bus = cast(LiveContextBus, bus)
     return pipeline
 
 

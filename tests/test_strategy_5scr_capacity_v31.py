@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from decimal import Decimal
 from fractions import Fraction
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, Unpack, cast
 from uuid import UUID
 
 import pytest
@@ -80,6 +80,14 @@ class _ReserveArgs(TypedDict):
     verify_inputs: Callable[[ParentSizingRequestV31, str], bool] | None
 
 
+class _ReserveOverrides(TypedDict, total=False):
+    reservation_id: UUID
+    expires_at: datetime
+    owner_epoch: int
+    expected_version: int
+    verify_inputs: Callable[[ParentSizingRequestV31, str], bool] | None
+
+
 class _TransitionArgs(TypedDict):
     reservation_id: UUID
     action: str
@@ -90,30 +98,38 @@ class _TransitionArgs(TypedDict):
     verify_release: NotRequired[Callable[[CapacityReleaseEvidenceV31, str], bool] | None]
 
 
-def reserve(ledger, request=None, *, n=1, now=NOW, **overrides):
+class _TransitionOverrides(TypedDict, total=False):
+    reservation_id: UUID
+    owner_epoch: int
+    expected_version: int
+    release_evidence: NotRequired[CapacityReleaseEvidenceV31 | None]
+    verify_release: NotRequired[Callable[[CapacityReleaseEvidenceV31, str], bool] | None]
+
+
+def reserve(ledger, request=None, *, n=1, now=NOW, **overrides: Unpack[_ReserveOverrides]):
     request = request or request_for(ledger, n, now)
     pinned = parent_sizing_request_hash_v31(request)
-    args: _ReserveArgs = dict(
-        reservation_id=UUID(int=n),
-        expires_at=now + timedelta(seconds=1),
-        now=now,
-        owner_epoch=ledger.owner_epoch,
-        expected_version=ledger.version,
-        verify_inputs=lambda _, digest: digest == pinned,
-    )
-    args.update(overrides)
+    args: _ReserveArgs = {
+        "reservation_id": UUID(int=n),
+        "expires_at": now + timedelta(seconds=1),
+        "now": now,
+        "owner_epoch": ledger.owner_epoch,
+        "expected_version": ledger.version,
+        "verify_inputs": lambda _, digest: digest == pinned,
+        **overrides,
+    }
     return reserve_parent_capacity_v31(ledger, request, **args)
 
 
-def transition(ledger, action, *, now=NOW, **overrides):
-    args: _TransitionArgs = dict(
-        reservation_id=UUID(int=1),
-        action=action,
-        now=now,
-        owner_epoch=ledger.owner_epoch,
-        expected_version=ledger.version,
-    )
-    args.update(overrides)
+def transition(ledger, action, *, now=NOW, **overrides: Unpack[_TransitionOverrides]):
+    args: _TransitionArgs = {
+        "reservation_id": UUID(int=1),
+        "action": action,
+        "now": now,
+        "owner_epoch": ledger.owner_epoch,
+        "expected_version": ledger.version,
+        **overrides,
+    }
     return transition_capacity_v31(ledger, **args)
 
 
@@ -243,6 +259,9 @@ def test_release_cannot_free_capacity_on_incomplete_evidence(change, reason):
     def verifier(*_):
         return 1 if change == "verifier" else True
 
+    # The verifier fault deliberately supplies a non-boolean success value.
+    release_verifier = cast(Callable[[CapacityReleaseEvidenceV31, str], bool], verifier)
+
     if change == "account":
         evidence["account_id"] = "other"
     elif change == "state":
@@ -260,7 +279,7 @@ def test_release_cannot_free_capacity_on_incomplete_evidence(change, reason):
             "RELEASE_RECONCILED",
             now=now,
             release_evidence=CapacityReleaseEvidenceV31(**evidence),
-            verify_release=verifier,
+            verify_release=release_verifier,
         )
     assert pending.model_dump_json() == before
 
@@ -372,7 +391,7 @@ def test_no_effect_release_requires_cancelled_fenced_delivery_after_dispatch():
 )
 def test_reservation_is_bound_to_cost_expiry_ttl_and_policy(control, reason):
     ledger = seed()
-    kwargs = {}
+    kwargs: _ReserveOverrides = {}
     request = request_for(ledger)
     if control == "expiry":
         kwargs["expires_at"] = NOW + timedelta(seconds=2)

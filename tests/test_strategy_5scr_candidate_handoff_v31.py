@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from decimal import Decimal, localcontext
 from fractions import Fraction
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, Unpack
 from uuid import UUID
 
 import pytest
@@ -130,23 +130,34 @@ class _ProposeArgs(TypedDict):
     verify_risk_inputs: Callable[[ParentSizingRequestV31, str], bool] | None
 
 
-def propose(ledger, handoff, request, **overrides):
+class _ProposeOverrides(TypedDict, total=False):
+    reservation_id: UUID
+    expires_at: datetime
+    now: datetime
+    owner_epoch: int
+    expected_version: int
+    verify_handoff: Callable[[CandidateHandoffV31, str], bool] | None
+    verify_universe: Callable[[TargetUniverseV31, str], bool] | None
+    verify_risk_inputs: Callable[[ParentSizingRequestV31, str], bool] | None
+
+
+def propose(ledger, handoff, request, **overrides: Unpack[_ProposeOverrides]):
     handoff_hash = candidate_handoff_hash_v31(handoff)
     risk_hash = parent_sizing_request_hash_v31(request)
     universe_hash = target_universe_hash_v31(handoff.target_universe)
-    kwargs: _ProposeArgs = dict(
-        reservation_id=UUID(int=21),
-        expires_at=NOW + timedelta(seconds=1),
-        now=NOW,
-        owner_epoch=ledger.owner_epoch,
-        expected_version=ledger.version,
-        verify_handoff=ReferencePatternHandoffVerifierV31(
+    kwargs: _ProposeArgs = {
+        "reservation_id": UUID(int=21),
+        "expires_at": NOW + timedelta(seconds=1),
+        "now": NOW,
+        "owner_epoch": ledger.owner_epoch,
+        "expected_version": ledger.version,
+        "verify_handoff": ReferencePatternHandoffVerifierV31(
             policy=reference_policy(), attest_remaining=lambda _, digest: digest == handoff_hash
         ),
-        verify_universe=lambda _, digest: digest == universe_hash,
-        verify_risk_inputs=lambda _, digest: digest == risk_hash,
-    )
-    kwargs.update(overrides)
+        "verify_universe": lambda _, digest: digest == universe_hash,
+        "verify_risk_inputs": lambda _, digest: digest == risk_hash,
+        **overrides,
+    }
     return propose_canonical_parent_v31(ledger, handoff, request, **kwargs)
 
 
@@ -352,10 +363,14 @@ def test_risk_request_cannot_substitute_candidate_scope(change, reason):
 
 
 @pytest.mark.parametrize("name", ["verify_handoff", "verify_universe", "verify_risk_inputs"])
-def test_each_independent_verifier_is_mandatory(name):
+def test_each_independent_verifier_is_mandatory(
+    name: Literal["verify_handoff", "verify_universe", "verify_risk_inputs"],
+):
     ledger, handoff, request = bundle()
+    overrides: _ProposeOverrides = {}
+    overrides[name] = None
     with pytest.raises(CapacityRejectedError):
-        propose(ledger, handoff, request, **{name: None})
+        propose(ledger, handoff, request, **overrides)
     assert ledger.reservations == ()
 
 

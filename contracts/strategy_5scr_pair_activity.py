@@ -66,7 +66,8 @@ class RawActivityObservationV31(FrozenActivityModel):
 def direction_quality(
     observations: tuple[RawActivityObservationV31, ...],
 ) -> Literal["BUY", "SELL", "CONFLICT", "UNKNOWN"]:
-    known = {event.direction_quality for event in observations} - {"UNKNOWN"}
+    known: set[Literal["BUY", "SELL", "UNKNOWN"]] = {event.direction_quality for event in observations}
+    known.discard("UNKNOWN")
     if len(known) > 1:
         return "CONFLICT"
     if any(event.direction_quality == "UNKNOWN" for event in observations):

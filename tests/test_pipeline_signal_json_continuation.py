@@ -1332,7 +1332,7 @@ def test_pipeline_counts_contextless_prewatch_expiry_as_decision_update_emit(mon
             return True
 
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter()
-    monkeypatch.setattr(pipeline, "_signal_json_emitter", _Emitter())
+    monkeypatch.setattr(pipeline, "_signal_json_emitter", _Emitter(), raising=False)
     monkeypatch.setenv("SIGNAL_LIFECYCLE_MANAGER_SHADOW_ENABLED", "false")
     payload = pipeline._prewatch_expiry_decision_update(
         {
@@ -1389,7 +1389,7 @@ def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
         def snapshot(self, *, market_contexts):
             return dict(report)
 
-    monkeypatch.setattr(pipeline, "_signal_throttle_live_analyzer", _Analyzer())
+    monkeypatch.setattr(pipeline, "_signal_throttle_live_analyzer", _Analyzer(), raising=False)
 
     verdict: dict = {}
     pipeline._emit_microboost_watch_shadow(
@@ -1457,7 +1457,7 @@ def test_shadow_clean_block_watch_is_marked_observability_only(monkeypatch):
         def snapshot(self, *, market_contexts):
             return dict(report)
 
-    monkeypatch.setattr(pipeline, "_signal_throttle_live_analyzer", _Analyzer())
+    monkeypatch.setattr(pipeline, "_signal_throttle_live_analyzer", _Analyzer(), raising=False)
 
     verdict: dict = {}
     pipeline._emit_microboost_watch_shadow(

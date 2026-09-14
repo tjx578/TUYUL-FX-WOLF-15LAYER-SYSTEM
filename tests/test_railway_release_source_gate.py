@@ -16,6 +16,8 @@ from scripts.ci import railway_release_source_gate as gate
 
 SHA = "a" * 40
 ROOT = Path(__file__).resolve().parents[1]
+PYRIGHT_JOB_NAMES = ("Python typecheck / Pyright (core)", "Python typecheck / Pyright (native-mcp)")
+TYPECHECK_JOB_NAMES = (*PYRIGHT_JOB_NAMES, "Python typecheck / lint")
 
 
 @pytest.fixture
@@ -117,6 +119,37 @@ def test_release_rejects_missing_postgres_or_runner_step(receipt, missing):
     job["steps"] = [step for step in job["steps"] if step["name"] != missing]
     with pytest.raises(gate.ReleaseGateError, match="required CI step absent"):
         gate.validate_receipt(**receipt)
+
+
+@pytest.mark.parametrize("job_name", TYPECHECK_JOB_NAMES)
+def test_release_rejects_missing_typecheck_job(receipt, job_name):
+    receipt["jobs"] = [job for job in receipt["jobs"] if job["name"] != job_name]
+    with pytest.raises(gate.ReleaseGateError, match="missing or duplicate CI jobs"):
+        gate.validate_receipt(**receipt)
+
+
+@pytest.mark.parametrize("job_name", PYRIGHT_JOB_NAMES)
+@pytest.mark.parametrize(
+    "missing",
+    ["Run Pyright without suppressing failures", "Validate and summarize report", "Upload typecheck evidence"],
+)
+def test_release_rejects_missing_typecheck_evidence_step(receipt, job_name, missing):
+    job = next(job for job in receipt["jobs"] if job["name"] == job_name)
+    job["steps"] = [step for step in job["steps"] if step["name"] != missing]
+    with pytest.raises(gate.ReleaseGateError, match="required CI step absent"):
+        gate.validate_receipt(**receipt)
+
+
+def test_release_rejects_missing_typecheck_aggregation_step(receipt):
+    job = next(job for job in receipt["jobs"] if job["name"] == "Python typecheck / lint")
+    job["steps"] = [{"name": "Unrelated executed step", "status": "completed", "conclusion": "success"}]
+    with pytest.raises(gate.ReleaseGateError, match="required CI step absent"):
+        gate.validate_receipt(**receipt)
+
+
+@pytest.mark.parametrize("job_name", TYPECHECK_JOB_NAMES)
+def test_p1_governance_inherits_required_typecheck_evidence(job_name):
+    assert governance.REQUIRED_WORKFLOWS[gate.CI_PATH][job_name] == gate.REQUIRED_STEPS[job_name]
 
 
 @pytest.mark.parametrize("field", ["release_sha", "checkout_sha", "remote_main_sha"])
@@ -348,15 +381,42 @@ def test_cli_event_binding_and_rerun_race(receipt, tmp_path, monkeypatch, event_
     assert all("railway" not in endpoint for endpoint in calls)
 
 
-def test_required_workflow_names_and_steps_match_repository():
+def _repository_workflow_jobs(path: Path, prefix: str = "", seen: frozenset[Path] = frozenset()):
+    """Resolve the local reusable workflows and explicit include matrices in CI."""
     import yaml
 
+    path = path.resolve()
+    assert path.parent == (ROOT / ".github/workflows").resolve()
+    assert path not in seen, "recursive reusable workflow"
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    jobs = {}
+    for key, job in workflow["jobs"].items():
+        name = job.get("name", key)
+        matrix = job.get("strategy", {}).get("matrix", {})
+        assert set(matrix).issubset({"include"}), "extend this resolver for new matrix dimensions"
+        for values in matrix.get("include", [{}]):
+            resolved = name
+            for field, value in values.items():
+                resolved = resolved.replace("${{ matrix." + field + " }}", str(value))
+            assert "${{" not in resolved, "unresolved workflow job name"
+            full_name = prefix + resolved
+            if "uses" in job:
+                assert job["uses"].startswith("./.github/workflows/"), "expected a local source-bound workflow"
+                nested = _repository_workflow_jobs(ROOT / job["uses"][2:], full_name + " / ", seen | {path})
+                assert not jobs.keys() & nested.keys(), "duplicate workflow job names"
+                jobs.update(nested)
+            else:
+                assert full_name not in jobs, "duplicate workflow job name"
+                jobs[full_name] = {step.get("name") for step in job["steps"]}
+    return jobs
+
+
+def test_required_workflow_names_and_steps_match_repository():
     for path, required_jobs in gate.RELEASE_WORKFLOWS.items():
-        workflow = yaml.safe_load((ROOT / path).read_text())
-        jobs = {job.get("name", key): job for key, job in workflow["jobs"].items()}
+        jobs = _repository_workflow_jobs(ROOT / path)
         assert set(required_jobs).issubset(jobs)
         for name, required_steps in required_jobs.items():
-            assert required_steps.issubset({step.get("name") for step in jobs[name]["steps"]})
+            assert required_steps.issubset(jobs[name])
 
 
 def test_real_cli_rejects_before_provider_when_dispatch_missing_evidence(tmp_path):
