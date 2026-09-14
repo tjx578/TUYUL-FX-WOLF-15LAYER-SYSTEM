@@ -34,6 +34,10 @@ VERDICT_STREAM_MAXLEN = 1000
 _READ_REDIS_CLIENT: redis.Redis | None = None
 _READ_REDIS_CLIENT_URL: str | None = None
 _READ_REDIS_UNAVAILABLE_UNTIL = 0.0
+# Monotonic count of read failures. The cooldown above only says whether reads
+# are believed broken *right now*; a caller that spans many reads needs to know
+# a failure happened at all, even if the cooldown lapsed before it looked.
+_READ_REDIS_FAILURE_COUNT = 0
 
 
 def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
@@ -69,9 +73,10 @@ def _read_redis_temporarily_unavailable() -> bool:
 
 
 def _mark_read_redis_unavailable() -> None:
-    global _READ_REDIS_UNAVAILABLE_UNTIL
+    global _READ_REDIS_UNAVAILABLE_UNTIL, _READ_REDIS_FAILURE_COUNT
     cooldown = _env_float("L12_CACHE_READ_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
     _READ_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+    _READ_REDIS_FAILURE_COUNT += 1
 
 
 def verdict_read_source_ok() -> bool:
@@ -84,6 +89,16 @@ def verdict_read_source_ok() -> bool:
     the last observed read; it never issues one.
     """
     return not _read_redis_temporarily_unavailable()
+
+
+def verdict_read_failure_count() -> int:
+    """How many verdict read failures this process has recorded.
+
+    ``verdict_read_source_ok`` reports a cooldown window, so a caller whose work
+    spans many reads can miss a failure that healed before it asked. Comparing
+    this count before and after that work detects the failure either way.
+    """
+    return _READ_REDIS_FAILURE_COUNT
 
 
 def _decode_redis_text(raw: Any) -> str:

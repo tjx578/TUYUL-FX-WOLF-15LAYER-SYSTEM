@@ -21,6 +21,15 @@ class _Reader:
     ready = True
     raises = False
     read_source_ok = True
+    # Successive values returned by read_failure_count, to model a failure that
+    # happens during a scan; empty means a steady count.
+    failure_counts: list[int] | None = None
+
+    @property
+    def read_failure_count(self) -> int:
+        if self.failure_counts:
+            return self.failure_counts.pop(0)
+        return 0
 
     def check_warmup(self, symbol: str, min_bars: dict[str, int] | None = None) -> dict[str, Any]:
         if self.raises:
@@ -37,6 +46,7 @@ def bind(monkeypatch):
         verdicts: dict[str, Any],
         reader: _Reader | None = None,
         verdict_source_ok: bool = True,
+        verdict_failure_counts: list[int] | None = None,
     ):
         monkeypatch.setattr(l12_routes, "AVAILABLE_PAIRS", pairs)
 
@@ -50,6 +60,13 @@ def bind(monkeypatch):
         bound = reader or _Reader()
         monkeypatch.setattr(redis_context_reader, "RedisContextReader", lambda *a, **k: bound)
         monkeypatch.setattr(dashboard_routes, "verdict_read_source_ok", lambda: verdict_source_ok)
+
+        counts = list(verdict_failure_counts) if verdict_failure_counts else None
+
+        def _failure_count() -> int:
+            return counts.pop(0) if counts else 0
+
+        monkeypatch.setattr(dashboard_routes, "verdict_read_failure_count", _failure_count)
         return bound
 
     return _bind
@@ -230,6 +247,43 @@ def test_flags_a_suppressed_context_read_failure(bind) -> None:
     reader.read_source_ok = False
     bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": _verdict()}, reader=reader)
     assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
+
+
+def test_latches_a_verdict_failure_that_healed_before_the_scan_ended(bind) -> None:
+    """Read health is a cooldown window, not a latch.
+
+    A failure on the first pair can lapse before the last pair is read, so
+    asking only at the end would report a healthy source for a response whose
+    rows came from reads that had already failed.  The failure count is what
+    makes that detectable.
+    """
+    bind(
+        [{"symbol": "EURUSD", "enabled": True}, {"symbol": "GBPUSD", "enabled": True}],
+        {"EURUSD": None, "GBPUSD": _verdict()},
+        verdict_source_ok=True,
+        verdict_failure_counts=[0, 1],
+    )
+    assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
+
+
+def test_latches_a_context_failure_that_healed_before_the_scan_ended(bind) -> None:
+    reader = _Reader()
+    reader.failure_counts = [0, 1]
+    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": _verdict()}, reader=reader)
+    assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
+
+
+def test_a_steady_failure_count_leaves_the_source_healthy(bind) -> None:
+    """Failures before this scan are not this response's problem."""
+    reader = _Reader()
+    reader.failure_counts = [7, 7]
+    bind(
+        [{"symbol": "EURUSD", "enabled": True}],
+        {"EURUSD": _verdict()},
+        reader=reader,
+        verdict_failure_counts=[3, 3],
+    )
+    assert dashboard_routes.dashboard_pair_states()["source_ok"] is True
 
 
 def test_a_missing_snapshot_on_a_healthy_source_is_not_a_failure(bind) -> None:

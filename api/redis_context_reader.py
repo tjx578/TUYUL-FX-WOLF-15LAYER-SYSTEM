@@ -56,6 +56,9 @@ _ALL_TIMEFRAMES = ("M1", "M5", "M15", "H1", "H4", "D1", "W1", "MN")
 _CONTEXT_REDIS_CLIENT: redis.Redis | None = None
 _CONTEXT_REDIS_CLIENT_URL: str | None = None
 _REDIS_UNAVAILABLE_UNTIL = 0.0
+# Monotonic count of read failures; see verdict_read_failure_count() in
+# storage/l12_cache.py for why a cooldown window alone is not enough.
+_REDIS_FAILURE_COUNT = 0
 
 
 def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
@@ -92,9 +95,10 @@ def _redis_temporarily_unavailable() -> bool:
 
 
 def _mark_redis_unavailable() -> None:
-    global _REDIS_UNAVAILABLE_UNTIL
+    global _REDIS_UNAVAILABLE_UNTIL, _REDIS_FAILURE_COUNT
     cooldown = _env_float("API_CONTEXT_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
     _REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+    _REDIS_FAILURE_COUNT += 1
 
 
 def context_read_source_ok() -> bool:
@@ -106,6 +110,11 @@ def context_read_source_ok() -> bool:
     reader already maintains, without issuing a read of its own.
     """
     return not _redis_temporarily_unavailable()
+
+
+def context_read_failure_count() -> int:
+    """How many context read failures this process has recorded."""
+    return _REDIS_FAILURE_COUNT
 
 
 def _redis_lrange(key: str, start: int, end: int) -> list[str]:
@@ -190,6 +199,11 @@ class RedisContextReader:
     def read_source_ok(self) -> bool:
         """Whether this reader's Redis reads are currently believed to succeed."""
         return context_read_source_ok()
+
+    @property
+    def read_failure_count(self) -> int:
+        """Read failures recorded so far; compare across a multi-read scan."""
+        return context_read_failure_count()
 
     def snapshot(self) -> dict[str, Any]:
         """Return full context snapshot from Redis.
