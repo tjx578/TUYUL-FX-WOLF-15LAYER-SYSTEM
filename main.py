@@ -221,7 +221,10 @@ async def _run_main(health_probe, tasks, gs) -> None:
     configure_stdlib_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
     configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
 
-    install_signal_handlers(_shutdown_event)
+    shutdown_event = _shutdown_event
+    if shutdown_event is None:
+        raise RuntimeError("ENGINE_SHUTDOWN_EVENT_UNINITIALIZED")
+    install_signal_handlers(shutdown_event)
 
     logger.info("=" * 60)
     logger.info("WOLF 15-LAYER TRADING SYSTEM")
@@ -369,15 +372,15 @@ async def _run_main(health_probe, tasks, gs) -> None:
 
     _engine_runtime.bootstrap_complete()
     joined = asyncio.gather(*tasks)
-    stopping = asyncio.create_task(_shutdown_event.wait(), name="EngineShutdownSignal")
+    stopping = asyncio.create_task(shutdown_event.wait(), name="EngineShutdownSignal")
     try:
         await asyncio.wait((joined, stopping), return_when=asyncio.FIRST_COMPLETED)
         if joined.done():
             await joined
-            if not _shutdown_event.is_set():
+            if not shutdown_event.is_set():
                 raise RuntimeError("ENGINE_REQUIRED_TASKS_RETURNED")
     except asyncio.CancelledError:
-        if not _shutdown_event.is_set():
+        if not shutdown_event.is_set():
             _engine_runtime.begin_shutdown(fatal=True)
             raise
     except Exception as exc:

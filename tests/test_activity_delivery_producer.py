@@ -1,6 +1,7 @@
 """Producer allocation unit model; SQL transactions still require PostgreSQL acceptance."""
 
 from types import SimpleNamespace
+from typing import TypedDict
 
 import pytest
 
@@ -8,9 +9,19 @@ from storage.strategy_5scr_activity_outbox import enqueue_activity_evaluation
 from tests.test_activity_delivery_contract import delivery
 
 
+class _SourceReport(TypedDict):
+    provenance: dict[str, str]
+    audit: dict[str, list[dict[str, object]]]
+
+
+class _SourceSnapshot(TypedDict):
+    revision: int
+    report: _SourceReport
+
+
 class ProducerStore:
     def __init__(self, event):
-        self.source = {
+        self.source: _SourceSnapshot | None = {
             "revision": event.source_revision,
             "report": {
                 "provenance": {"binding_hash": event.scope.producer_binding_hash},
@@ -72,6 +83,7 @@ def test_first_allocation_and_duplicate_snapshot_preserve_original_envelope():
 def test_unbound_source_never_allocates(corruption):
     event = delivery()
     store = ProducerStore(event)
+    assert store.source is not None
     if corruption == "missing":
         store.source = None
     elif corruption == "revision":

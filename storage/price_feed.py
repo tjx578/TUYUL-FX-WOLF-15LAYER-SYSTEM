@@ -31,7 +31,7 @@ class PriceFeed:
             self._prices[symbol.upper()] = item
 
         with contextlib.suppress(Exception):
-            redis_client.client.hset(f"PRICE:{symbol.upper()}", mapping=item)
+            redis_client.client.hset(f"PRICE:{symbol.upper()}", mapping={key: value for key, value in item.items()})
 
     def get_latest_prices(self) -> dict[str, dict[str, Any]]:
         return self.get_all_prices()

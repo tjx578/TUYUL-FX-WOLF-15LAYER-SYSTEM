@@ -266,6 +266,7 @@ def test_observed_live_price_blocks_new_entry_after_stop_or_target_is_crossed():
         decision = evaluate_signal_execution_gates(payload)
         assert decision.decision == "BLOCK"
         assert expected_reason in decision.reasons
+        assert decision.live_rr is not None
         assert decision.live_rr["price_valid_for_new_entry"] is False
 
 
@@ -290,6 +291,7 @@ def test_stop_breach_uses_executable_bid_for_buy_and_ask_for_sell():
         decision = evaluate_signal_execution_gates(payload)
         assert decision.decision == "BLOCK"
         assert "LIVE_PRICE_AT_OR_BEYOND_STOP" in decision.reasons
+        assert decision.live_rr is not None
         assert decision.live_rr["exit_price"] == expected_exit_price
 
 

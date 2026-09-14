@@ -113,7 +113,8 @@ async def engine_diagnostic() -> dict[str, Any]:
     engine_hb_raw: str | None = None
     engine_hb_age: float | None = None
     try:
-        engine_hb_raw = await redis.get(ENGINE_HEARTBEAT_SIMPLE)
+        heartbeat_value = await redis.get(ENGINE_HEARTBEAT_SIMPLE)
+        engine_hb_raw = heartbeat_value.decode("utf-8") if isinstance(heartbeat_value, bytes) else heartbeat_value
         if engine_hb_raw:
             hb_dt = datetime.datetime.fromisoformat(engine_hb_raw.strip())
             now_dt = datetime.datetime.now(datetime.UTC)

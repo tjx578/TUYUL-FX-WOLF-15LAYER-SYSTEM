@@ -455,6 +455,7 @@ async def test_registration_is_idempotent(client: AsyncClient, postgres: _PoolBa
     count = await postgres.fetchrow(
         "SELECT count(*) AS n FROM executor_instances WHERE executor_id = $1::uuid", str(registered)
     )
+    assert count is not None
     assert count["n"] == 1
 
 
@@ -482,6 +483,7 @@ async def test_heartbeat_persists_a_durable_account_snapshot(
     executor = await postgres.fetchrow(
         "SELECT last_heartbeat_at FROM executor_instances WHERE executor_id = $1::uuid", str(registered)
     )
+    assert executor is not None
     assert executor["last_heartbeat_at"] is not None
 
 
@@ -734,6 +736,7 @@ async def test_claim_binds_a_lease_and_request_hash(
         "SELECT state, claim_token_hash, lease_expires_at FROM execution_commands WHERE command_id = $1::uuid",
         str(command.command_id),
     )
+    assert row is not None
     assert row["state"] == "CLAIMED"
     assert row["claim_token_hash"]
     assert row["lease_expires_at"] is not None
@@ -885,6 +888,7 @@ async def test_identical_duplicate_report_is_idempotent(
     count = await postgres.fetchrow(
         "SELECT count(*) AS n FROM execution_reports WHERE command_id = $1::uuid", str(command.command_id)
     )
+    assert count is not None
     assert count["n"] == 1
 
 

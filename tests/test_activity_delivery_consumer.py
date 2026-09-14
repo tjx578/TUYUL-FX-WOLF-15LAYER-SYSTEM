@@ -6,14 +6,17 @@ import json
 import time
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import cast
 from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.routing import Route
 
 from contracts.strategy_5scr_lifecycle_v2 import StrategyLifecycleV2
 from services.pressure_outbox.activity_delivery_transport import ActivityTransportBinding, activity_consumer_router
+from storage.postgres_client import PostgresClient
 from storage.strategy_5scr_activity_consumer import LifecycleOwnerFence
 from storage.strategy_5scr_shadow_evidence_v2_repository import StrategyShadowEvidenceV2Repository
 from tests.test_activity_delivery_contract import delivery, scope
@@ -21,6 +24,7 @@ from tests.test_activity_delivery_relay import Store
 from tests.test_strategy_5scr_pair_activity import START
 
 
+# Injection casts below are limited to this double's exercised repository surface.
 class ConsumerDB:
     def __init__(self):
         self.fence = LifecycleOwnerFence("EURUSD", scope().scope_hash, scope().lifecycle_owner_id, 1, uuid4())
@@ -29,7 +33,7 @@ class ConsumerDB:
         }
         self.now = START + timedelta(seconds=301)
         self.active = False
-        self.fail_at = None
+        self.fail_at: str | None = None
 
     def is_in_transaction(self):
         return self.active
@@ -92,7 +96,7 @@ def lifecycle(event, rows, previous):
 
 
 def consumer(db):
-    return StrategyShadowEvidenceV2Repository(pg=db).activity_consumer(
+    return StrategyShadowEvidenceV2Repository(pg=cast(PostgresClient, db)).activity_consumer(
         scope=scope(),
         fence=db.fence,
         policy_hash=scope().lifecycle_policy_hash,
@@ -235,7 +239,10 @@ def test_api_factory_mounts_only_explicit_bound_endpoint(monkeypatch):
     from services.pressure_outbox.activity_delivery_transport import ActivityDeliveryEndpoint
 
     monkeypatch.setattr(app_factory, "_create_app_inner", lambda: FastAPI())
-    assert not any(route.path == "/internal/s03/activity-deliveries" for route in app_factory.create_app().routes)
+    assert not any(
+        isinstance(route, Route) and route.path == "/internal/s03/activity-deliveries"
+        for route in app_factory.create_app().routes
+    )
     db = ConsumerDB()
     binding = ActivityTransportBinding(
         destination="https://consumer.test/internal/s03/activity-deliveries",
@@ -256,11 +263,13 @@ def test_api_factory_mounts_only_explicit_bound_endpoint(monkeypatch):
 
 def test_unseen_expiry_and_missing_policy_fail_closed():
     db = ConsumerDB()
-    db.now = delivery().evaluation.valid_until_utc
+    expires_at = delivery().evaluation.valid_until_utc
+    assert expires_at is not None
+    db.now = expires_at
     assert asyncio.run(consumer(db).consume(delivery().model_dump_json().encode()))[-1] == "EXPIRED_UNSEEN_DELIVERY"
     assert all(not rows for rows in db.data.values())
     with pytest.raises(ValueError, match="POLICY_OR_OWNER_UNBOUND"):
-        StrategyShadowEvidenceV2Repository(pg=db).activity_consumer(
+        StrategyShadowEvidenceV2Repository(pg=cast(PostgresClient, db)).activity_consumer(
             scope=scope(),
             fence=db.fence,
             policy_hash=None,
@@ -275,7 +284,7 @@ def test_changed_policy_cannot_remap_same_logical_activity():
     original = copy.deepcopy(db.data)
     new_scope = scope(lifecycle_policy_hash="sha256:" + "9" * 64)
     db.fence = LifecycleOwnerFence("EURUSD", new_scope.scope_hash, new_scope.lifecycle_owner_id, 2, uuid4())
-    owner = StrategyShadowEvidenceV2Repository(pg=db).activity_consumer(
+    owner = StrategyShadowEvidenceV2Repository(pg=cast(PostgresClient, db)).activity_consumer(
         scope=new_scope,
         fence=db.fence,
         policy_hash=new_scope.lifecycle_policy_hash,

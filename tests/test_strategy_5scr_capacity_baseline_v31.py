@@ -1,6 +1,8 @@
-from datetime import timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta
 from decimal import Decimal
 from fractions import Fraction
+from typing import Literal, TypedDict, Unpack
 from uuid import UUID
 
 import pytest
@@ -39,8 +41,8 @@ def evidence_for(ledger, *, n=1, now=NOW + timedelta(seconds=2), balance=1100, f
         coverage_from=ledger.baseline_captured_at,
         coverage_to=now,
         realized_net_pnl_usd=Decimal(str(balance)) - ledger.closed_balance_usd,
-        net_cashflow_usd="0",
-        broker_adjustment_usd="0",
+        net_cashflow_usd=Decimal("0"),
+        broker_adjustment_usd=Decimal("0"),
         external_risk_usd=exact(0),
         excluded_reservation_ids=tuple(
             r.reservation_id for r in ledger.reservations if r.state in {"HELD_UNISSUED", "PENDING_RECONCILIATION"}
@@ -48,16 +50,29 @@ def evidence_for(ledger, *, n=1, now=NOW + timedelta(seconds=2), balance=1100, f
     )
 
 
-def refresh(ledger, evidence=None, *, now=NOW + timedelta(seconds=2), **overrides):
+class _RefreshArgs(TypedDict):
+    now: datetime
+    owner_epoch: int
+    expected_version: int
+    verify_refresh: Callable[[CapacityBaselineRefreshV31, str], bool] | None
+
+
+class _RefreshOverrides(TypedDict, total=False):
+    owner_epoch: int
+    expected_version: int
+    verify_refresh: Callable[[CapacityBaselineRefreshV31, str], bool] | None
+
+
+def refresh(ledger, evidence=None, *, now=NOW + timedelta(seconds=2), **overrides: Unpack[_RefreshOverrides]):
     evidence = evidence or evidence_for(ledger, now=now)
     pinned = baseline_refresh_hash_v31(evidence)
-    kwargs = dict(
-        now=now,
-        owner_epoch=ledger.owner_epoch,
-        expected_version=ledger.version,
-        verify_refresh=lambda _, digest: digest == pinned,
-    )
-    kwargs.update(overrides)
+    kwargs: _RefreshArgs = {
+        "now": now,
+        "owner_epoch": ledger.owner_epoch,
+        "expected_version": ledger.version,
+        "verify_refresh": lambda _, digest: digest == pinned,
+        **overrides,
+    }
     return refresh_capacity_baseline_v31(ledger, evidence, **kwargs)
 
 
@@ -170,7 +185,7 @@ def test_refresh_rejects_inconsistent_or_unbound_evidence_without_state_change(c
     elif change == "snapshot_id":
         evidence["snapshot"]["snapshot_id"] = ledger.account_snapshot_id
     before = ledger.model_dump_json()
-    kwargs = {"verify_refresh": None} if change == "verifier" else {}
+    kwargs: dict[Literal["verify_refresh"], None] = {"verify_refresh": None} if change == "verifier" else {}
     with pytest.raises(CapacityRejectedError, match=reason):
         refresh(ledger, CapacityBaselineRefreshV31.model_validate(evidence), **kwargs)
     assert ledger.model_dump_json() == before
@@ -212,7 +227,10 @@ def test_reserve_cannot_change_content_while_reusing_bound_id_or_policy_hash(cha
 def test_refresh_rejects_stale_owner_or_version(which):
     ledger = seed()
     with pytest.raises(CapacityRejectedError):
-        refresh(ledger, **{which: 9})
+        if which == "owner_epoch":
+            refresh(ledger, owner_epoch=9)
+        else:
+            refresh(ledger, expected_version=9)
 
 
 def test_same_operation_id_with_new_content_is_conflict():

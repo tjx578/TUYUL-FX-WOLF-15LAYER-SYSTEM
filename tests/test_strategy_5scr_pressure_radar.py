@@ -218,6 +218,7 @@ def test_assembler_latches_qualification_then_associates_later_lineage() -> None
 
     canonical = canonical_radar_payload(ready.manifest, qualifying)
     assert ready.manifest.lineage_finalized_at_utc is not None
+    assert ready.manifest.pair_admission_granted_at_utc is not None
     assert canonical["source_clean_block_id"] == lineage["source_clean_block_id"]
     assert canonical["qualifying_stage"] == "PRESSURE_BLOCK"
     assert canonical["current_block_effective_ticks"] == 3

@@ -42,7 +42,7 @@ def _migration() -> str:
     return MIGRATION.read_text(encoding="utf-8")
 
 
-def _report(**database_kwargs) -> dict[str, object]:
+def _report(**database_kwargs):
     return reconcile.reconcile_snapshots(
         database=_database(**database_kwargs),
         broker=_broker(),

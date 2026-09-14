@@ -200,11 +200,15 @@ class CapacityRepositoryV31:
 
     def prepare_transition_detached(self, before, *, expected_version, **kwargs):
         binding = self._binding(before, dict(expected_version=expected_version, **kwargs))
+        callback_kwargs = kwargs.copy()
+        for name, value in callback_kwargs.items():
+            if name.startswith("verify_"):
+                callback_kwargs[name] = detached.guard_callback_v31(value)
         proposal = transition_capacity_v31(
             before,
             owner_epoch=self.fence.owner_epoch,
             expected_version=expected_version,
-            **{k: detached.guard_callback_v31(v) if k.startswith("verify_") else v for k, v in kwargs.items()},
+            **callback_kwargs,
         )
         if self._binding(before, dict(expected_version=expected_version, **kwargs)) != binding:
             raise ValueError("DETACHED_VERIFIER_INPUT_CHANGED")

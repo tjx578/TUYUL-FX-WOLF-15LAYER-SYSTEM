@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from mcp import Client
+from mcp.types import Tool
 
 from ops.mt5_mcp import account_binding, server, verify
 
@@ -219,7 +220,7 @@ def _bridge(
 
 
 def test_mcp_registry_exposes_only_the_five_read_tools() -> None:
-    async def list_tools() -> list[object]:
+    async def list_tools() -> list[Tool]:
         async with Client(server.mcp) as client:
             return list((await client.list_tools()).tools)
 

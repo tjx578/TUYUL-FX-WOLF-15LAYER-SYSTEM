@@ -138,8 +138,11 @@ def _direct_entities(snapshots: Mapping[str, Mapping[str, Any]]) -> dict[tuple[s
         for raw in records:
             if not isinstance(raw, Mapping):
                 continue
+            raw_ticket = raw.get("ticket")
+            if raw_ticket is None:
+                continue
             with suppress(TypeError, ValueError):
-                ticket = int(raw.get("ticket"))
+                ticket = int(raw_ticket)
                 key = (entity_type, ticket)
                 item = entities.setdefault(
                     key,
@@ -163,8 +166,11 @@ def _mirror_entities(rows: Sequence[Mapping[str, Any]]) -> dict[tuple[str, int],
         entity_type = str(row.get("entity_type") or "").upper()
         if entity_type not in ENTITY_TYPES:
             continue
+        raw_ticket = row.get("broker_ticket")
+        if raw_ticket is None:
+            continue
         with suppress(TypeError, ValueError):
-            ticket = int(row.get("broker_ticket"))
+            ticket = int(raw_ticket)
             entities.setdefault((entity_type, ticket), []).append(row)
     return entities
 
@@ -329,7 +335,13 @@ def _measurement_summary(
         state = payload.get("measurement_state", "NOT_MEASURED")
         truncated = payload.get("truncated")
         observed = _evidence_time(payload.get("observed_at_utc"))
-        observation_in_interval = bool(interval_valid and observed is not None and started <= observed <= finished)
+        observation_in_interval = bool(
+            interval_valid
+            and observed is not None
+            and started is not None
+            and finished is not None
+            and started <= observed <= finished
+        )
         records = payload.get("records")
         count = payload.get("record_count")
         source_count = payload.get("source_record_count")
@@ -341,7 +353,7 @@ def _measurement_summary(
             and count == source_count == len(records)
             and state == ("MEASURED" if records else "MEASURED_EMPTY")
         )
-        if consistent and tool_name != "mt5_account_get":
+        if consistent and isinstance(records, list) and tool_name != "mt5_account_get":
             tickets = [record.get("ticket") for record in records]
             consistent = all(type(ticket) is int and ticket > 0 for ticket in tickets)
             if consistent:
@@ -684,10 +696,12 @@ async def _database_snapshot(
     connection: Any | None = None
     transaction: Any | None = None
     try:
-        connection = await asyncpg.connect(dsn=dsn, command_timeout=15)
-        transaction = connection.transaction(isolation="repeatable_read", readonly=True)
-        await transaction.start()
-        audit_session = _mapping(await connection.fetchrow(AUDIT_SESSION_SQL))
+        active_connection = await asyncpg.connect(dsn=dsn, command_timeout=15)
+        connection = active_connection
+        active_transaction = active_connection.transaction(isolation="repeatable_read", readonly=True)
+        transaction = active_transaction
+        await active_transaction.start()
+        audit_session = _mapping(await active_connection.fetchrow(AUDIT_SESSION_SQL))
         if (
             audit_session.get("current_role") != EXPECTED_AUDIT_ROLE
             or audit_session.get("transaction_read_only") is not True
@@ -701,24 +715,24 @@ async def _database_snapshot(
             }
         observed_at = datetime.now(UTC)
         limit = MAX_DATABASE_ROWS + 1
-        identity = await connection.fetch(IDENTITY_SQL, limit)
-        freshness = await connection.fetch(FRESHNESS_SQL, limit)
-        binding = await connection.fetch(BINDING_SQL, limit)
-        binding_identity = await connection.fetch(BINDING_IDENTITY_SQL, limit)
-        containment = await connection.fetch(CONTAINMENT_SQL)
-        ledger = await connection.fetch(LEDGER_SQL, window_from, window_to, limit)
-        mirror = await connection.fetch(MIRROR_SQL, window_from, window_to, limit)
+        identity = await active_connection.fetch(IDENTITY_SQL, limit)
+        freshness = await active_connection.fetch(FRESHNESS_SQL, limit)
+        binding = await active_connection.fetch(BINDING_SQL, limit)
+        binding_identity = await active_connection.fetch(BINDING_IDENTITY_SQL, limit)
+        containment = await active_connection.fetch(CONTAINMENT_SQL)
+        ledger = await active_connection.fetch(LEDGER_SQL, window_from, window_to, limit)
+        mirror = await active_connection.fetch(MIRROR_SQL, window_from, window_to, limit)
         # D0 reconciliation evidence, kept for attestation only. It is deliberately
         # NOT merged into the legacy binding rows and is NOT the Channel-B identity
         # authority: it is snapshot-coupled, DEMO-only, and rewritten per executor.
         backend_identity = []
         if include_backend_identity:
             backend_identity = _clean_database_rows(
-                await connection.fetch(
+                await active_connection.fetch(
                     "SELECT * FROM wolf15_audit.backend_account_identity_v1 ORDER BY executor_id LIMIT $1", limit
                 )
             )
-        mutation = _mapping(await connection.fetchrow(MUTATION_SQL))
+        mutation = _mapping(await active_connection.fetchrow(MUTATION_SQL))
         truncated = (
             any(
                 len(rows) > MAX_DATABASE_ROWS
@@ -741,7 +755,7 @@ async def _database_snapshot(
             "mutation_evidence": mutation,
             "audit_session": audit_session,
         }
-        await transaction.rollback()
+        await active_transaction.rollback()
         transaction = None
         return report
     except Exception as exc:  # noqa: BLE001

@@ -484,7 +484,9 @@ def test_handle_tick_dict_preserves_payload_feed_timestamp() -> None:
     consumer._handle_tick_dict({"symbol": "EURUSD", "bid": 1.08, "ask": 1.0802, "last_seen_ts": payload_ts})
 
     assert bus.get_feed_timestamp("EURUSD") == _approx(payload_ts)
-    assert bus.get_latest_tick("EURUSD")["last_seen_ts"] == _approx(payload_ts)
+    latest_tick = bus.get_latest_tick("EURUSD")
+    assert latest_tick is not None
+    assert latest_tick["last_seen_ts"] == _approx(payload_ts)
 
 
 def test_handle_tick_dict_normalizes_epoch_milliseconds() -> None:
@@ -496,7 +498,9 @@ def test_handle_tick_dict_normalizes_epoch_milliseconds() -> None:
     consumer._handle_tick_dict({"symbol": "EURUSD", "bid": 1.08, "ask": 1.0802, "last_seen_ts": 1_714_302_222_750})
 
     assert bus.get_feed_timestamp("EURUSD") == _approx(1_714_302_222.75)
-    assert bus.get_latest_tick("EURUSD")["last_seen_ts"] == _approx(1_714_302_222.75)
+    latest_tick = bus.get_latest_tick("EURUSD")
+    assert latest_tick is not None
+    assert latest_tick["last_seen_ts"] == _approx(1_714_302_222.75)
 
 
 def test_tick_timestamp_is_independent_from_newer_candle_feed_timestamp(monkeypatch) -> None:
@@ -518,7 +522,9 @@ def test_out_of_order_tick_cannot_replace_newer_cached_quote() -> None:
     bus.update_tick({"symbol": "EURUSD", "bid": 1.08, "ask": 1.0802, "last_seen_ts": 100.0})
 
     assert bus.get_tick_timestamp("EURUSD") == _approx(200.0)
-    assert bus.get_latest_tick("EURUSD")["bid"] == _approx(1.09)
+    latest_tick = bus.get_latest_tick("EURUSD")
+    assert latest_tick is not None
+    assert latest_tick["bid"] == _approx(1.09)
 
 
 def test_handle_candle_dict_prefers_payload_last_seen_ts() -> None:

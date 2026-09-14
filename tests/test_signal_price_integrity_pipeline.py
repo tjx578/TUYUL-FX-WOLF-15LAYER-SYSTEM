@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
 
+from context.live_context_bus import LiveContextBus
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 
@@ -33,7 +34,10 @@ class _PriceContextBus:
 
 def _pipeline(bus: _PriceContextBus) -> WolfConstitutionalPipeline:
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
-    pipeline._context_bus = bus
+    # This fixture deliberately supplies only the observed-price interface.
+    # Inheriting LiveContextBus would add optional timestamp methods and change
+    # the fallback path this test is designed to exercise.
+    pipeline._context_bus = cast(LiveContextBus, bus)
     return pipeline
 
 
@@ -106,6 +110,7 @@ def test_old_tick_stays_stale_even_when_shared_bus_timestamp_is_fresh(monkeypatc
             high=200.673,
         )
     )
+    assert isinstance(pipeline._context_bus, _PriceContextBus)
     pipeline._context_bus.tick["last_seen_ts"] = time.time() - 10.0
     payload = _payload()
 
@@ -149,6 +154,7 @@ def test_pipeline_fails_closed_when_independent_range_is_unavailable(monkeypatch
             high=0.0,
         )
     )
+    assert isinstance(pipeline._context_bus, _PriceContextBus)
     pipeline._context_bus.candle = {}
     payload = _payload()
 
