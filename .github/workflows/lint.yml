@@ -78,28 +78,70 @@ jobs:
           .venv/bin/python - <<'PY'
           import json
           import os
+          import re
           from pathlib import Path
 
-          report = json.loads(Path("artifacts/typecheck/pyright.json").read_text(encoding="utf-8"))
+          folder = Path("artifacts/typecheck")
+          try:
+              report = json.loads((folder / "pyright.json").read_text(encoding="utf-8"))
+              sha = (folder / "checked-sha.txt").read_text(encoding="utf-8").strip()
+          except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+              raise SystemExit(f"Cannot read Pyright evidence: {exc}") from exc
+
+          if not isinstance(report, dict) or not isinstance(report.get("summary"), dict):
+              raise SystemExit("Invalid Pyright report: summary is missing or invalid")
+
           summary = report["summary"]
-          counts = {key: summary[key] for key in ("filesAnalyzed", "errorCount", "warningCount")}
+          counts = {key: summary.get(key) for key in ("filesAnalyzed", "errorCount", "warningCount")}
           if any(type(value) is not int or value < 0 for value in counts.values()):
               raise SystemExit("Invalid Pyright report counts")
           if counts["filesAnalyzed"] == 0:
               raise SystemExit("No files analyzed; this is not a passing type check")
-          sha = Path("artifacts/typecheck/checked-sha.txt").read_text(encoding="utf-8").strip()
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
-              output.write(f"### Pyright\n\nChecked commit: `{sha}`\n\n")
-              output.write(f"Files: {counts['filesAnalyzed']} | Errors: {counts['errorCount']} | Warnings: {counts['warningCount']}\n")
-          if counts["errorCount"]:
-              raise SystemExit("Pyright reported type errors; see the report")
-          PY
+          if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+              raise SystemExit("Invalid checked commit SHA")
 
-      - name: Upload type-check evidence
-        if: ${{ !cancelled() && steps.evidence.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 ref, verified 2026-09-14
-        with:
-          name: typecheck-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/typecheck/
-          if-no-files-found: error
-          retention-days: 14
+          diagnostics = report.get("generalDiagnostics")
+          if not isinstance(diagnostics, list) or any(not isinstance(item, dict) for item in diagnostics):
+              raise SystemExit("Invalid Pyright diagnostics")
+          if any(item.get("severity") not in {"error", "warning", "information"} for item in diagnostics):
+              raise SystemExit("Invalid Pyright diagnostic severity")
+
+          errors = [item for item in diagnostics if item["severity"] == "error"]
+          warnings = [item for item in diagnostics if item["severity"] == "warning"]
+          if len(errors) != counts["errorCount"] or len(warnings) != counts["warningCount"]:
+              raise SystemExit("Pyright summary does not match diagnostic counts")
+
+          result = (
+              f"Files: {counts['filesAnalyzed']} | "
+              f"Errors: {counts['errorCount']} | "
+              f"Warnings: {counts['warningCount']}"
+          )
+          print(f"Checked commit: {sha}", flush=True)
+          print(result, flush=True)
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+              output.write(f"### Pyright\n\nChecked commit: `{sha}`\n\n{result}\n\n")
+              output.write("Full diagnostics: `pyright.json` in the typecheck artifact.\n")
+
+          for item in errors[:30]:
+              start = item["range"]["start"]
+              print(
+                  json.dumps(
+                      {
+                          "file": item["file"],
+                          "line": start["line"] + 1,
+                          "column": start["character"] + 1,
+                          "rule": item.get("rule"),
+                          "message": item["message"],
+                      },
+                      ensure_ascii=True,
+                  ),
+                  flush=True,
+              )
+
+          if len(errors) > 30:
+              print(f"Showing 30 of {len(errors)} errors; see pyright.json for all diagnostics.", flush=True)
+          if counts["errorCount"]:
+              raise SystemExit(f"Pyright failed: {counts['errorCount']} type errors; see the report")
+          print("Pyright report validated: no type errors.", flush=True)
+          PY
