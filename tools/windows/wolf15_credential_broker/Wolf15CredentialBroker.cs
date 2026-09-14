@@ -16,13 +16,42 @@ internal static class Wolf15CredentialBroker
     private const string PipeSchema = "wolf15.runtime_credentials.v1";
     private const int MaximumEnvelopeBytes = 4096;
 
+    // The broker is single-threaded. Only fixed enum values may enter diagnostics.
+    private enum FailureStage
+    {
+        Arguments, Identity, VaultRead, VaultDigest, VaultDecrypt, VaultSchema,
+        VaultBinding, EnvelopeEncode, PipeCreate, PipeWait, PipeHeaderWrite,
+        PipePayloadWrite, PipeFlush, PipeDrain, PipeDispose
+    }
+    private static FailureStage failureStage = FailureStage.Arguments;
+
+    private static void WriteFailure(string reason, Exception error)
+    {
+        // Keep the legacy reason on line one. Never log Message, StackTrace,
+        // InnerException, arguments, paths, or credential-bearing objects.
+        Console.Error.WriteLine(reason);
+        string category = error is ControlledFailure ? "ControlledFailure" :
+            error is CryptographicException ? "CryptographicException" :
+            error is UnauthorizedAccessException ? "UnauthorizedAccessException" :
+            error is IOException ? "IOException" :
+            error is NotSupportedException ? "NotSupportedException" :
+            error is InvalidOperationException ? "InvalidOperationException" :
+            error is ArgumentException ? "ArgumentException" : "Exception";
+        Console.Error.WriteLine(
+            "W15_BROKER_DIAGNOSTIC_V1 stage=" + failureStage.ToString() +
+            " exception=" + category + " hresult=0x" +
+            error.HResult.ToString("X8", CultureInfo.InvariantCulture));
+    }
+
     private static int Main(string[] args)
     {
         try
         {
             Dictionary<string, string> options = ParseArguments(args);
+            failureStage = FailureStage.Identity;
             SecurityIdentifier currentUserSid = ResolveCurrentUserSid(options);
 
+            failureStage = FailureStage.Arguments;
             string vaultPath = Required(options, "vault");
             string expectedVaultSha256 = RequiredLowerHex(options, "vault-sha256", 64);
             string pipeName = Required(options, "pipe-name");
@@ -75,22 +104,22 @@ internal static class Wolf15CredentialBroker
         }
         catch (ControlledFailure error)
         {
-            Console.Error.WriteLine(error.ReasonCode);
+            WriteFailure(error.ReasonCode, error);
             return 2;
         }
-        catch (CryptographicException)
+        catch (CryptographicException error)
         {
-            Console.Error.WriteLine("DPAPI_HELPER_REJECTED");
+            WriteFailure("DPAPI_HELPER_REJECTED", error);
             return 3;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException error)
         {
-            Console.Error.WriteLine("DPAPI_HELPER_REJECTED");
+            WriteFailure("DPAPI_HELPER_REJECTED", error);
             return 3;
         }
-        catch (Exception)
+        catch (Exception error)
         {
-            Console.Error.WriteLine("DPAPI_HELPER_REJECTED");
+            WriteFailure("DPAPI_HELPER_REJECTED", error);
             return 3;
         }
     }
@@ -110,16 +139,21 @@ internal static class Wolf15CredentialBroker
         byte[] envelope = null;
         try
         {
+            failureStage = FailureStage.VaultRead;
             if (!File.Exists(vaultPath))
                 Fail("CREDENTIAL_VAULT_UNAVAILABLE");
 
             cipher = File.ReadAllBytes(vaultPath);
+            failureStage = FailureStage.VaultDigest;
             if (!FixedTimeEquals(Hex(Sha256(cipher)), expectedVaultSha256))
                 Fail("CREDENTIAL_VAULT_DIGEST_MISMATCH");
 
+            failureStage = FailureStage.VaultDecrypt;
             plain = ProtectedData.Unprotect(cipher, null, DataProtectionScope.CurrentUser);
+            failureStage = FailureStage.VaultSchema;
             Dictionary<string, object> vault = ParseExactVault(plain);
             RequireExactString(vault, "schema", VaultSchema, "CREDENTIAL_SCHEMA_INVALID");
+            failureStage = FailureStage.VaultBinding;
             RequireExactString(vault, "executor_id", expectedExecutorId, "EXECUTOR_BINDING_MISMATCH");
             RequireExactString(vault, "account_id_reference", expectedAccountReference, "ACCOUNT_BINDING_MISMATCH");
             RequireExactString(vault, "broker_server", expectedBrokerServer, "BROKER_BINDING_MISMATCH");
@@ -138,6 +172,7 @@ internal static class Wolf15CredentialBroker
             if (!FixedTimeEquals(actualAccountReferenceSha256, expectedAccountReferenceSha256))
                 Fail("ACCOUNT_BINDING_MISMATCH");
 
+            failureStage = FailureStage.EnvelopeEncode;
             string canonical = "{\"schema\":\"" + PipeSchema +
                 "\",\"executor_id\":\"" + expectedExecutorId +
                 "\",\"account_reference_sha256\":\"" + expectedAccountReferenceSha256 +
@@ -170,6 +205,7 @@ internal static class Wolf15CredentialBroker
 
     private static bool WaitForConnection(NamedPipeServerStream server, int timeoutMs)
     {
+        failureStage = FailureStage.PipeWait;
         IAsyncResult pending = server.BeginWaitForConnection(null, null);
         if (!pending.AsyncWaitHandle.WaitOne(timeoutMs))
         {
@@ -185,9 +221,13 @@ internal static class Wolf15CredentialBroker
         byte[] header = Encoding.ASCII.GetBytes(envelope.Length.ToString("D8", CultureInfo.InvariantCulture));
         try
         {
+            failureStage = FailureStage.PipeHeaderWrite;
             server.Write(header, 0, header.Length);
+            failureStage = FailureStage.PipePayloadWrite;
             server.Write(envelope, 0, envelope.Length);
+            failureStage = FailureStage.PipeFlush;
             server.Flush();
+            failureStage = FailureStage.PipeDrain;
             server.WaitForPipeDrain();
         }
         finally
@@ -198,6 +238,7 @@ internal static class Wolf15CredentialBroker
 
     private static NamedPipeServerStream CreateServer(string pipeName, SecurityIdentifier sid)
     {
+        failureStage = FailureStage.PipeCreate;
         return new NamedPipeServerStream(
             pipeName,
             PipeDirection.Out,
@@ -217,6 +258,7 @@ internal static class Wolf15CredentialBroker
             if (!WaitForConnection(server, timeoutMs))
                 Fail("CREDENTIAL_PIPE_TIMEOUT");
             WriteEnvelope(server, envelope);
+            failureStage = FailureStage.PipeDispose;
         }
     }
 
@@ -257,6 +299,7 @@ internal static class Wolf15CredentialBroker
                         expectedAccountReferenceSha256
                     );
                     WriteEnvelope(server, envelope);
+                    failureStage = FailureStage.PipeDispose;
                 }
                 finally
                 {
