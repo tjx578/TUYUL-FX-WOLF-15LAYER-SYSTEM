@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || inputs.release_sha }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
       RAILWAY_PROJECT_ID: af4d15d8-d4cb-44b7-80e7-d99a37ca0045
       RAILWAY_ENVIRONMENT_ID: 5838964d-8c76-42b3-b0b9-18f2d1e4d5c2
     strategy:
@@ -51,11 +51,31 @@ jobs:
           - service: wolf15-orchestrator
             service_id: 4492195c-81cd-4e7d-88e8-bf6e380bbcc2
     steps:
-      - name: Checkout exact release source
+      # Bootstrap from the main workflow itself, before any repository code runs.
+      # A release input must never select the validator that authorizes it.
+      - name: Bind release to trusted main workflow before checkout
+        shell: bash
+        env:
+          TRUSTED_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          TRUSTED_WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ||
+                "$GITHUB_REF" != "refs/heads/main" ||
+                "$TRUSTED_WORKFLOW_REF" != "$GITHUB_REPOSITORY/.github/workflows/railway-deploy.yml@refs/heads/main" ||
+                ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ||
+                "$RELEASE_SHA" != "$GITHUB_SHA" ||
+                "$RELEASE_SHA" != "$TRUSTED_WORKFLOW_SHA" ]]; then
+            echo "::error::Release must match the trusted main workflow commit"
+            exit 1
+          fi
+
+      - name: Checkout trusted main workflow source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_SHA }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -65,7 +85,10 @@ jobs:
       - name: Verify exact-source CI receipt before provider credentials
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/ci/railway_release_source_gate.py
+        # Only this trusted checkout may supply imports; ignore ambient Python paths/site hooks.
+        run: >-
+          python -I -S -c 'import sys; sys.path.insert(0, "scripts/ci");
+          import railway_release_source_gate as gate; raise SystemExit(gate.main())'
 
       - name: Validate token presence
         id: check_token
@@ -91,7 +114,9 @@ jobs:
       - name: Recheck source and CI immediately before deployment
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/ci/railway_release_source_gate.py
+        run: >-
+          python -I -S -c 'import sys; sys.path.insert(0, "scripts/ci");
+          import railway_release_source_gate as gate; raise SystemExit(gate.main())'
 
       - name: Deploy ${{ matrix.service }}
         env:
