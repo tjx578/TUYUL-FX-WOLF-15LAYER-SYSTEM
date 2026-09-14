@@ -111,6 +111,7 @@ def test_candidate_revision_postgres_acceptance(pg_dsn, scenario, monkeypatch):
                 await repo.append(second, now=clock[0])
                 async with db.transaction() as c:
                     latest = await repo.lock_latest(c, plan)
+                    assert latest is not None
                     assert latest.request.handoff.candidate.tradeplan_revision == 2
                 assert first.request.handoff.candidate.analysis_admission_class == "MATURE_ADVISORY"
             elif scenario == "stale_owner":

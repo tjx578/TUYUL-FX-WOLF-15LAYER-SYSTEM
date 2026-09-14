@@ -119,7 +119,7 @@ def summarize_pressure_clusters(
     raw_count = len(ordered)
     deduped_count = len(clusters)
     duplicate_penalty = 0.0 if raw_count <= 0 else max(0.0, 1.0 - (deduped_count / raw_count))
-    by_symbol_direction: dict[str, dict[str, int]] = {}
+    by_symbol_direction: dict[str, dict[str, int | float]] = {}
     for cluster in clusters:
         key = f"{cluster.symbol}:{cluster.direction}"
         stats = by_symbol_direction.setdefault(key, {"raw_event_count": 0, "deduped_cluster_count": 0})

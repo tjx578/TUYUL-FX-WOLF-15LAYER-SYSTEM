@@ -83,6 +83,9 @@ def test_feasible_interval_matches_exhaustive_tick_oracle(direction, symbol, cos
             legal.append(entry)
     if legal:
         assert result.status == "FEASIBLE_TEST_ONLY"
+        assert result.feasible_interval is not None
+        assert result.candidate_entry is not None
+        assert result.net_rr is not None
         assert Fraction(result.feasible_interval.low) == min(legal)
         assert Fraction(result.feasible_interval.high) == max(legal)
         assert Fraction(result.candidate_entry) == (max(legal) if direction == "BUY" else min(legal))
@@ -142,6 +145,8 @@ def test_cost_scenarios_are_separate_and_hash_is_bound():
     first = solve_net_geometry_v31(NetGeometryRequestV31(**data))
     data["costs"]["loss"]["commission_price"] = Decimal("0.0004")
     second = solve_net_geometry_v31(NetGeometryRequestV31(**data))
+    assert first.candidate_entry is not None
+    assert second.candidate_entry is not None
     assert second.candidate_entry < first.candidate_entry
     assert second.request_hash != first.request_hash
 

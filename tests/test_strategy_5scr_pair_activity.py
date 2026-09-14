@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, replace
 from datetime import timedelta
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
@@ -19,7 +20,7 @@ POLICY = PairActivityPolicyV31(
 )
 
 
-def coverage(events, *, status="COMPLETE", start=0, end=300):
+def coverage(events, *, status: Literal["COMPLETE", "INCOMPLETE", "UNKNOWN"] = "COMPLETE", start=0, end=300):
     return RawActivityCoverageV31(
         status=status,
         ledger_id="fixture-ordered-ledger",
@@ -30,7 +31,16 @@ def coverage(events, *, status="COMPLETE", start=0, end=300):
     )
 
 
-def evaluate(events, *, status="COMPLETE", end=300, now=None, policy=POLICY, previous=(), proof=None):
+def evaluate(
+    events,
+    *,
+    status: Literal["COMPLETE", "INCOMPLETE", "UNKNOWN"] = "COMPLETE",
+    end=300,
+    now=None,
+    policy: PairActivityPolicyV31 | None = POLICY,
+    previous=(),
+    proof=None,
+):
     return build_pair_activity_audit(
         events,
         coverage=proof or coverage(events, status=status, end=end),
@@ -105,7 +115,7 @@ def test_future_raw_or_coverage_is_not_authoritative(now, end):
 def test_unbound_policy_does_not_adopt_a_default():
     assert evaluate(mixed(), policy=None).evaluations[0].reason_code == "PAIR_ACTIVITY_POLICY_UNBOUND"
     with pytest.raises(ValidationError):
-        PairActivityPolicyV31(policy_id="unbound")
+        PairActivityPolicyV31.model_validate({"policy_id": "unbound"})
 
 
 def test_cross_symbol_event_finalizes_activity_without_merging_later_return():

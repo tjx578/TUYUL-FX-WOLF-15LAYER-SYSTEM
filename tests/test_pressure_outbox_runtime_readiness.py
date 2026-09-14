@@ -1,8 +1,10 @@
-from types import SimpleNamespace
+from unittest.mock import create_autospec
 
 import pytest
 
+from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_outbox_worker import PressureOutboxWorker
+from storage.strategy_5scr_pressure_inbox import Strategy5SCRInboxConsumer
 
 
 @pytest.mark.asyncio
@@ -12,8 +14,8 @@ async def test_readiness_requires_successful_poll_and_rejects_failed_or_stale_po
     now = [10.0]
     monkeypatch.setattr(mod.time, "monotonic", lambda: now[0])
     worker = PressureOutboxWorker(
-        repository=SimpleNamespace(),
-        consumer=SimpleNamespace(),
+        repository=create_autospec(PressureOutboxRepository, instance=True),
+        consumer=create_autospec(Strategy5SCRInboxConsumer, instance=True),
         master_enabled=True,
         dispatch_enabled=True,
         consumer_enabled=False,
@@ -44,8 +46,8 @@ def test_disabled_dispatcher_cannot_report_ready(master, dispatch):
     import time
 
     worker = PressureOutboxWorker(
-        repository=SimpleNamespace(),
-        consumer=SimpleNamespace(),
+        repository=create_autospec(PressureOutboxRepository, instance=True),
+        consumer=create_autospec(Strategy5SCRInboxConsumer, instance=True),
         master_enabled=master,
         dispatch_enabled=dispatch,
         consumer_enabled=False,
@@ -57,8 +59,8 @@ def test_disabled_dispatcher_cannot_report_ready(master, dispatch):
 def test_invalid_poll_interval_not_lower_than_lease_rejected():
     with pytest.raises(ValueError, match="PRESSURE_OUTBOX_POLL_SECONDS"):
         PressureOutboxWorker(
-            repository=SimpleNamespace(),
-            consumer=SimpleNamespace(),
+            repository=create_autospec(PressureOutboxRepository, instance=True),
+            consumer=create_autospec(Strategy5SCRInboxConsumer, instance=True),
             poll_interval_seconds=30.0,
             lease_seconds=30.0,
         )

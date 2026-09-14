@@ -138,6 +138,26 @@ def test_all_records_and_capacity_commit_together_as_non_deliverable_test_only()
     asyncio.run(run())
 
 
+def test_record_materialization_rejects_volume_removed_after_validation():
+    async def run():
+        _, repo, _, request = await fixture()
+        result = await repo.submit(request, now=NOW)
+        bundle = result.bundle
+        original = bundle.model_dump_json()
+        # Bypass Pydantic validation to prove record conversion also fails closed.
+        reservation = bundle.reservation.model_copy(
+            update={
+                "sizing": bundle.reservation.sizing.model_copy(update={"volume": None}),
+            }
+        )
+        malformed = bundle.model_copy(update={"reservation": reservation})
+        with pytest.raises(ValueError, match="TRANSACTION_A_RESERVATION_BINDING_MISMATCH"):
+            malformed.records()
+        assert bundle.model_dump_json() == original
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("failure", ["campaigns", "parent_legs", "signal_previews", "outbox", "commit"])
 def test_failure_after_each_write_or_commit_rolls_back_every_effect(failure):
     async def run():
@@ -296,7 +316,7 @@ def test_request_rejects_legacy_plan_and_campaign_identity_relabeling():
     asyncio.run(run())
 
 
-def test_all_external_transaction_verifiers_run_after_snapshot_exit():
+def test_all_external_transaction_verifiers_run_after_snapshot_exit(monkeypatch):
     async def run():
         db, repo, _, request = await fixture()
         calls = []
@@ -306,7 +326,9 @@ def test_all_external_transaction_verifiers_run_after_snapshot_exit():
             calls.append(len(args))
             return True
 
-        repo.verify_handoff = repo.verify_universe = repo.verify_risk_inputs = verify
+        monkeypatch.setattr(repo, "verify_handoff", verify)
+        monkeypatch.setattr(repo, "verify_universe", verify)
+        monkeypatch.setattr(repo, "verify_risk_inputs", verify)
         result = await repo.submit(request, now=NOW)
         assert result.status == "COMMITTED_TEST_ONLY" and len(calls) >= 3
         assert db.committed_effect_transactions == 1
@@ -325,7 +347,7 @@ def test_verifier_delay_cannot_extend_transaction_reservation_expiry(monkeypatch
             monkeypatch.setattr(detached, "commit_time_v31", lambda: request.expires_at)
             return True
 
-        repo.verify_handoff = verify
+        monkeypatch.setattr(repo, "verify_handoff", verify)
         with pytest.raises(ValueError, match="EXPIRED"):
             await repo.submit(request, now=NOW)
         assert all(not rows for rows in db.records.values())

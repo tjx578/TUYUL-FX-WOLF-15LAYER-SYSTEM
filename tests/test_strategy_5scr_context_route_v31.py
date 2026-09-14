@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Literal
 from uuid import UUID
 
 import pytest
@@ -13,7 +14,7 @@ from contracts.strategy_5scr_context_route_v31 import (
 from tests.test_strategy_5scr_capacity_v31 import NOW, H
 
 
-def receipt(direction="BUY"):
+def receipt(direction: Literal["BUY", "SELL"] = "BUY"):
     material = MaterialContextV31(
         d1_source_ids=("sha256:" + "1" * 64,),
         h4_source_ids=("sha256:" + "2" * 64,),
@@ -21,7 +22,7 @@ def receipt(direction="BUY"):
         h4_structure="FIXTURE_STRUCTURE",
         price_location="FIXTURE_RANGE",
         liquidity_state="TESTING",
-        primary_direction_domain=direction + "_ONLY",
+        primary_direction_domain="BUY_ONLY" if direction == "BUY" else "SELL_ONLY",
         allowed_directions=(direction,),
         counter_pressure_policy_hash=H,
         counter_pressure_observation_allowed=True,

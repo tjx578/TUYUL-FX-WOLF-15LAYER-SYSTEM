@@ -107,6 +107,7 @@ def test_owner_token_expiry_is_bounded_independently(monkeypatch):
     monkeypatch.setattr(auth, "TOKEN_EXPIRE_MIN", 60 * 24)
     response = _client().post("/api/auth/owner-login", json={"username": USERNAME, "password": PASSWORD})
     payload = auth.decode_token(response.json()["token"])
+    assert payload is not None
     assert payload["exp"] - payload["iat"] == 900
     assert payload["role"] == "viewer"
     assert payload["scopes"] == ["read:dashboard"]
@@ -295,6 +296,7 @@ def test_owner_password_token_cannot_use_legacy_reissuance(monkeypatch, endpoint
     login = client.post("/api/auth/owner-login", json={"username": USERNAME, "password": PASSWORD})
     token = login.json()["token"]
     original = auth.decode_token(token)
+    assert original is not None
     headers = {"authorization": f"Bearer {token}"} if transport == "bearer" else {}
     if transport == "cookie":
         client.cookies.set(auth.COOKIE_NAME, token)

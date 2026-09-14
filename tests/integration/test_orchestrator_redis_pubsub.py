@@ -11,7 +11,7 @@ import json
 import time
 import uuid
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -19,6 +19,7 @@ from infrastructure.redis_url import get_redis_url
 from services.orchestrator import state_manager
 from services.orchestrator.execution_mode import ExecutionMode
 from services.orchestrator.state_manager import StateManager
+from storage.redis_client import RedisClient
 
 redis = pytest.importorskip("redis")
 
@@ -32,6 +33,7 @@ def _wait_until(predicate: Any, timeout: float = 2.0, interval: float = 0.02) ->
     raise AssertionError("Timed out waiting for predicate")
 
 
+# Injection casts below are limited to this double's exercised repository surface.
 class _RedisAdapter:
     """Small adapter to satisfy StateManager redis protocol in integration tests."""
 
@@ -106,7 +108,7 @@ def test_orchestrator_receives_set_mode_command_via_redis(
         ),
     )
     redis_client.set(risk_key, json.dumps({"risk_percent": 0.5}))
-    manager = StateManager(redis_client=_RedisAdapter(redis_client))  # type: ignore[arg-type]
+    manager = StateManager(redis_client=cast(RedisClient, _RedisAdapter(redis_client)))
     manager.configure_intervals(compliance_interval_sec=1.0, heartbeat_interval_sec=300.0)
     manager.start_listener()
 
@@ -178,7 +180,7 @@ def test_missing_account_kill_switch_cannot_be_cleared_by_redis_command(
     }
     for name, key in keys.items():
         monkeypatch.setenv(name, key)
-    manager = StateManager(redis_client=_RedisAdapter(redis_client))
+    manager = StateManager(redis_client=cast(RedisClient, _RedisAdapter(redis_client)))
     manager.start_listener()
     try:
         manager.process_once(now=10.0)
@@ -230,7 +232,7 @@ def test_orchestrator_compliance_tick_reads_redis_snapshots(redis_client: Any, m
     )
     redis_client.set(risk_key, json.dumps({"risk_percent": 1.0}))
 
-    manager = StateManager(redis_client=_RedisAdapter(redis_client))  # type: ignore[arg-type]
+    manager = StateManager(redis_client=cast(RedisClient, _RedisAdapter(redis_client)))
     manager.configure_intervals(compliance_interval_sec=1.0, heartbeat_interval_sec=300.0)
 
     try:

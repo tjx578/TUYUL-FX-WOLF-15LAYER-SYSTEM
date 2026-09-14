@@ -283,10 +283,11 @@ def test_bff_registers_only_get_routes(monkeypatch) -> None:
     routes = list(context_iterator(app.routes)) if context_iterator else app.routes
     observed_paths = []
     for route in routes:
-        assert isinstance(route.path, str), "Unresolved route: containment inventory incomplete"
-        if route.path.startswith(business_paths):
-            observed_paths.append(route.path)
-            assert route.methods == {"GET"}
+        path = getattr(route, "path", None)
+        assert isinstance(path, str), "Unresolved route: containment inventory incomplete"
+        if path.startswith(business_paths):
+            observed_paths.append(path)
+            assert getattr(route, "methods", None) == {"GET"}
     assert len(observed_paths) == len(expected_paths)
     assert set(observed_paths) == expected_paths
 

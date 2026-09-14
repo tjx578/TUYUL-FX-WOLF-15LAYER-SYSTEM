@@ -1,8 +1,10 @@
 """Actual TEST_ONLY transaction composition acceptance on guarded PostgreSQL."""
 
 import asyncio
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import TypeVar
 from uuid import uuid4
 
 import psycopg
@@ -51,7 +53,7 @@ class FaultDB(DB):
     def __init__(self, dsn):
         super().__init__(dsn)
         self.fault = None
-        self.after_write = None
+        self.after_write: Callable[[str], None] | None = None
 
     @asynccontextmanager
     async def transaction(self):
@@ -164,10 +166,12 @@ def test_transaction_a_postgres_acceptance(pg_dsn, scenario, monkeypatch):
 
             def verify(*_):
                 with psycopg.connect(pg_dsn) as other:
-                    acquired = other.execute(
-                        "SELECT pg_try_advisory_xact_lock(hashtextextended('5scr-capacity-v31:' || %s::text,0))",
-                        (account,),
-                    ).fetchone()[0]
+                    acquired = _required_row(
+                        other.execute(
+                            "SELECT pg_try_advisory_xact_lock(hashtextextended('5scr-capacity-v31:' || %s::text,0))",
+                            (account,),
+                        ).fetchone()
+                    )[0]
                     assert acquired is True
                 calls.append(True)
                 return True
@@ -231,3 +235,11 @@ def test_transaction_a_postgres_acceptance(pg_dsn, scenario, monkeypatch):
                 assert count == (0 if failed else 1)
 
     asyncio.run(run())
+
+
+_Row = TypeVar("_Row")
+
+
+def _required_row(row: _Row | None) -> _Row:
+    assert row is not None, "expected the database query to return a row"
+    return row

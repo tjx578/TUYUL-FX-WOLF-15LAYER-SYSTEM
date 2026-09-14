@@ -359,10 +359,13 @@ def test_live_receipts_are_collected_read_only(monkeypatch, receipt, protection,
                 return {"total_count": 1, "workflow_runs": [active["run"]]}
             return active["workflow"]
         if "/check-runs/" in endpoint:
+            assert active is not None
             return active["checks"][int(endpoint.rsplit("/", 1)[-1])]
         if "/jobs?" in endpoint:
+            assert active is not None
             return {"total_count": len(active["jobs"]), "jobs": active["jobs"]}
         if "/actions/runs/" in endpoint:
+            assert active is not None
             observations += 1
             result = deepcopy(active["run"])
             if case == "attempt_changed" and observations > 1:

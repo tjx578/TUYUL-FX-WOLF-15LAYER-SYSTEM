@@ -4,6 +4,7 @@ import hashlib
 import json
 from decimal import Decimal, localcontext
 from fractions import Fraction
+from typing import Literal
 
 from contracts.strategy_5scr_net_geometry_v31 import (
     EntryIntervalV31,
@@ -23,7 +24,7 @@ def solve_net_geometry_v31(request: NetGeometryRequestV31) -> NetGeometryResultV
     encoded = json.dumps(request.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     request_hash = "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
-    def reject(status: str, reason: str) -> NetGeometryResultV31:
+    def reject(status: Literal["WAIT", "NO_VALID_ENTRY_DOMAIN"], reason: str) -> NetGeometryResultV31:
         return NetGeometryResultV31(status=status, reason=reason, request_hash=request_hash)
 
     policy, costs = request.policy, request.costs

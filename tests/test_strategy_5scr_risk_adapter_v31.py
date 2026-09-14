@@ -1,7 +1,9 @@
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import timedelta
 from decimal import Decimal, localcontext
 from fractions import Fraction
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -93,6 +95,7 @@ def test_geometry_to_parent_sizing_exact_cost_and_step_oracle(direction):
     result = evaluate(payload)
     assert result.status == "SIZED_TEST_ONLY"
     volume = fraction(result.volume)
+    assert result.candidate_entry is not None
     entry = Fraction(result.candidate_entry)
     geometry = payload["geometry"]
     costs = sum(map(Fraction, geometry["costs"]["loss"].values()))
@@ -183,7 +186,9 @@ def test_floating_profit_cannot_increase_parent_budget():
 def test_input_verifier_required_and_exact_true():
     request = ParentSizingRequestV31.model_validate(data())
     assert size_parent_v31(request, verify_inputs=None).reason == "RISK_INPUT_VERIFIER_UNBOUND"
-    assert size_parent_v31(request, verify_inputs=lambda *_: 1).reason == "RISK_INPUT_VERIFICATION_REJECTED"
+    # Intentionally violate the callback contract to prove exact-boolean rejection.
+    non_boolean_verifier = cast(Callable[[ParentSizingRequestV31, str], bool], lambda *_: 1)
+    assert size_parent_v31(request, verify_inputs=non_boolean_verifier).reason == "RISK_INPUT_VERIFICATION_REJECTED"
     assert size_parent_v31(request, verify_inputs=lambda *_: False).reason == "RISK_INPUT_VERIFICATION_REJECTED"
 
 

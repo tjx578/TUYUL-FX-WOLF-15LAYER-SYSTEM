@@ -14,9 +14,12 @@ import threading
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger as loguru_logger
+
+if TYPE_CHECKING:
+    from loguru import Record
 
 _CONNECTION_URL_RE = re.compile(
     r"\b(?:postgres(?:ql)?(?:\+\w+)?|redis(?:s)?|mysql(?:\+\w+)?|mongodb(?:\+\w+)?)://[^\s'\"<>]+",
@@ -231,7 +234,7 @@ def configure_loguru_logging(level: str | None = None) -> None:
             return False
         return not (rate_enabled and not rate_limiter.allow())
 
-    def _redact_loguru_record(record: dict[str, Any]) -> None:
+    def _redact_loguru_record(record: Record) -> None:
         record["message"] = redact_sensitive_log_text(record.get("message", ""))
 
     loguru_logger.configure(patcher=_redact_loguru_record)

@@ -52,7 +52,7 @@ def _mock_create_task(coro):
     return task
 
 
-def _register_connected_ws(manager, ws: MagicMock) -> None:
+def _register_connected_ws(manager, ws: MagicMock | _RecordingClient) -> None:
     """Register a mock client with the state connect() normally creates."""
     manager.active_connections.add(ws)
     manager._per_conn_seq[ws] = itertools.count(1)  # noqa: SLF001

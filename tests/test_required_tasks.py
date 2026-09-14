@@ -125,7 +125,9 @@ async def test_actual_api_lifespan_503_on_late_worker_loss_and_drain_before_pool
         events.append("pool_closed")
 
     monkeypatch.setattr(trade_outbox_worker, "TradeOutboxWorker", Worker)
-    app_factory.pg_client.close.side_effect = close_pool
+    close_mock = app_factory.pg_client.close
+    assert isinstance(close_mock, AsyncMock)
+    close_mock.side_effect = close_pool
     app = FastAPI()
     app.state.router_boot_errors = []
     app.dependency_overrides[verify_observability_machine_auth] = lambda: None
@@ -154,7 +156,9 @@ async def test_actual_api_worker_constructor_failure_is_fatal(monkeypatch, api_d
     with pytest.raises(RuntimeError, match="REQUIRED_TRADE_OUTBOX_BOOTSTRAP_FAILED"):
         async with app_factory.lifespan(app):
             pytest.fail("startup must fail")
-    app_factory.pg_client.close.assert_awaited_once()
+    close_mock = app_factory.pg_client.close
+    assert isinstance(close_mock, AsyncMock)
+    close_mock.assert_awaited_once()
     api_dependencies.close_pool.assert_awaited_once()
 
 

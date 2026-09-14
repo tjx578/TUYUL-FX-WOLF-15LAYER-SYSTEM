@@ -16,7 +16,7 @@ from contracts.strategy_5scr_execution_policy import (
     FX_LEGACY_6P_V1,
     FX_MIN_TARGET_10P_V1,
 )
-from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence
+from contracts.strategy_5scr_pressure import PressureInputMode, Strategy5SCRMarketEvidence
 
 
 def _legacy_builder() -> PressureToTradePlanBuilder:
@@ -83,7 +83,7 @@ def _railway_record(payload=None, *, timestamp="2026-07-17T13:05:00.100Z"):
     }
 
 
-def _lifecycle(*, mode="REPLAY", source_clean_block_id=None, pair_admission_id=None):
+def _lifecycle(*, mode: PressureInputMode = "REPLAY", source_clean_block_id=None, pair_admission_id=None):
     payload = _pressure_payload()
     if source_clean_block_id is not None:
         payload["source_clean_block_id"] = source_clean_block_id
@@ -332,6 +332,8 @@ def test_v3_records_floor_provenance_on_every_plan():
     plan = result.tradeplan
     assert plan.execution_policy_version == 1
     assert plan.broker_cost_floor_pips == pytest.approx(5.0)
+    assert plan.required_target_pips is not None
+    assert plan.minimum_target_pips is not None
     assert plan.required_target_pips >= plan.minimum_target_pips
 
 

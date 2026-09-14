@@ -631,10 +631,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  typecheck:
+    name: Python typecheck
+    uses: ./.github/workflows/lint.yml
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, runtime-acceptance, built-api]
+    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, runtime-acceptance, built-api, typecheck]
     if: always()
     steps:
       - name: Evaluate all upstream jobs
@@ -647,6 +651,7 @@ jobs:
           echo "drift-guard: ${{ needs.drift-guard.result }}"
           echo "runtime:     ${{ needs.runtime-acceptance.result }}"
           echo "built-api:   ${{ needs.built-api.result }}"
+          echo "typecheck:   ${{ needs.typecheck.result }}"
 
           FAILED=0
           for JOB in \
@@ -657,7 +662,8 @@ jobs:
             "${{ needs.shim-guard.result }}" \
             "${{ needs.drift-guard.result }}" \
             "${{ needs.runtime-acceptance.result }}" \
-            "${{ needs.built-api.result }}"; do
+            "${{ needs.built-api.result }}" \
+            "${{ needs.typecheck.result }}"; do
             if [[ "$JOB" != "success" ]]; then
               FAILED=1
             fi

@@ -113,7 +113,8 @@ async def _main() -> None:
     try:
         done, _ = await asyncio.wait([*worker_tasks, probe_task, stop_waiter], return_when=asyncio.FIRST_COMPLETED)
         if stop_waiter not in done:
-            await asyncio.gather(*done)
+            completed_tasks: list[asyncio.Task[object]] = list(done)
+            await asyncio.gather(*completed_tasks)
             raise RuntimeError("TRADE_REQUIRED_TASK_RETURNED")
     except Exception:
         _workers_alive = False
