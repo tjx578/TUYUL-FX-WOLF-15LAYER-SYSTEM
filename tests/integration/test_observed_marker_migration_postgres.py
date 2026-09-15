@@ -18,6 +18,7 @@ from psycopg.types.json import Jsonb
 from sqlalchemy.exc import DBAPIError
 
 from contracts.mt5_execution_protocol import EngineeringDemoCanarySource, build_signed_execution_envelope
+from tests.reconciliation_fixtures import configure_test_keys
 from tests.test_mt5_engineering_demo_canary import EXECUTOR_ID, SECRET, _command, _executor, _request
 
 pytestmark = [pytest.mark.integration]
@@ -42,6 +43,12 @@ NEW_COLUMNS = {
     "legacy_authority_exempt",
     "legacy_authority_classified_at",
 }
+
+
+@pytest.fixture(autouse=True)
+def historical_reconciliation_keys(monkeypatch):
+    """Imported row builders need their own synthetic issuer and identity keys."""
+    configure_test_keys(monkeypatch)
 
 
 def _synthetic_row(label: str, state: str, *, terminal: bool) -> dict:
