@@ -125,7 +125,7 @@ def test_orchestrator_receives_set_mode_command_via_redis(
         ),
     )
     redis_client.set(risk_key, json.dumps({"risk_percent": 1.0}))
-    redis_client.set(ingest_heartbeat_key, json.dumps({"producer": "test", "ts": time.time()}))
+    redis_client.set(ingest_heartbeat_key, json.dumps({"producer": "test", "ts": state_manager.time.time()}))
 
     redis_client.set(
         account_key,
@@ -295,7 +295,7 @@ def test_orchestrator_compliance_tick_reads_redis_snapshots(redis_client: Any, m
         ),
     )
     redis_client.set(risk_key, json.dumps({"risk_percent": 1.0}))
-    redis_client.set(ingest_heartbeat_key, json.dumps({"producer": "test", "ts": time.time()}))
+    redis_client.set(ingest_heartbeat_key, json.dumps({"producer": "test", "ts": state_manager.time.time()}))
 
     manager = StateManager(redis_client=cast(RedisClient, _RedisAdapter(redis_client)))
     assert manager._ownership.acquire()  # noqa: SLF001
