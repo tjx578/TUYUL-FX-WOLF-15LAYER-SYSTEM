@@ -65,6 +65,14 @@ revokes a claimed D0 command. Once `SUBMITTING` has been accepted, the command
 is treated as in-flight and the global D0 slot remains reserved for
 reconciliation.
 
+The executor's local stop latch prevents polling or claiming new work. While a
+durable command remains, its timer continues bounded recovery and report retry
+after heartbeat, even when this latch is set. Recovery never submits and never
+clears the stop latch. Invalid state, mismatched identity, partial fills, and
+unresolved broker lineage remain fail closed. Startup requirements in `OnInit`
+are unchanged; this timer behavior does not authorize restarting a disarmed EA
+or bypassing invalid durable state.
+
 Every D0 report must repeat the exact signed volume, reference price, SL, and
 TP. State-specific broker evidence is mandatory: broker acceptance needs an
 order ticket and retcode, rejection needs a retcode and zero broker effects,

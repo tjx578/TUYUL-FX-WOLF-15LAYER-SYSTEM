@@ -1,0 +1,241 @@
+"""Add isolated StrategyAnalysisAdmissionV1 and shadow evidence queue.
+
+Revision ID: 20260826_01
+Revises: 20260822_01
+
+The new tables never reference risk, final-signal, trade-outbox or execution
+command authority.  Database CHECKs pin every admission/evidence artifact to
+non-executable shadow analysis.
+"""
+
+from __future__ import annotations
+
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB
+
+revision = "20260826_01"
+down_revision = "20260822_01"
+branch_labels = None
+depends_on = None
+
+ADMISSION = "strategy_5scr_analysis_admissions_v1"
+EVALUATION = "strategy_5scr_analysis_admission_evaluations_v1"
+JOB = "strategy_5scr_analysis_evidence_jobs_v1"
+SNAPSHOT = "strategy_5scr_analysis_evidence_snapshots_v1"
+
+
+def upgrade() -> None:
+    op.create_table(
+        ADMISSION,
+        sa.Column("analysis_admission_id", sa.Text(), primary_key=True),
+        sa.Column("strategy_lifecycle_id", sa.Text(), nullable=False),
+        sa.Column("symbol", sa.String(length=32), nullable=False),
+        sa.Column("admission_class", sa.String(length=32), nullable=False),
+        sa.Column("analysis_authority", sa.String(length=40), nullable=False),
+        sa.Column("source_authority", sa.String(length=40), nullable=False),
+        sa.Column("pressure_direction", sa.String(length=12), nullable=False),
+        sa.Column("admitted_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("initial_evidence_hash", sa.String(length=71), nullable=False),
+        sa.Column("payload", JSONB(), nullable=False),
+        sa.Column("risk_authority", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("execution_authority", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.ForeignKeyConstraint(
+            ["strategy_lifecycle_id"],
+            ["strategy_5scr_analysis_lifecycles_v2.strategy_lifecycle_id"],
+            name="fk_5scr_analysis_admission_lifecycle_v1",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint(
+            "analysis_admission_id ~ '^5scr-analysis-admission:[0-9a-f]{32}$' "
+            "AND initial_evidence_hash ~ '^sha256:[0-9a-f]{64}$'",
+            name="ck_5scr_analysis_admission_identity_v1",
+        ),
+        sa.CheckConstraint(
+            "admission_class IN ('CANONICAL_RAW','MATURE_ADVISORY') AND pressure_direction IN ('BUY','SELL')",
+            name="ck_5scr_analysis_admission_class_v1",
+        ),
+        sa.CheckConstraint(
+            "risk_authority=false AND execution_authority=false",
+            name="ck_5scr_analysis_admission_shadow_only_v1",
+        ),
+    )
+    op.create_index(
+        "ix_5scr_analysis_admission_lifecycle_v1",
+        ADMISSION,
+        ["strategy_lifecycle_id", "admitted_at"],
+    )
+
+    op.create_table(
+        EVALUATION,
+        sa.Column("pressure_event_id", sa.Text(), primary_key=True),
+        sa.Column("analysis_admission_id", sa.Text(), nullable=False),
+        sa.Column("strategy_lifecycle_id", sa.Text(), nullable=True),
+        sa.Column("deployment_id", sa.String(length=200), nullable=False),
+        sa.Column("symbol", sa.String(length=32), nullable=False),
+        sa.Column("observed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("admission_status", sa.String(length=20), nullable=False),
+        sa.Column("analysis_state", sa.String(length=80), nullable=False),
+        sa.Column("evidence_hash", sa.String(length=71), nullable=False),
+        sa.Column("payload", JSONB(), nullable=False),
+        sa.Column("risk_authority", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("execution_authority", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.ForeignKeyConstraint(
+            ["strategy_lifecycle_id"],
+            ["strategy_5scr_analysis_lifecycles_v2.strategy_lifecycle_id"],
+            name="fk_5scr_analysis_admission_evaluation_lifecycle_v1",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint(
+            "analysis_admission_id ~ '^5scr-analysis-admission:[0-9a-f]{32}$' "
+            "AND evidence_hash ~ '^sha256:[0-9a-f]{64}$'",
+            name="ck_5scr_analysis_admission_evaluation_identity_v1",
+        ),
+        sa.CheckConstraint(
+            "admission_status IN ('GRANTED','REJECTED','SUSPENDED') "
+            "AND ((admission_status='REJECTED' AND (strategy_lifecycle_id IS NULL "
+            "OR analysis_state IN ('ADVISORY_EXPIRED','ADVISORY_INVALIDATED',"
+            "'ADVISORY_TERMINAL_NO_TRADE'))) "
+            "OR (admission_status IN ('GRANTED','SUSPENDED') AND strategy_lifecycle_id IS NOT NULL))",
+            name="ck_5scr_analysis_admission_evaluation_state_v1",
+        ),
+        sa.CheckConstraint(
+            "risk_authority=false AND execution_authority=false",
+            name="ck_5scr_analysis_admission_evaluation_shadow_only_v1",
+        ),
+    )
+    op.create_index(
+        "ix_5scr_analysis_admission_evaluation_logical_v1",
+        EVALUATION,
+        ["analysis_admission_id", "observed_at", "pressure_event_id"],
+    )
+
+    op.create_table(
+        JOB,
+        sa.Column("evidence_job_id", sa.Text(), primary_key=True),
+        sa.Column("analysis_admission_id", sa.Text(), nullable=False),
+        sa.Column("strategy_lifecycle_id", sa.Text(), nullable=False),
+        sa.Column("analysis_state", sa.String(length=80), nullable=False),
+        sa.Column("analysis_material_hash", sa.String(length=71), nullable=False),
+        sa.Column("status", sa.String(length=20), nullable=False, server_default=sa.text("'PENDING'")),
+        sa.Column("decision_time", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("attempt_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("last_error", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.ForeignKeyConstraint(
+            ["analysis_admission_id"],
+            [f"{ADMISSION}.analysis_admission_id"],
+            name="fk_5scr_analysis_evidence_job_admission_v1",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["strategy_lifecycle_id"],
+            ["strategy_5scr_analysis_lifecycles_v2.strategy_lifecycle_id"],
+            name="fk_5scr_analysis_evidence_job_lifecycle_v1",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint(
+            "evidence_job_id ~ '^5scr-analysis-evidence-job:[0-9a-f]{32}$' "
+            "AND analysis_material_hash ~ '^sha256:[0-9a-f]{64}$' "
+            "AND status IN ('PENDING','COMPLETED','FAILED','CANCELLED') AND attempt_count >= 0",
+            name="ck_5scr_analysis_evidence_job_state_v1",
+        ),
+        sa.UniqueConstraint(
+            "analysis_admission_id",
+            "analysis_material_hash",
+            name="uq_5scr_analysis_evidence_job_material_v1",
+        ),
+    )
+    op.create_index(
+        "ix_5scr_analysis_evidence_jobs_pending_v1",
+        JOB,
+        ["created_at", "evidence_job_id"],
+        postgresql_where=sa.text("status='PENDING'"),
+    )
+
+    op.create_table(
+        SNAPSHOT,
+        sa.Column("snapshot_id", sa.Text(), primary_key=True),
+        sa.Column("evidence_job_id", sa.Text(), nullable=False, unique=True),
+        sa.Column("analysis_admission_id", sa.Text(), nullable=False),
+        sa.Column("strategy_lifecycle_id", sa.Text(), nullable=False),
+        sa.Column("symbol", sa.String(length=32), nullable=False),
+        sa.Column("decision_time", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("source_timeframes", JSONB(), nullable=False),
+        sa.Column("coverage_status", sa.String(length=20), nullable=False),
+        sa.Column("result_state", sa.String(length=24), nullable=False),
+        sa.Column("terminal_reason", sa.String(length=160), nullable=False),
+        sa.Column("evidence_hash", sa.String(length=71), nullable=False),
+        sa.Column("payload", JSONB(), nullable=False),
+        sa.Column("shadow_tradeplan_candidate", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("valid_for_execution", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("risk_authority", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("execution_authority", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.ForeignKeyConstraint(
+            ["evidence_job_id"],
+            [f"{JOB}.evidence_job_id"],
+            name="fk_5scr_analysis_evidence_snapshot_job_v1",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["analysis_admission_id"],
+            [f"{ADMISSION}.analysis_admission_id"],
+            name="fk_5scr_analysis_evidence_snapshot_admission_v1",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint(
+            "snapshot_id ~ '^5scr-analysis-evidence:[0-9a-f]{32}$' AND evidence_hash ~ '^sha256:[0-9a-f]{64}$'",
+            name="ck_5scr_analysis_evidence_snapshot_identity_v1",
+        ),
+        sa.CheckConstraint(
+            "coverage_status IN ('COMPLETE','INCOMPLETE') "
+            "AND result_state IN ('WAIT','NO_TRADE','SHADOW_CANDIDATE') "
+            "AND shadow_tradeplan_candidate=(result_state='SHADOW_CANDIDATE')",
+            name="ck_5scr_analysis_evidence_snapshot_result_v1",
+        ),
+        sa.CheckConstraint(
+            "valid_for_execution=false AND risk_authority=false AND execution_authority=false",
+            name="ck_5scr_analysis_evidence_snapshot_shadow_only_v1",
+        ),
+    )
+    op.create_index(
+        "ix_5scr_analysis_evidence_snapshot_decision_v1",
+        SNAPSHOT,
+        ["decision_time", "strategy_lifecycle_id"],
+    )
+
+    for table in (ADMISSION, EVALUATION, SNAPSHOT):
+        function = f"strategy_5scr_reject_{table}_mutation"
+        trigger = f"trg_5scr_reject_{table}_mutation"
+        op.execute(
+            f"""
+            CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'immutable StrategyAnalysisAdmissionV1 shadow row'
+                    USING ERRCODE='23514', CONSTRAINT='ck_5scr_analysis_admission_v1_immutable';
+            END $$;
+            CREATE TRIGGER {trigger} BEFORE UPDATE OR DELETE ON {table}
+            FOR EACH ROW EXECUTE FUNCTION {function}();
+            """
+        )
+
+
+def downgrade() -> None:
+    for table in (SNAPSHOT, EVALUATION, ADMISSION):
+        function = f"strategy_5scr_reject_{table}_mutation"
+        trigger = f"trg_5scr_reject_{table}_mutation"
+        op.execute(f"DROP TRIGGER IF EXISTS {trigger} ON {table}")
+        op.execute(f"DROP FUNCTION IF EXISTS {function}()")
+    op.drop_index("ix_5scr_analysis_evidence_snapshot_decision_v1", table_name=SNAPSHOT)
+    op.drop_table(SNAPSHOT)
+    op.drop_index("ix_5scr_analysis_evidence_jobs_pending_v1", table_name=JOB)
+    op.drop_table(JOB)
+    op.drop_index("ix_5scr_analysis_admission_evaluation_logical_v1", table_name=EVALUATION)
+    op.drop_table(EVALUATION)
+    op.drop_index("ix_5scr_analysis_admission_lifecycle_v1", table_name=ADMISSION)
+    op.drop_table(ADMISSION)

@@ -10,6 +10,10 @@ import signal
 from loguru import logger
 
 from core.health_probe import HealthProbe
+from services.pressure_outbox.analysis_admission_v1_worker import (
+    StrategyAnalysisAdmissionRuntimeConfig,
+    build_strategy_analysis_admission_v1_worker,
+)
 from services.pressure_outbox.evidence_worker import (
     EvidenceRuntimeConfig,
     build_evidence_worker,
@@ -71,6 +75,15 @@ async def _main() -> None:
         if shadow_evidence_v2_config.enabled
         else None
     )
+    analysis_admission_config = StrategyAnalysisAdmissionRuntimeConfig.from_env()
+    analysis_admission_worker = (
+        build_strategy_analysis_admission_v1_worker(
+            pg=pg_client,
+            config=analysis_admission_config,
+        )
+        if analysis_admission_config.enabled
+        else None
+    )
 
     async def _stop_workers() -> None:
         await worker.stop()
@@ -82,6 +95,8 @@ async def _main() -> None:
             await lifecycle_v2_worker.stop()
         if shadow_evidence_v2_worker is not None:
             await shadow_evidence_v2_worker.stop()
+        if analysis_admission_worker is not None:
+            await analysis_admission_worker.stop()
 
     shutdown_event = asyncio.Event()
     stop_tasks: list[asyncio.Task] = []
@@ -102,6 +117,7 @@ async def _main() -> None:
         "outcome_worker": outcome_worker is not None,
         "lifecycle_v2_worker": lifecycle_v2_worker is not None,
         "shadow_evidence_v2_worker": shadow_evidence_v2_worker is not None,
+        "analysis_admission_worker": analysis_admission_worker is not None,
         "health-probe": True,
     }
     supervisor = RequiredTaskSupervisor(requirements)
@@ -166,6 +182,13 @@ async def _main() -> None:
                 shadow_evidence_v2_config.shadow_only,
             )
             start_worker("shadow_evidence_v2_worker", shadow_evidence_v2_worker)
+        if analysis_admission_worker is not None:
+            logger.info(
+                "Starting StrategyAnalysisAdmissionV1 mature-advisory worker shadow_only={} batch_size={}",
+                analysis_admission_config.shadow_only,
+                analysis_admission_config.batch_size,
+            )
+            start_worker("analysis_admission_worker", analysis_admission_worker)
         tasks.append(asyncio.create_task(monitor(), name="pressure-role-monitor"))
         stopper = asyncio.create_task(shutdown_event.wait(), name="pressure-stop-wait")
         tasks.append(stopper)

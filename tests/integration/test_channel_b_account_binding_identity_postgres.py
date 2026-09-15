@@ -772,15 +772,18 @@ async def test_migration_survives_downgrade_and_re_upgrade(pool: Any) -> None:
 
     await asyncio.to_thread(_run_alembic, "downgrade", "20260910_02")
     assert await _objects_present(pool) == (False, False)
+    async with pool.acquire() as connection:
+        intermediate_heads = await connection.fetch("SELECT version_num FROM alembic_version")
+        assert {row["version_num"] for row in intermediate_heads} == {"20260908_01", "20260910_02"}
 
-    await asyncio.to_thread(_run_alembic, "upgrade", "20260911_01")
+    await asyncio.to_thread(_run_alembic, "upgrade", "head")
     assert await _objects_present(pool) == (True, True)
 
     # The re-created object must still enforce the canonical contract and must
     # still deny the auditor on the base table.
     async with pool.acquire() as connection:
-        head = await connection.fetchval("SELECT version_num FROM alembic_version")
-        assert head == "20260911_01"
+        heads = await connection.fetch("SELECT version_num FROM alembic_version")
+        assert {row["version_num"] for row in heads} == {"20260915_01"}
         checks = await connection.fetch(
             """SELECT conname FROM pg_constraint
                 WHERE conrelid = $1::regclass AND contype = 'c'""",

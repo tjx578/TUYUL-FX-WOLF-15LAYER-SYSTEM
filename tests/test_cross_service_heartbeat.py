@@ -261,11 +261,14 @@ def test_orchestrator_publishes_heartbeat_key():
     mock_redis.pubsub.return_value = MagicMock()
 
     sm = StateManager(redis_client=mock_redis)
+    mock_redis.eval.side_effect = lambda *args: f"{args[4]}|1"
+    assert sm._ownership.acquire()
+    mock_redis.eval.side_effect = None
     sm.publish_state("HEARTBEAT")
 
     # Atomic owner comparison, state and heartbeat writes share one Redis script.
     call = mock_redis.eval.call_args.args
-    assert call[1] == 3
+    assert call[1] == 4
     assert "heartbeat:orchestrator" in call[4]
     heartbeat_payload = json.loads(call[-1])
     assert "ts" in heartbeat_payload

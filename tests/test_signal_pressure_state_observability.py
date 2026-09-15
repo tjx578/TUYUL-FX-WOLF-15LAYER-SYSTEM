@@ -116,3 +116,20 @@ def test_frozen_quote_pressure_state_is_promoted_to_warning(caplog):
     payload = json.loads(record.message.split("[SignalPressureStateJSON]", 1)[1].strip())
     assert record.levelno == logging.WARNING
     assert payload["event_severity"] == "WARNING"
+
+
+def test_missing_pair_admission_evaluation_incident_is_promoted_to_warning(caplog):
+    caplog.set_level(logging.INFO, logger="signal_json")
+
+    assert emit_signal_pressure_state(
+        {
+            "symbol": "USDCHF",
+            "pair_admission_evaluation_coverage_status": "MISSING_EVALUATION_INCIDENT",
+            "pair_admission_evaluation_missing_incident": True,
+        }
+    )
+
+    record = next(record for record in caplog.records if "[SignalPressureStateJSON]" in record.message)
+    payload = json.loads(record.message.split("[SignalPressureStateJSON]", 1)[1].strip())
+    assert record.levelno == logging.WARNING
+    assert payload["event_severity"] == "WARNING"

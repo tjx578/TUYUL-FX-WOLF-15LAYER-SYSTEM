@@ -27,3 +27,13 @@ def test_parse_orchestrator_health_invalid_timestamp_not_ready() -> None:
     age, ready = _parse_orchestrator_health({"timestamp": "not-a-number"})
     assert age is None
     assert ready is False
+
+
+def test_fenced_owner_fields_are_preserved_by_read_projection() -> None:
+    import inspect
+
+    from api import orchestrator_routes
+
+    source = inspect.getsource(orchestrator_routes.get_orchestrator_state)
+    assert '"owner_id": payload.get("owner_id", "")' in source
+    assert '"fence_generation": payload.get("fence_generation")' in source
