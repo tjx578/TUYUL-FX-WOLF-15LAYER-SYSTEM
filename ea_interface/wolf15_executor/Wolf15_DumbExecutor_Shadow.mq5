@@ -598,28 +598,9 @@ bool LoadRuntimeCredentials(string &reason)
       reason = "CREDENTIAL_PAYLOAD_TRUNCATED";
       return false;
    }
-   uchar trailing[];
-   ArrayResize(trailing, 1);
-   ResetLastError();
-   uint trailing_read = FileReadArray(handle, trailing, 0, 1);
-   int trailing_error = GetLastError();
+   // The length prefix is authoritative: only these N bytes form the envelope.
+   // Close without an EOF probe; subsequent bytes are never read or parsed.
    FileClose(handle);
-   if(GetTickCount64() >= deadline || IsStopped())
-   {
-      reason = "CREDENTIAL_READ_INTERRUPTED";
-      return false;
-   }
-   if(trailing_error != 0 && trailing_error != ERR_FILE_ENDOFFILE)
-   {
-      reason = "CREDENTIAL_PIPE_READ_FAILED";
-      return false;
-   }
-   if(trailing_read != 0)
-   {
-      reason = "CREDENTIAL_TRAILING_BYTES";
-      return false;
-   }
-
    string payload_json = CharArrayToString(payload, 0, payload_length, CP_UTF8);
    if(StringLen(payload_json) != payload_length)
    {

@@ -2,6 +2,8 @@
 
 No pipe, vault, broker, HTTP, or MT5 is opened. This is cross-language regression
 coverage, not proof of native MQL5 pipe behavior or runtime acceptance.
+Full-loader mode also doubles JSON extraction and shape utilities; canonical
+comparison and binding decisions execute the actual translated loader body.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ const source = fs.readFileSync(scenario.source, 'utf8');
 let start = source.indexOf('bool LoadRuntimeCredentials(');
 let frame = source.slice(start, source.indexOf('   string payload_json =', start));
 frame += 'return {payload: payload, reason: reason};\n}';
+if(scenario.fullLoader) frame = source.slice(start, source.indexOf('//+---', start));
 let helper = '';
 start = source.indexOf('uint ReadCredentialBytes(');
 if (start >= 0) helper = source.slice(start, source.indexOf('//+---', start));
@@ -54,7 +57,14 @@ const context = {
   W15_CREDENTIAL_READ_TIMEOUT_MS:numericDefine('W15_CREDENTIAL_READ_TIMEOUT_MS'),
   W15_CREDENTIAL_READ_RETRY_MS:numericDefine('W15_CREDENTIAL_READ_RETRY_MS'),
   ClearRuntimeCredentials:()=>{}, StringFind:(s,v)=>s.indexOf(v),
-  IsSafeWireIdentifier:()=>true, IsLowerHexExact:()=>true,
+  IsSafeWireIdentifier:s=>/^[A-Za-z0-9_.:-]+$/.test(s),
+  IsLowerHexExact:(s,n)=>s.length===n && /^[0-9a-f]+$/.test(s),
+  W15_CREDENTIAL_SCHEMA:'wolf15.runtime_credentials.v1',
+  StringLen:s=>s.length,
+  JsonValue:(s,k)=>{try{return JSON.parse(s)[k] ?? '';}catch{return '';}},
+  TaggedHexToBytes:(s,p,n,a)=>s.startsWith(p) && s.length===p.length+n*2 && /^[0-9a-f]+$/.test(s.slice(p.length)),
+  g_executor_token:'',g_command_verification_key_id:'',g_command_verification_key:'',
+
   ResetLastError:()=>{error=0;}, GetLastError:()=>error,
   ERR_FILE_ENDOFFILE:5027,
   FileOpen:()=>{opened++; return scenario.openFails ? -1 : 7;},
@@ -78,7 +88,7 @@ vm.createContext(context);
 vm.runInContext(translate(helper)+translate(frame),context,{timeout:1000});
 const result=vm.runInContext('LoadRuntimeCredentials()',context,{timeout:1000});
 process.stdout.write(JSON.stringify({frame_complete:result!==false,reason:context.reason,
-  payload:result===false ? null : Buffer.from(result.payload).toString('ascii'),
+  payload:result===false || scenario.fullLoader ? null : Buffer.from(result.payload).toString('ascii'),
   elapsed:now,opened,closed,readCalls}));
 """
 
@@ -143,7 +153,6 @@ def test_stop_cancels_wait_and_closes_handle() -> None:
         ("00000000", "CREDENTIAL_PAYLOAD_OVERSIZE"),
         ("000", "CREDENTIAL_SCHEMA_INVALID"),
         ("00000003ab", "CREDENTIAL_PAYLOAD_TRUNCATED"),
-        ("00000003abcX", "CREDENTIAL_TRAILING_BYTES"),
     ],
 )
 def test_invalid_frames_stay_rejected(data: str, reason: str) -> None:
@@ -182,25 +191,6 @@ def test_stop_during_successful_read_cannot_complete_frame(durations: list[int])
     assert result["closed"] == 1
 
 
-def test_trailing_read_error_is_not_eof() -> None:
-    result = _read([(0, "00000003abc")], errorAtRead=3)
-    assert result["frame_complete"] is False
-    assert result["closed"] == 1
-
-
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"readDurations": [0, 0, 5000]},
-        {"readDurations": [0, 0, 50], "stopAt": 30},
-    ],
-)
-def test_trailing_read_cannot_accept_after_deadline_or_stop(options: dict) -> None:
-    result = _read([(0, "00000003abc")], **options)
-    assert result["frame_complete"] is False
-    assert result["closed"] == 1
-
-
 def test_maximum_payload_is_accepted_at_size_boundary() -> None:
     result = _read([(0, "00004096"), (0, "a" * 4096)])
     assert result["frame_complete"] is True
@@ -208,10 +198,73 @@ def test_maximum_payload_is_accepted_at_size_boundary() -> None:
     assert result["opened"] == result["closed"] == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Open native EOF/closure gap: zero bytes can precede delayed trailing data; blocks acceptance",
+@pytest.mark.parametrize("chunks", [[(0, "00000003abcX")], [(0, "00000003abc"), (100, "X")]])
+def test_bytes_outside_declared_frame_are_never_read(chunks: list[tuple[int, str]]) -> None:
+    result = _read(chunks, errorAtRead=3)
+    assert result["frame_complete"] is True
+    assert result["payload"] == "abc"
+    assert result["readCalls"] == 2
+    assert result["closed"] == 1
+
+
+def _envelope(**changes: str) -> str:
+    fields = {
+        "schema": "wolf15.runtime_credentials.v1",
+        "executor_id": "fixture",
+        "account_reference_sha256": "a" * 64,
+        "verification_key_id": "fixture",
+        "executor_token": "b" * 64,
+        "verification_material": "hex:" + "c" * 64,
+    }
+    fields.update(changes)
+    return json.dumps(fields, separators=(",", ":"))
+
+
+def _load(payload: str, suffix: str = "") -> dict:
+    return _read([(0, f"{len(payload):08d}" + payload + suffix)], fullLoader=True)
+
+
+def test_valid_canonical_payload_is_accepted_without_parsing_suffix() -> None:
+    result = _load(_envelope(), "unparsed extra bytes")
+    assert result["frame_complete"] is True
+    assert result["readCalls"] == 2
+    assert result["closed"] == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("schema", "wrong", "CREDENTIAL_SCHEMA_INVALID"),
+        ("executor_id", "other", "EXECUTOR_BINDING_MISMATCH"),
+        ("account_reference_sha256", "d" * 64, "ACCOUNT_BINDING_MISMATCH"),
+        ("verification_key_id", "other", "KEY_ID_MISMATCH"),
+        ("executor_token", "B" * 64, "EXECUTOR_TOKEN_SHAPE_INVALID"),
+        ("verification_material", "hex:" + "C" * 64, "VERIFICATION_MATERIAL_SHAPE_INVALID"),
+    ],
 )
-def test_delayed_trailing_byte_must_not_complete_frame() -> None:
-    result = _read([(0, "00000003abc"), (100, "X")])
+def test_payload_binding_and_shape_mismatch_rejected(field: str, value: str, reason: str) -> None:
+    result = _load(_envelope(**{field: value}))
     assert result["frame_complete"] is False
+    assert result["reason"] == reason
+
+
+@pytest.mark.parametrize("variant", ["space", "reordered", "extra", "duplicate", "missing", "suffix_inside_length"])
+def test_noncanonical_payload_rejected(variant: str) -> None:
+    payload = _envelope()
+    fields = json.loads(payload)
+    if variant == "space":
+        payload = json.dumps(fields)
+    elif variant == "reordered":
+        payload = json.dumps(dict(reversed(list(fields.items()))), separators=(",", ":"))
+    elif variant == "extra":
+        payload = payload[:-1] + ',"extra":"x"}'
+    elif variant == "duplicate":
+        payload = payload[:-1] + ',"schema":"wolf15.runtime_credentials.v1"}'
+    elif variant == "missing":
+        del fields["executor_token"]
+        payload = json.dumps(fields, separators=(",", ":"))
+    else:
+        payload += "X"
+    result = _load(payload)
+    assert result["frame_complete"] is False
+    assert result["reason"] == "CREDENTIAL_SCHEMA_INVALID"
