@@ -657,20 +657,23 @@ def _maturity_positive(score: float, bucket: str) -> list[str]:
 def _metric_for_scope(pressure_tier: Mapping[str, Any] | None) -> Mapping[str, Any]:
     if not isinstance(pressure_tier, Mapping):
         return {}
+
     metrics = pressure_tier.get("metrics")
     if not isinstance(metrics, Mapping):
         return {}
+
     scope = str(pressure_tier.get("tier_scope") or "live").lower()
+
     if scope.startswith("live"):
-        metric = metrics.get("live")
-        return metric if isinstance(metric, Mapping) else {}
-    if scope.startswith("session"):
-        metric = metrics.get("session")
-        return metric if isinstance(metric, Mapping) else {}
-    if scope.startswith("archive"):
-        metric = metrics.get("archive")
-        return metric if isinstance(metric, Mapping) else {}
-    return {}
+        selected = metrics.get("live")
+    elif scope.startswith("session"):
+        selected = metrics.get("session")
+    elif scope.startswith("archive"):
+        selected = metrics.get("archive")
+    else:
+        return {}
+
+    return selected if isinstance(selected, Mapping) else {}
 
 
 def _microboost_for_symbol(summary: Mapping[str, Any] | None, symbol: str) -> Mapping[str, Any] | None:
