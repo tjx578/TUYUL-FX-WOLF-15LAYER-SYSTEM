@@ -24,7 +24,7 @@ from tests.test_mt5_engineering_demo_canary import EXECUTOR_ID, SECRET, _command
 pytestmark = [pytest.mark.integration]
 ROOT = Path(__file__).resolve().parents[2]
 OBSERVED_MARKER = "20260823_01"
-TARGET_HEAD = "20260915_01"
+TARGET_HEAD = "20260915_02"
 HISTORICAL_TIME = datetime(2026, 9, 1, 12, tzinfo=UTC)
 TERMINAL_STATES = ("REJECTED", "FILLED", "CANCELLED", "COMPLETED", "EXPIRED", "SHADOW_COMPLETED", "SHADOW_REJECTED")
 NEW_TABLES = (
