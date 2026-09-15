@@ -36,8 +36,10 @@ from typing import Any, cast
 
 import redis
 
+from context.candle_history_acceptance import collapse_stale_ohlc, decode_candle_history
 from context.candle_history_keys import get_candle_prefixes
 from context.warmup_requirements import WARMUP_MIN_BARS
+from core.redis_keys import CANDLE_HISTORY_MAXLEN
 from infrastructure.redis_url import get_redis_url
 
 # Key prefixes (must match what engine/ingest write)
@@ -120,7 +122,7 @@ def context_read_failure_count() -> int:
 
 
 def _warmup_counts(pairs: list[tuple[str, str]]) -> tuple[list[int], bool]:
-    """Count the first nonempty List prefix, without combining histories.
+    """Count accepted candles from the first nonempty List prefix.
 
     Wrong-type keys are skipped like RedisConsumer. Other response errors or
     transport failures invalidate the whole batch; no sequential retry is used.
@@ -135,22 +137,28 @@ def _warmup_counts(pairs: list[tuple[str, str]]) -> tuple[list[int], bool]:
         with _context_redis_client().pipeline(transaction=False) as pipe:
             for symbol, tf in pairs:
                 for prefix in prefixes:
-                    pipe.llen(f"{prefix}:{symbol}:{tf}")
+                    pipe.lrange(f"{prefix}:{symbol}:{tf}", 0, CANDLE_HISTORY_MAXLEN)
             raw = pipe.execute(raise_on_error=False)
         if len(raw) != len(pairs) * len(prefixes):
             raise ValueError("Invalid warmup count batch")
-        normalized: list[int] = []
+        histories: list[list[Any]] = []
         for value in raw:
             if isinstance(value, redis.ResponseError) and str(value).startswith("WRONGTYPE"):
-                normalized.append(0)
-            elif type(value) is int and value >= 0:
-                normalized.append(value)
+                histories.append([])
+            elif isinstance(value, list):
+                histories.append(value)
             else:
-                raise ValueError("Invalid warmup count response")
-        return [
-            next((count for count in normalized[offset : offset + len(prefixes)] if count > 0), 0)
-            for offset in range(0, len(normalized), len(prefixes))
-        ], True
+                raise ValueError("Invalid warmup history response")
+        counts: list[int] = []
+        for offset in range(0, len(histories), len(prefixes)):
+            selected = next((entries for entries in histories[offset : offset + len(prefixes)] if entries), [])
+            # Writers retain 300 entries. Never report a truncated prefix as a
+            # complete history when a legacy/custom key exceeds that contract.
+            if len(selected) > CANDLE_HISTORY_MAXLEN:
+                raise ValueError("Warmup history exceeds writer retention")
+            candles, _, _ = decode_candle_history(selected)
+            counts.append(len(collapse_stale_ohlc(candles)))
+        return counts, True
     except Exception:
         _mark_redis_unavailable()
         return empty, False
@@ -480,7 +488,7 @@ class RedisContextReader:
         symbols: list[str],
         min_bars: dict[str, int] | None = None,
     ) -> dict[str, dict[str, Any]]:
-        """Read all requested warmup counts in one Redis pipeline round trip.
+        """Read accepted warmup histories in one bounded Redis pipeline round trip.
 
         A failed batch is unavailable as a whole, never a partial ready result.
         The existing failure counter/cooldown records failures without a ping.

@@ -21,6 +21,7 @@ from typing import Any, cast
 
 import orjson
 
+from context.candle_history_acceptance import collapse_stale_ohlc, decode_candle_history
 from context.candle_history_keys import CANDLE_HISTORY_LIST_PREFIXES as CANDLE_HISTORY_LIST_PREFIXES
 from context.candle_history_keys import get_candle_prefixes as get_candle_prefixes
 from context.live_context_bus import LiveContextBus
@@ -206,22 +207,11 @@ class RedisConsumer:
 
             # Derive a display key from the first successful prefix for logging
             key_display = f"<prefix>:{symbol}:{timeframe}"
-            candles: list[dict[str, Any]] = []
-            for raw in raw_entries:
-                try:
-                    candle: Any = orjson.loads(raw)
-                    if isinstance(candle, dict):
-                        candles.append(cast(dict[str, Any], candle))
-                    else:
-                        logger.warning(
-                            "RedisConsumer: non-dict candle in key %s — skipped",
-                            key_display,
-                        )
-                except Exception:
-                    logger.warning(
-                        "RedisConsumer: skipping malformed candle bytes in key %s",
-                        key_display,
-                    )
+            candles, non_dict, malformed = decode_candle_history(raw_entries)
+            if non_dict:
+                logger.warning("RedisConsumer: skipped %d non-dict candles in key %s", non_dict, key_display)
+            if malformed:
+                logger.warning("RedisConsumer: skipped %d malformed candles in key %s", malformed, key_display)
 
             # Guard: don't overwrite richer data (e.g. synthesized D1/W1
             # from candle_seeding) with a single-bar HASH fallback.
@@ -236,43 +226,18 @@ class RedisConsumer:
                 )
                 continue
 
-            # ── Stale-OHLC dedup: collapse consecutive bars with identical OHLC ──
-            # If REST fallback pushed many bars with the same price (stale feed),
-            # Redis will contain them.  Collapse runs of identical OHLC down to a
-            # single representative bar so L3 doesn't see artificial "flat" data.
-            if len(candles) > 1:
-                deduped: list[dict[str, Any]] = [candles[0]]
-                _run_len = 1
-                for c in candles[1:]:
-                    try:
-                        prev = deduped[-1]
-                        same = (
-                            round(float(c.get("open", 0)), 8) == round(float(prev.get("open", -1)), 8)
-                            and round(float(c.get("high", 0)), 8) == round(float(prev.get("high", -1)), 8)
-                            and round(float(c.get("low", 0)), 8) == round(float(prev.get("low", -1)), 8)
-                            and round(float(c.get("close", 0)), 8) == round(float(prev.get("close", -1)), 8)
-                        )
-                    except (TypeError, ValueError):
-                        same = False
-                    if same:
-                        _run_len += 1
-                        if _run_len <= 2:
-                            # Allow up to 2 consecutive identical bars (session boundary)
-                            deduped.append(c)
-                    else:
-                        _run_len = 1
-                        deduped.append(c)
-                dropped = len(candles) - len(deduped)
-                if dropped > 0:
-                    logger.warning(
-                        "RedisConsumer: %s:%s collapsed %d stale-OHLC duplicates (%d → %d bars)",
-                        symbol,
-                        timeframe,
-                        dropped,
-                        len(candles),
-                        len(deduped),
-                    )
-                    candles = deduped
+            deduped = collapse_stale_ohlc(candles)
+            dropped = len(candles) - len(deduped)
+            if dropped:
+                logger.warning(
+                    "RedisConsumer: %s:%s collapsed %d stale-OHLC duplicates (%d → %d bars)",
+                    symbol,
+                    timeframe,
+                    dropped,
+                    len(candles),
+                    len(deduped),
+                )
+            candles = deduped
 
             self._bus.set_candle_history(symbol, timeframe, candles)
             logger.info(

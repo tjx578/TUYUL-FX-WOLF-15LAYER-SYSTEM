@@ -2534,6 +2534,7 @@ class WolfConstitutionalPipeline:
                 result["verdict_reason"] = f"No executable direction (reason={direction_reason})"
                 result["direction_resolution"] = direction_resolution
                 result["universe_ranking"] = universe_ranking
+                result["governance"] = _governance.to_dict()
                 result["l12_verdict"] = {
                     "verdict": "NO_TRADE",
                     "reason": direction_reason,
@@ -2564,6 +2565,7 @@ class WolfConstitutionalPipeline:
                 result["verdict"] = "NO_TRADE"
                 result["verdict_reason"] = "SL/TP zero (ATR warmup insufficient)"
                 result["l12_verdict"] = {"verdict": "NO_TRADE", "reason": "sl_tp_zero"}
+                result["governance"] = _governance.to_dict()
                 return result
 
             # ═══════════════════════════════════════════════════════
