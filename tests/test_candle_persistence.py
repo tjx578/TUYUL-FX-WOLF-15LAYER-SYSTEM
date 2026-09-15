@@ -123,7 +123,9 @@ def test_provider_aware_identity_and_rank_do_not_mix_feeds() -> None:
     assert broker_args[:2] == ("mt5", "demo_account_1")
     assert finnhub_args[4] == finnhub.open_time
     assert len(str(finnhub_args[15])) == 64
-    assert int(broker_args[16]) > int(finnhub_args[16])
+    assert isinstance(broker_args[16], int)
+    assert isinstance(finnhub_args[16], int)
+    assert broker_args[16] > finnhub_args[16]
 
 
 def test_forming_to_closed_revision_increases_canonical_selection_rank() -> None:
@@ -145,7 +147,9 @@ def test_forming_to_closed_revision_increases_canonical_selection_rank() -> None
 
     assert forming_args[:6] == closed_args[:6]
     assert forming_args[15] != closed_args[15]
-    assert int(closed_args[16]) > int(forming_args[16])
+    assert isinstance(closed_args[16], int)
+    assert isinstance(forming_args[16], int)
+    assert closed_args[16] > forming_args[16]
 
 
 def test_enqueue_canonical_closed_candle_preserves_authority() -> None:

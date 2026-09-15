@@ -23,3 +23,23 @@ T14 exact image/entrypoint validation and resulting commit/tree bindings are rec
 Evidence directory: C:/Users/INTEL/.codex/visualizations/2026/09/07/01a079d8-179a-7301-8236-ba92019a6079/goal-six-packages/release-composition.
 
 Original main, c64, a693 and D0 candidate worktrees are preserved. No push, shared merge, deployment, production migration, installed EA change, or broker action is performed by this composition.
+
+
+## Integration refresh 2026-09-15
+
+The PR repair integrates main `54808efdc88bf1a9d65f8fdd650ec4f98487d868`.
+The additive revision `20260915_01` joins the existing D1 head `20260908_01`
+and account-identity head `20260911_01`; historical migration parents are preserved.
+Main's authenticated reconciliation and credential-broker protections remain in
+place alongside the frozen D1 operator packet and control-capability restrictions.
+Process-local issuance validates the exact packet before repository effects and
+rejects concurrent capability reuse while issuance is in flight.
+
+The disconnected-Redis runtime acceptance now checks the actual fenced owner's
+fail-fast contract: nonzero exit, Redis connection failure, no acquired ownership,
+and no observed ready response. An HTTP probe that exits before observation is
+recorded as `NOT_OBSERVED_BEFORE_EXIT`, not as a readiness pass.
+
+CI validation applies only to the tested source and disposable infrastructure.
+Production migration, deployment, installed EA changes, broker actions, and
+strategy/DEMO execution authority remain separate and are not activated by this PR.

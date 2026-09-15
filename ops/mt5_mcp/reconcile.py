@@ -59,6 +59,14 @@ BINDING_SQL: Final = """
     ORDER BY executor_id
     LIMIT $1
 """
+# Separate authority from BINDING_SQL. The legacy view answers "is the database
+# internally consistent"; this one answers "which opaque w15ab:v1 identity is
+# trusted for this executor at this key version". Never overlay one onto the other.
+BINDING_IDENTITY_SQL: Final = """
+    SELECT * FROM wolf15_audit.account_binding_identity_v1
+    ORDER BY executor_id, key_id
+    LIMIT $1
+"""
 CONTAINMENT_SQL: Final = "SELECT * FROM wolf15_audit.execution_containment_v1 LIMIT 2"
 LEDGER_SQL: Final = """
     SELECT *
@@ -130,8 +138,11 @@ def _direct_entities(snapshots: Mapping[str, Mapping[str, Any]]) -> dict[tuple[s
         for raw in records:
             if not isinstance(raw, Mapping):
                 continue
+            raw_ticket = raw.get("ticket")
+            if raw_ticket is None:
+                continue
             with suppress(TypeError, ValueError):
-                ticket = int(raw.get("ticket"))
+                ticket = int(raw_ticket)
                 key = (entity_type, ticket)
                 item = entities.setdefault(
                     key,
@@ -155,8 +166,11 @@ def _mirror_entities(rows: Sequence[Mapping[str, Any]]) -> dict[tuple[str, int],
         entity_type = str(row.get("entity_type") or "").upper()
         if entity_type not in ENTITY_TYPES:
             continue
+        raw_ticket = row.get("broker_ticket")
+        if raw_ticket is None:
+            continue
         with suppress(TypeError, ValueError):
-            ticket = int(row.get("broker_ticket"))
+            ticket = int(raw_ticket)
             entities.setdefault((entity_type, ticket), []).append(row)
     return entities
 
@@ -321,7 +335,13 @@ def _measurement_summary(
         state = payload.get("measurement_state", "NOT_MEASURED")
         truncated = payload.get("truncated")
         observed = _evidence_time(payload.get("observed_at_utc"))
-        observation_in_interval = bool(interval_valid and observed is not None and started <= observed <= finished)
+        observation_in_interval = bool(
+            interval_valid
+            and observed is not None
+            and started is not None
+            and finished is not None
+            and started <= observed <= finished
+        )
         records = payload.get("records")
         count = payload.get("record_count")
         source_count = payload.get("source_record_count")
@@ -333,7 +353,7 @@ def _measurement_summary(
             and count == source_count == len(records)
             and state == ("MEASURED" if records else "MEASURED_EMPTY")
         )
-        if consistent and tool_name != "mt5_account_get":
+        if consistent and isinstance(records, list) and tool_name != "mt5_account_get":
             tickets = [record.get("ticket") for record in records]
             consistent = all(type(ticket) is int and ticket > 0 for ticket in tickets)
             if consistent:
@@ -487,14 +507,54 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
         return "MISMATCH", evidence
 
     candidate = candidates[0]
-    database_identifier = candidate.get("account_binding_identifier")
-    database_source = candidate.get("account_binding_source")
-    if database_identifier is None:
+    executor_id = str(candidate.get("executor_id"))
+
+    # Channel-B identity is a separate authority from the legacy internal-consistency
+    # view. A legacy identifier column is never trusted and never overlaid here.
+    #
+    # Selection order matters, and the broker server is deliberately NOT part of this
+    # filter. Filtering it away would make "no identity exists" and "an identity
+    # exists but is bound to another server" indistinguishable; the second must block,
+    # so it is compared explicitly once one row is eligible.
+    identities = [
+        row
+        for row in database.get("account_binding_identity", [])
+        if isinstance(row, Mapping) and str(row.get("executor_id")) == executor_id and row.get("retired_at") is None
+    ]
+    evidence["active_account_identity_count"] = len(identities)
+    if not identities:
         return "INCOMPLETE_ACCOUNT_IDENTIFIER", evidence
-    if database_source != account_binding.DATABASE_SOURCE:
+
+    # A bounded rotation overlap legitimately leaves several active key versions.
+    # Only the version the terminal actually presented is eligible: no previous-key
+    # fallback, no recency heuristic, no alternate-account fallback.
+    eligible = [row for row in identities if str(row.get("key_id") or "") == direct["key_id"]]
+    evidence["eligible_account_identity_count"] = len(eligible)
+    if not eligible:
+        return "KEY_VERSION_MISMATCH", evidence
+    if len(eligible) > 1:
+        return "AMBIGUOUS_ACCOUNT_IDENTITY", evidence
+
+    row = eligible[0]
+    # Exact-case comparison. A case-folded or normalised server name would let a
+    # neighbouring server satisfy the binding.
+    evidence["account_identity_broker_server_matches"] = str(row.get("broker_server") or "") == direct["server"]
+    if not evidence["account_identity_broker_server_matches"]:
+        return "BROKER_SERVER_MISMATCH", evidence
+    evidence["database_identifier_producer_version"] = row.get("producer_version")
+    if row.get("binding_source") != account_binding.DATABASE_SOURCE:
         evidence["database_identifier_source_trusted"] = False
         return "UNTRUSTED_DATABASE_IDENTIFIER", evidence
     evidence["database_identifier_source_trusted"] = True
+    if (
+        row.get("scheme") != account_binding.SCHEME
+        or row.get("contract_version") != account_binding.VERSION
+        or row.get("algorithm") != account_binding.ALGORITHM
+    ):
+        evidence["database_identifier_contract_valid"] = False
+        return "UNTRUSTED_DATABASE_IDENTIFIER", evidence
+
+    database_identifier = row.get("identifier")
     try:
         database_key_id = account_binding.identifier_key_id(database_identifier)
     except account_binding.AccountBindingError:
@@ -502,11 +562,13 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
         return "INVALID_DATABASE_IDENTIFIER", evidence
     evidence["database_identifier_contract_valid"] = True
     evidence["database_key_id"] = database_key_id
+    if database_key_id != direct["key_id"]:
+        # The embedded key id disagreeing with the row's own key_id column means the
+        # row is internally inconsistent, which is stronger than a version mismatch.
+        return "INVALID_DATABASE_IDENTIFIER", evidence
     evidence["direct_account_identifier_match"] = account_binding.identifiers_match(
         direct["identifier"], database_identifier
     )
-    if database_key_id != direct["key_id"]:
-        return "KEY_VERSION_MISMATCH", evidence
     return ("MATCHED", evidence) if evidence["direct_account_identifier_match"] else ("MISMATCH", evidence)
 
 
@@ -567,6 +629,11 @@ def reconcile_snapshots(
     elif account_state == "MATCHED":
         reconciliation = "MATCHED"
         gate = "EXECUTED_PASS"
+    elif account_state == "BROKER_SERVER_MISMATCH":
+        # Never collapsed into the generic MISMATCH reason: the identifier was never
+        # compared, the executor is bound to a different broker server.
+        reconciliation = "ACCOUNT_IDENTITY_BROKER_SERVER_MISMATCH"
+        gate = "EXECUTED_BLOCKED"
     elif account_state == "INCOMPLETE_ACCOUNT_IDENTIFIER" and hard_mismatches:
         reconciliation = "INCOMPLETE_ACCOUNT_IDENTIFIER_WITH_ENTITY_MISMATCH"
         gate = "EXECUTED_BLOCKED"
@@ -595,6 +662,7 @@ def reconcile_snapshots(
             "executor_identity_rows": len(database.get("executor_identity", [])),
             "executor_freshness_rows": len(database.get("executor_freshness", [])),
             "account_binding_rows": len(database.get("account_binding", [])),
+            "account_binding_identity_rows": len(database.get("account_binding_identity", [])),
             "execution_containment_rows": len(database.get("execution_containment", [])),
             "execution_ledger_rows": len(database.get("execution_ledger", [])),
             "broker_mirror_rows": len(database.get("broker_mirror", [])),
@@ -621,15 +689,19 @@ def _clean_database_rows(rows: Iterable[Any]) -> list[dict[str, Any]]:
     return [_mapping(row) for row in rows]
 
 
-async def _database_snapshot(dsn: str, *, window_from: datetime, window_to: datetime) -> dict[str, Any]:
+async def _database_snapshot(
+    dsn: str, *, window_from: datetime, window_to: datetime, include_backend_identity: bool = False
+) -> dict[str, Any]:
     asyncpg = importlib.import_module("asyncpg")
     connection: Any | None = None
     transaction: Any | None = None
     try:
-        connection = await asyncpg.connect(dsn=dsn, command_timeout=15)
-        transaction = connection.transaction(isolation="repeatable_read", readonly=True)
-        await transaction.start()
-        audit_session = _mapping(await connection.fetchrow(AUDIT_SESSION_SQL))
+        active_connection = await asyncpg.connect(dsn=dsn, command_timeout=15)
+        connection = active_connection
+        active_transaction = active_connection.transaction(isolation="repeatable_read", readonly=True)
+        transaction = active_transaction
+        await active_transaction.start()
+        audit_session = _mapping(await active_connection.fetchrow(AUDIT_SESSION_SQL))
         if (
             audit_session.get("current_role") != EXPECTED_AUDIT_ROLE
             or audit_session.get("transaction_read_only") is not True
@@ -641,31 +713,49 @@ async def _database_snapshot(dsn: str, *, window_from: datetime, window_to: date
                 "error_type": "DATABASE_AUDIT_SESSION_MISMATCH",
                 "audit_session": audit_session,
             }
+        observed_at = datetime.now(UTC)
         limit = MAX_DATABASE_ROWS + 1
-        identity = await connection.fetch(IDENTITY_SQL, limit)
-        freshness = await connection.fetch(FRESHNESS_SQL, limit)
-        binding = await connection.fetch(BINDING_SQL, limit)
-        containment = await connection.fetch(CONTAINMENT_SQL)
-        ledger = await connection.fetch(LEDGER_SQL, window_from, window_to, limit)
-        mirror = await connection.fetch(MIRROR_SQL, window_from, window_to, limit)
-        mutation = _mapping(await connection.fetchrow(MUTATION_SQL))
+        identity = await active_connection.fetch(IDENTITY_SQL, limit)
+        freshness = await active_connection.fetch(FRESHNESS_SQL, limit)
+        binding = await active_connection.fetch(BINDING_SQL, limit)
+        binding_identity = await active_connection.fetch(BINDING_IDENTITY_SQL, limit)
+        containment = await active_connection.fetch(CONTAINMENT_SQL)
+        ledger = await active_connection.fetch(LEDGER_SQL, window_from, window_to, limit)
+        mirror = await active_connection.fetch(MIRROR_SQL, window_from, window_to, limit)
+        # D0 reconciliation evidence, kept for attestation only. It is deliberately
+        # NOT merged into the legacy binding rows and is NOT the Channel-B identity
+        # authority: it is snapshot-coupled, DEMO-only, and rewritten per executor.
+        backend_identity = []
+        if include_backend_identity:
+            backend_identity = _clean_database_rows(
+                await active_connection.fetch(
+                    "SELECT * FROM wolf15_audit.backend_account_identity_v1 ORDER BY executor_id LIMIT $1", limit
+                )
+            )
+        mutation = _mapping(await active_connection.fetchrow(MUTATION_SQL))
         truncated = (
-            any(len(rows) > MAX_DATABASE_ROWS for rows in (identity, freshness, binding, ledger, mirror))
+            any(
+                len(rows) > MAX_DATABASE_ROWS
+                for rows in (identity, freshness, binding, binding_identity, ledger, mirror)
+            )
             or len(containment) > 1
         )
         report = {
             "measured": True,
-            "truncated": truncated,
+            "observed_at_utc": observed_at.isoformat(),
+            "backend_identity": backend_identity,
+            "truncated": truncated or len(backend_identity) > MAX_DATABASE_ROWS,
             "executor_identity": _clean_database_rows(identity[:MAX_DATABASE_ROWS]),
             "executor_freshness": _clean_database_rows(freshness[:MAX_DATABASE_ROWS]),
             "account_binding": _clean_database_rows(binding[:MAX_DATABASE_ROWS]),
+            "account_binding_identity": _clean_database_rows(binding_identity[:MAX_DATABASE_ROWS]),
             "execution_containment": _clean_database_rows(containment[:1]),
             "execution_ledger": _clean_database_rows(ledger[:MAX_DATABASE_ROWS]),
             "broker_mirror": _clean_database_rows(mirror[:MAX_DATABASE_ROWS]),
             "mutation_evidence": mutation,
             "audit_session": audit_session,
         }
-        await transaction.rollback()
+        await active_transaction.rollback()
         transaction = None
         return report
     except Exception as exc:  # noqa: BLE001
@@ -699,7 +789,12 @@ async def _broker_snapshot(
     config_path: Path, *, window_from: datetime, window_to: datetime, cwd: Path
 ) -> dict[str, Any]:
     environment = os.environ.copy()
-    environment.pop("AUDIT_DATABASE_URL", None)
+    for name in (
+        "AUDIT_DATABASE_URL",
+        "WOLF15_RECONCILIATION_ISSUER_KEY_B64URL",
+        "WOLF15_RECONCILIATION_ISSUER_KEY_ID",
+    ):
+        environment.pop(name, None)
     command = _collector_command(config_path, window_from=window_from, window_to=window_to)
 
     def invoke() -> subprocess.CompletedProcess[str]:
@@ -732,7 +827,9 @@ async def _broker_snapshot(
         return {"tool_surface_exact": False, "snapshots": {}, "error_type": type(exc).__name__}
 
 
-async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, retention_sink=None) -> dict[str, Any]:
+async def run_reconciliation(
+    *, dsn: str, repo_root: Path, config_path: Path, retention_sink=None, attest: bool = False
+) -> dict[str, Any]:
     """Collect and seal; an optional synchronous sink returns True after durability.
 
     Sink receives confidential replay bytes and a separately retainable receipt
@@ -750,13 +847,25 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, re
         window_to=window_to,
         cwd=repo_root,
     )
-    database = await _database_snapshot(dsn, window_from=window_from, window_to=window_to)
+    database = await _database_snapshot(
+        dsn,
+        window_from=window_from,
+        window_to=window_to,
+        **({"include_backend_identity": True} if attest else {}),
+    )
     report = reconcile_snapshots(
         database=database,
         broker=broker,
         window_from=window_from,
         window_to=window_to,
     )
+    attestation = None
+    if attest:
+        from execution.broker_reconciliation_evidence import attest_collected_reconciliation
+
+        attestation = attest_collected_reconciliation(
+            database=database, broker=broker, window_from=window_from, window_to=window_to
+        )
     sealed = seal_report(
         report,
         database=database,
@@ -777,6 +886,8 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, re
             if inspect.iscoroutine(accepted):
                 accepted.close()
             raise ValueError("REPLAY_RETENTION_NOT_ACKNOWLEDGED")
+    if attestation is not None:
+        return {"reconciliation_report": sealed, "reconciliation_attestation": attestation}
     return sealed
 
 

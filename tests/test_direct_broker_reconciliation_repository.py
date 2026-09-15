@@ -101,7 +101,7 @@ def _request(**changes: object) -> DirectBrokerReconciliationRequest:
         "terminal_reason": "MATCHED",
     }
     values.update(changes)
-    return DirectBrokerReconciliationRequest(**values)
+    return DirectBrokerReconciliationRequest.model_validate(values)
 
 
 @pytest.mark.asyncio

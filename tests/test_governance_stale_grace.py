@@ -15,8 +15,6 @@ enter stale_preserved state while staying below HARD_STALE_THRESHOLD_SEC (600 s)
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from state.governance_gate import (
@@ -33,8 +31,16 @@ from state.governance_gate import (
 _STALE_PRESERVED_AGE = 400.0
 
 
+# Governance short-circuits to HOLD/market_closed outside forex market hours
+# (state/governance_gate.py, section A2), which would mask every stale/warmup
+# assertion below whenever the suite happens to run on a weekend. These tests
+# are about staleness, not market hours, so they pin the clock to a known open
+# instant: Wednesday 2026-09-09 12:00 UTC.
+_MARKET_OPEN_TS = 1788955200.0
+
+
 def _now() -> float:
-    return time.time()
+    return _MARKET_OPEN_TS
 
 
 def _stale_last_seen(staleness_seconds: float, now: float) -> float:

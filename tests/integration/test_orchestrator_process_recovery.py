@@ -302,12 +302,16 @@ def _worker(role: str, stop_mode: str, root: Path, port: int) -> None:
     manager = StateManager(redis_client=client)  # type: ignore[arg-type]
 
     def on_started() -> None:
-        data = {"pid": os.getpid(), "boot": json.loads(client.get(manager._state_key))}  # noqa: SLF001
+        boot_raw = client.get(manager._state_key)  # noqa: SLF001
+        assert boot_raw is not None
+        data = {"pid": os.getpid(), "boot": json.loads(boot_raw)}
         if role == "A":
             manager.set_mode(ExecutionMode.SAFE, reason="process-recovery-committed", compliance_code="TEST_HOLD")
             manager.publish_state("TEST_COMMITTED")
             manager._recovery_count = 2  # noqa: SLF001
-            data["committed"] = json.loads(client.get(manager._state_key))  # noqa: SLF001
+            committed_raw = client.get(manager._state_key)  # noqa: SLF001
+            assert committed_raw is not None
+            data["committed"] = json.loads(committed_raw)
             data["recovery_count"] = manager._recovery_count  # noqa: SLF001
             _write_json(root / "A.ready.json", data)
             assert sys.stdin.readline().strip() == "stop"

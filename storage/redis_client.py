@@ -191,7 +191,7 @@ class RedisClient:
             Number of fields that were added.
         """
         if mapping:
-            return cast(int, self.client.hset(name, mapping=mapping))
+            return cast(int, self.client.hset(name, mapping={key: value for key, value in mapping.items()}))
         return cast(int, self.client.hset(name, **kwargs))
 
     @retry(

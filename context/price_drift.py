@@ -133,13 +133,18 @@ def compare_closed_h1(
     if not math.isfinite(max_drift_pips) or max_drift_pips < 0:
         result["reason"] = "INVALID_DRIFT_THRESHOLD"
         return result
+    rest_closed = _epoch(rest["close_time"])
+    ws_closed = _epoch(matches[0]["close_time"])
+    if rest_closed is None or ws_closed is None:
+        result["reason"] = "CLOSE_TIMESTAMP_MISSING_OR_INVALID"
+        return result
     result.update(
         comparable=True,
         actionable=True,
         reason="ALIGNED_CLOSED_H1",
         ws_h1_close=_price(matches[0].get("close")),
-        rest_close_time=datetime.fromtimestamp(_epoch(rest["close_time"]), UTC).isoformat(),
-        ws_close_time=datetime.fromtimestamp(_epoch(matches[0]["close_time"]), UTC).isoformat(),
+        rest_close_time=datetime.fromtimestamp(rest_closed, UTC).isoformat(),
+        ws_close_time=datetime.fromtimestamp(ws_closed, UTC).isoformat(),
     )
     result["drift_pips"] = abs(result["rest_close"] - result["ws_h1_close"]) * multiplier
     result["drifted"] = result["drift_pips"] > max_drift_pips

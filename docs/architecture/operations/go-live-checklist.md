@@ -102,7 +102,7 @@ Repository contract, to verify against provider metadata before an authorized de
 - `PORT=8080`
 - API-only core startup; `WOLF15_EMBED_ORCHESTRATOR=false`
 
-No browser API/WS variable, machine key, signing secret or dashboard-BFF URL is required by the selected frontend. Use Secure HttpOnly SameSite sessions and the exact three direct-core GET projections. A legacy Python BFF may still exist independently; this checklist does not assert that it has been stopped or removed from the provider.
+No browser API/WS variable, machine key, signing secret or dashboard-BFF URL is required by the selected frontend. Use Secure HttpOnly SameSite sessions and exactly the direct-core GET projections declared in `docs/architecture/dashboard-control-surface.md` — validate containment and acceptance for every one of them, including `dashboard/pair-states`. A legacy Python BFF may still exist independently; this checklist does not assert that it has been stopped or removed from the provider.
 
 See [direct API contract](../dashboard-hybrid-topology.md) and `dashboard/nextjs/next.config.js` for source behavior. Public login remains the observed legacy `VIEWER JWT` page until exact-source deployment and password-login acceptance are separately proven.
 
@@ -191,6 +191,6 @@ Recommended Railway alerts:
 - [ ] Exact source, image and selected-domain identity are bound together
 - [ ] Strict build, focused auth/containment tests and source/browser credential scans pass
 - [ ] Production password login, wrong-password denial, viewer scope, expiry and logout pass
-- [ ] All three production read projections contain only sanitized real core data; failures preserve unknown/HOLD
+- [ ] Every declared production read projection contains only sanitized real core data; failures preserve unknown/HOLD
 - [ ] Browser requests contain no machine credentials or JavaScript-readable JWT
 - [ ] No BFF/legacy frontend fallback or execution/broker mutation route is reachable

@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import timedelta
@@ -8,6 +9,7 @@ from uuid import UUID
 import pytest
 
 from contracts.strategy_5scr_capacity_owner_v31 import CapacityOwnerFenceV31
+from contracts.strategy_5scr_capacity_v31 import CapacityLedgerV31
 from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
 from storage import strategy_5scr_prepared_v31 as detached
 from storage.strategy_5scr_capacity_v31 import CapacityRepositoryV31, _ledger
@@ -189,16 +191,20 @@ def test_initialization_rejects_unverified_or_noninitial_state(fault):
         initial = seed()
         repo = CapacityRepositoryV31(fence=owner(initial))
 
-        def verifier(*_):
+        def accepting_verifier(*_) -> bool:
             return True
+
+        verifier: Callable[[CapacityLedgerV31, str], bool] | None = accepting_verifier
 
         if fault == "verifier":
             verifier = None
         elif fault == "mutation":
 
-            def verifier(value, digest):
+            def mutating_verifier(value: CapacityLedgerV31, digest: str) -> bool:
                 object.__setattr__(value, "version", 8)
                 return True
+
+            verifier = mutating_verifier
         elif fault == "nonzero_version":
             initial = initial.model_copy(update={"version": 8})
         else:
@@ -473,6 +479,9 @@ def test_delayed_capacity_write_crossing_deadline_rolls_back(operation, monkeypa
     async def run():
         from tests.test_strategy_5scr_capacity_v31 import release_proof, reserve
 
+        candidate = None
+        kwargs = None
+        refresh_evidence = refresh_prepared = release_prepared = release_arguments = None
         if operation == "parent":
             db, repo, before, candidate, kwargs = await parent_fixture()
         else:
@@ -496,29 +505,33 @@ def test_delayed_capacity_write_crossing_deadline_rolls_back(operation, monkeypa
 
         monkeypatch.setattr(repo, "_save", delayed_save)
         if operation == "refresh":
-            evidence = evidence_for(before)
-            prepared = repo.prepare_refresh_detached(
-                before, evidence, expected_version=before.version, now=now, verify_refresh=lambda *_: True
+            refresh_evidence = evidence_for(before)
+            refresh_prepared = repo.prepare_refresh_detached(
+                before, refresh_evidence, expected_version=before.version, now=now, verify_refresh=lambda *_: True
             )
         elif operation == "release":
             evidence = release_proof(before, now).model_copy(
                 update={"outcome": "NO_BROKER_EFFECT_CONFIRMED", "delivery_disposition": "NEVER_ISSUED"}
             )
-            arguments = dict(
+            release_arguments = dict(
                 expected_version=before.version,
                 now=now,
                 reservation_id=before.reservations[0].reservation_id,
                 action="RELEASE_RECONCILED",
                 release_evidence=evidence,
             )
-            prepared = repo.prepare_transition_detached(before, **arguments, verify_release=lambda *_: True)
+            release_prepared = repo.prepare_transition_detached(
+                before, **release_arguments, verify_release=lambda *_: True
+            )
         with pytest.raises(ValueError, match="CAPACITY_COMMIT"):
             async with db.transaction():
                 if operation == "parent":
+                    assert candidate is not None and kwargs is not None
                     await repo.prepare_parent_in_transaction(db, candidate_repository=candidate, **kwargs)
                 elif operation == "refresh":
+                    assert refresh_evidence is not None and refresh_prepared is not None
                     await repo.refresh_in_transaction(
-                        db, evidence, expected_version=before.version, now=now, prepared=prepared
+                        db, refresh_evidence, expected_version=before.version, now=now, prepared=refresh_prepared
                     )
                 elif operation == "dispatch":
                     await repo.transition_in_transaction(
@@ -529,7 +542,9 @@ def test_delayed_capacity_write_crossing_deadline_rolls_back(operation, monkeypa
                         action="MARK_DISPATCHED",
                     )
                 else:
-                    await repo.transition_in_transaction(db, prepared=prepared, **arguments)
+                    assert operation == "release"
+                    assert release_prepared is not None and release_arguments is not None
+                    await repo.transition_in_transaction(db, prepared=release_prepared, **release_arguments)
         assert wrote == [True], "fault must happen after the tentative database update"
         assert _ledger(db.capacity[before.account_id]) == before
 

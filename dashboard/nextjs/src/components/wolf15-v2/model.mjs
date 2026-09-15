@@ -64,7 +64,7 @@ export function precisionDelta(data) {
 export function list(o,key='items') { const d=payload(o);return Array.isArray(d?.[key])?d[key]:[]; }
 export function filterPairs(items,query='',filter='all') {
   return items.filter(p=>String(p.symbol||'').toLowerCase().includes(query.toLowerCase()) &&
-    (filter==='all'||filter==='wait'&&String(p.lifecycleState||'').startsWith('WAIT')||filter==='no-trade'&&p.lifecycleState==='NO_TRADE'||filter==='stale'&&p.quality==='STALE'));
+    (filter==='all'||filter==='hold'&&p.lifecycleState==='HOLD'||filter==='no-trade'&&p.lifecycleState==='NO_TRADE'||filter==='stale'&&p.quality==='STALE'));
 }
 export function parseRoute(hash) {
   const [slug,search='']=String(hash||'').replace(/^#?\/?/,'').split('?');

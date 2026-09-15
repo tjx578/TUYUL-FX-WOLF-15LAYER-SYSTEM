@@ -90,7 +90,9 @@ def test_matching_but_stale_pair():
     candles = [bar(), bar(True, close=1.2)]
     for candle in candles:
         for key in ("open_time", "close_time", "received_at_utc"):
-            candle[key] -= timedelta(hours=2)
+            value = candle[key]
+            assert isinstance(value, datetime)
+            candle[key] = value - timedelta(hours=2)
     result = compare(candles)
     assert result["reason"] == "REST_STALE_CLOSED_H1"
     assert result["drifted"] is False
@@ -115,6 +117,7 @@ def test_explicit_utc_timestamp_representations(representation):
     for candle in candles:
         for key in ("open_time", "close_time", "received_at_utc"):
             value = candle[key]
+            assert isinstance(value, datetime)
             candle[key] = value.isoformat() if representation == "iso" else value.timestamp()
     assert compare(candles)["comparable"] is True
 

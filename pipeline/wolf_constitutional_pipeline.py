@@ -4240,8 +4240,11 @@ class WolfConstitutionalPipeline:
     def _optional_int_from_mapping(source: dict[str, Any] | None, key: str) -> int | None:
         if not isinstance(source, dict):
             return None
+        value = source.get(key)
+        if value is None:
+            return None
         try:
-            return int(source.get(key))
+            return int(value)
         except (TypeError, ValueError):
             return None
 
@@ -4616,7 +4619,8 @@ class WolfConstitutionalPipeline:
             except (TypeError, ValueError):
                 return 0.0
 
-        scope_config = report.get("scope_config") if isinstance(report.get("scope_config"), dict) else {}
+        scope_value = report.get("scope_config")
+        scope_config = scope_value if isinstance(scope_value, dict) else {}
         clean_block_seconds = max(
             1.0,
             _number(report.get("clean_block_seconds") or scope_config.get("clean_block_seconds") or 300.0),
@@ -7708,11 +7712,14 @@ class WolfConstitutionalPipeline:
         get_tick_timestamp = getattr(context_bus, "get_tick_timestamp", None)
         if tick_timestamp is None and callable(get_tick_timestamp):
             tick_timestamp = _coerce_timestamp_to_epoch(get_tick_timestamp(symbol))
+        # LiveContextBus.get_feed_timestamp returns float | None; retain optional adapter lookup.
         feed_timestamp_fn = getattr(context_bus, "get_feed_timestamp", None)
         feed_timestamp = (
             tick_timestamp
             if tick_timestamp is not None
-            else (feed_timestamp_fn(symbol) if callable(feed_timestamp_fn) else None)
+            else (
+                cast(Callable[[str], float | None], feed_timestamp_fn)(symbol) if callable(feed_timestamp_fn) else None
+            )
         )
         try:
             feed_timestamp_value = float(feed_timestamp) if feed_timestamp is not None else None
@@ -8509,7 +8516,7 @@ class WolfConstitutionalPipeline:
             int(self._parse_env_float("MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE", 512.0)),
         )
         while len(transition_cache) > max_cache:
-            oldest = min(transition_cache, key=transition_cache.get)
+            oldest = min(transition_cache, key=transition_cache.__getitem__)
             transition_cache.pop(oldest, None)
 
         summary["latest_history"] = dict(latest)

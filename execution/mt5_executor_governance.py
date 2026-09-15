@@ -415,6 +415,14 @@ class MT5ExecutorGovernanceRepository:
             governance_kill_switch_reason = str(row["kill_switch_reason"])
             governance_version = int(row["governance_version"])
 
+            draining_to_shadow = current is ExecutorMode.DEMO and target is ExecutorMode.SHADOW
+            canary_commands_expired = 0
+            canary_windows_expired = 0
+            canary_windows_requiring_reconciliation = 0
+            governance_kill_switch_active = bool(row["kill_switch_active"])
+            governance_kill_switch_reason = str(row["kill_switch_reason"])
+            governance_version = int(row["governance_version"])
+
             previous = {
                 "execution_mode": current.value,
                 "mode_version": version,

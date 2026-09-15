@@ -79,6 +79,7 @@ class _FakeRedis:
     def __init__(self) -> None:
         super().__init__()
         self.values: dict[str, str] = {}
+        self._mode_lease_tokens: dict[str, str] = {}
         self.published: list[tuple[str, str]] = []
         self._pubsub = _FakePubSub()
 

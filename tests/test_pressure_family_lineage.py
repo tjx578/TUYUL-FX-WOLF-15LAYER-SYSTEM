@@ -141,7 +141,9 @@ def _decision_payload_with_lineage(**overrides):
 
 
 def test_lineage_survives_emission_round_trip():
-    out = build_signal_json_event(_decision_payload_with_lineage()).to_dict()
+    event = build_signal_json_event(_decision_payload_with_lineage())
+    assert event is not None
+    out = event.to_dict()
     assert out["source_family"] == "THROTTLE_PRESSURE_CANARY"
     assert out["source_stage"] == "SIGNAL_THROTTLE_INTEL"
     assert out["resolved_family"] == "NO_TRADE_PRESSURE_TELEMETRY_ONLY"
@@ -152,6 +154,8 @@ def test_lineage_absent_emits_null_consistent_with_other_optionals():
     payload = _decision_payload_with_lineage()
     for k in ("source_family", "source_stage", "resolved_family", "family_lineage_reason"):
         payload.pop(k)
-    out = build_signal_json_event(payload).to_dict()
+    event = build_signal_json_event(payload)
+    assert event is not None
+    out = event.to_dict()
     assert out["source_family"] is None
     assert out["resolved_family"] is None

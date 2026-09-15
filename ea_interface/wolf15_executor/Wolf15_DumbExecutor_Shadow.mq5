@@ -8,9 +8,12 @@
 
 input string InpBaseUrl             = "https://replace-me.up.railway.app";
 input string InpExecutorId          = "";
-input string InpCredentialFile      = "";
-input string InpExpectedAccountReferenceSha256 = "";
 input string InpCommandVerificationKeyId = "";
+// Windows local named-pipe endpoint served once by the credential broker.
+// Non-secret configuration: it is a pipe path, never a credential file, and
+// no credential may be stored on disk in plaintext.
+input string InpCredentialPipePath  = "";
+input string InpExpectedAccountReferenceSha256 = "";
 input string InpExpectedAccountId   = "";
 input string InpLoginHash           = "";
 input string InpExpectedBrokerServer= "";
@@ -22,6 +25,9 @@ input int    InpRecoveryRetrySeconds= 5;
 input bool   InpExecutionEnabled    = false;
 input bool   InpRestartDrillHoldAfterDurableSave = false;
 
+#define W15_CREDENTIAL_SCHEMA "wolf15.runtime_credentials.v1"
+#define W15_CREDENTIAL_HEADER_BYTES 8
+#define W15_CREDENTIAL_MAX_BYTES 4096
 #define W15_PROTOCOL "wolf15.mt5.exec.v1"
 #define W15_VERSION  "0.22-shadow-acceptance-v1"
 #define W15_SIGNED_WIRE "wolf15.mt5.exec.signed-bytes.v2"
@@ -40,9 +46,6 @@ input bool   InpRestartDrillHoldAfterDurableSave = false;
 #define W15_GOLDEN_SIGNATURE "base64url:TYmshMY5I9eQhq7Qyi-UlIl7Q0j4e3ZfkribNBwxKIg"
 #define W15_SYMBOL_COUNT 30
 #define W15_SYMBOL_UNIVERSE "WOLF15_XM_30_V1"
-#define W15_CREDENTIAL_SCHEMA "wolf15.runtime_credentials.v1"
-#define W15_CREDENTIAL_HEADER_BYTES 8
-#define W15_CREDENTIAL_MAX_BYTES 4096
 
 string W15_CANONICAL_SYMBOLS[W15_SYMBOL_COUNT] =
 {
@@ -64,16 +67,31 @@ string W15_BROKER_SYMBOLS[W15_SYMBOL_COUNT] =
    "CADJPY", "CADCHF", "CHFJPY", "GOLD", "SILVER"
 };
 
-datetime g_last_poll = 0;
-datetime g_last_heartbeat = 0;
-bool     g_registered = false;
-string   g_last_command_id = "";
-string   g_quarantined_command_id = "";
-datetime g_last_recovery = 0;
-bool     g_recovery_blocked = false;
+ulong    g_last_poll_ms = 0;
+ulong    g_last_heartbeat_ms = 0;
+// Runtime-only credential material. Never an input, never persisted.
 string   g_executor_token = "";
 string   g_command_verification_key_id = "";
 string   g_command_verification_key = "";
+bool     g_registered = false;
+string   g_last_command_id = "";
+string   g_quarantined_command_id = "";
+ulong    g_last_recovery_ms = 0;
+bool     g_recovery_blocked = false;
+
+//+------------------------------------------------------------------+
+// Shared by both active OnInit handlers. The DEMO build renames this
+// file's OnInit to *Unused, so validation placed only there would not
+// run in the DEMO artifact and the two artifacts could drift apart.
+bool ValidateSchedulerIntervals()
+{
+   if(InpPollIntervalSeconds < 1 || InpHeartbeatSeconds < 1 || InpRecoveryRetrySeconds < 1)
+   {
+      Print("[W15] Scheduler intervals must be at least one second.");
+      return false;
+   }
+   return true;
+}
 
 struct PendingReportState
 {
@@ -462,8 +480,10 @@ bool IsLowerHexExact(const string value, const int exact_length)
       return false;
    for(int index = 0; index < exact_length; index++)
    {
-      ushort ch = StringGetCharacter(value, index);
-      if(!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')))
+      ushort character = StringGetCharacter(value, index);
+      bool digit = (character >= '0' && character <= '9');
+      bool lower = (character >= 'a' && character <= 'f');
+      if(!digit && !lower)
          return false;
    }
    return true;
@@ -478,11 +498,14 @@ void ClearRuntimeCredentials()
 }
 
 //+------------------------------------------------------------------+
+// Reads one bounded, canonical credential envelope from the local named pipe.
+// The server is a single-use, same-user-ACL broker; this side re-validates the
+// frame and every binding before any credential reaches runtime memory.
 bool LoadRuntimeCredentials(string &reason)
 {
    ClearRuntimeCredentials();
    reason = "";
-   if(StringFind(InpCredentialFile, "\\\\.\\pipe\\") != 0)
+   if(StringFind(InpCredentialPipePath, "\\\\.\\pipe\\") != 0)
    {
       reason = "CREDENTIAL_PIPE_UNAVAILABLE";
       return false;
@@ -496,7 +519,7 @@ bool LoadRuntimeCredentials(string &reason)
    }
 
    ResetLastError();
-   int handle = FileOpen(InpCredentialFile, FILE_READ | FILE_BIN | FILE_ANSI, 0, CP_UTF8);
+   int handle = FileOpen(InpCredentialPipePath, FILE_READ | FILE_BIN | FILE_ANSI, 0, CP_UTF8);
    if(handle == INVALID_HANDLE)
    {
       reason = "CREDENTIAL_PIPE_UNAVAILABLE";
@@ -515,8 +538,8 @@ bool LoadRuntimeCredentials(string &reason)
    string header_text = CharArrayToString(header, 0, W15_CREDENTIAL_HEADER_BYTES, CP_UTF8);
    for(int index = 0; index < W15_CREDENTIAL_HEADER_BYTES; index++)
    {
-      ushort ch = StringGetCharacter(header_text, index);
-      if(ch < '0' || ch > '9')
+      ushort character = StringGetCharacter(header_text, index);
+      if(character < '0' || character > '9')
       {
          FileClose(handle);
          reason = "CREDENTIAL_SCHEMA_INVALID";
@@ -534,10 +557,10 @@ bool LoadRuntimeCredentials(string &reason)
    uchar payload[];
    ArrayResize(payload, payload_length);
    uint payload_read = FileReadArray(handle, payload, 0, payload_length);
-   if(payload_read != payload_length)
+   if(payload_read != (uint)payload_length)
    {
       FileClose(handle);
-      reason = "CREDENTIAL_SCHEMA_INVALID";
+      reason = "CREDENTIAL_PAYLOAD_TRUNCATED";
       return false;
    }
    uchar trailing[];
@@ -546,7 +569,7 @@ bool LoadRuntimeCredentials(string &reason)
    FileClose(handle);
    if(trailing_read != 0)
    {
-      reason = "CREDENTIAL_SCHEMA_INVALID";
+      reason = "CREDENTIAL_TRAILING_BYTES";
       return false;
    }
 
@@ -562,6 +585,8 @@ bool LoadRuntimeCredentials(string &reason)
    string verification_key_id = JsonValue(payload_json, "verification_key_id");
    string executor_token = JsonValue(payload_json, "executor_token");
    string verification_material = JsonValue(payload_json, "verification_material");
+   // Re-serialising and comparing byte-for-byte enforces the exact ordered field
+   // set: any missing, reordered, duplicated or unknown field breaks equality.
    string canonical = "{\"schema\":\"" + schema +
                       "\",\"executor_id\":\"" + executor_id +
                       "\",\"account_reference_sha256\":\"" + account_reference_sha256 +
@@ -578,6 +603,9 @@ bool LoadRuntimeCredentials(string &reason)
       reason = "EXECUTOR_BINDING_MISMATCH";
       return false;
    }
+   // Local envelope-binding consistency only. This is an unkeyed digest of a
+   // low-entropy reference and is NOT account identity authority: Channel B
+   // w15ab:v1 remains the only account identity authority (blocker B-B16).
    if(account_reference_sha256 != InpExpectedAccountReferenceSha256 ||
       !IsLowerHexExact(account_reference_sha256, 64))
    {
@@ -591,10 +619,14 @@ bool LoadRuntimeCredentials(string &reason)
       return false;
    }
    uchar verification_key[];
-   if(!IsLowerHexExact(executor_token, 64) ||
-      !TaggedHexToBytes(verification_material, "hex:", 32, verification_key))
+   if(!IsLowerHexExact(executor_token, 64))
    {
-      reason = "CREDENTIAL_SCHEMA_INVALID";
+      reason = "EXECUTOR_TOKEN_SHAPE_INVALID";
+      return false;
+   }
+   if(!TaggedHexToBytes(verification_material, "hex:", 32, verification_key))
+   {
+      reason = "VERIFICATION_MATERIAL_SHAPE_INVALID";
       return false;
    }
 
@@ -1908,19 +1940,15 @@ int OnInit()
       Print("[W15] This build is SHADOW ONLY. Set InpExecutionEnabled=false.");
       return INIT_PARAMETERS_INCORRECT;
    }
-   if(InpRecoveryRetrySeconds < 1)
-   {
-      Print("[W15] Recovery retry interval must be positive.");
+   if(!ValidateSchedulerIntervals())
       return INIT_PARAMETERS_INCORRECT;
-   }
    const bool https_endpoint = (StringFind(InpBaseUrl, "https://") == 0);
    const int executor_id_length = StringLen(InpExecutorId);
    const int login_hash_length = StringLen(InpLoginHash);
    if(!https_endpoint || executor_id_length < 30 || login_hash_length != 71)
    {
       PrintFormat(
-         "[W15] Invalid endpoint/binding shape: https=%s "
-         "executor_id_length=%d login_hash_length=%d",
+         "[W15] Invalid endpoint shape: https=%s executor_id_length=%d login_hash_length=%d",
          https_endpoint ? "true" : "false",
          executor_id_length,
          login_hash_length
@@ -1931,23 +1959,17 @@ int OnInit()
    if(!LoadRuntimeCredentials(credential_reason))
    {
       PrintFormat("[W15] Credential loading rejected reason=%s", credential_reason);
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
-   const int executor_token_length = StringLen(g_executor_token);
-   const int verification_key_id_length = StringLen(g_command_verification_key_id);
-   const int verification_key_length = StringLen(g_command_verification_key);
+   // Structural re-check of what actually reached runtime memory. The server
+   // stays the authentication authority; the EA never derives the bearer token.
    uchar verification_key[];
-   if(executor_token_length != 64 ||
+   if(!IsLowerHexExact(g_executor_token, 64) ||
       !IsSafeWireIdentifier(g_command_verification_key_id) ||
       !TaggedHexToBytes(g_command_verification_key, "hex:", 32, verification_key))
    {
-      PrintFormat(
-         "[W15] Invalid runtime credential shape: token_length=%d "
-         "verification_key_id_length=%d verification_key_length=%d",
-         executor_token_length,
-         verification_key_id_length,
-         verification_key_length
-      );
+      Print("[W15] Runtime credential shape rejected.");
       ClearRuntimeCredentials();
       return INIT_PARAMETERS_INCORRECT;
    }
@@ -2001,33 +2023,33 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnTimer()
 {
-   datetime now = TimeCurrent();
+   const ulong now_ms = GetTickCount64();
    if(!g_registered)
    {
       g_registered = RegisterExecutor();
       return;
    }
-   if(now - g_last_heartbeat >= InpHeartbeatSeconds)
+   if(now_ms - g_last_heartbeat_ms >= (ulong)InpHeartbeatSeconds * 1000ULL)
    {
       SendHeartbeat();
-      g_last_heartbeat = now;
+      g_last_heartbeat_ms = now_ms;
    }
    if(g_recovery_blocked)
       return;
    if(PendingReportExists())
    {
-      if(now - g_last_recovery >= InpRecoveryRetrySeconds)
+      if(now_ms - g_last_recovery_ms >= (ulong)InpRecoveryRetrySeconds * 1000ULL)
       {
          RecoverPendingReport();
-         g_last_recovery = now;
+         g_last_recovery_ms = now_ms;
       }
       if(g_recovery_blocked || PendingReportExists())
          return;
    }
-   if(now - g_last_poll >= InpPollIntervalSeconds)
+   if(now_ms - g_last_poll_ms >= (ulong)InpPollIntervalSeconds * 1000ULL)
    {
       PollOneCommand();
-      g_last_poll = now;
+      g_last_poll_ms = now_ms;
    }
 }
 

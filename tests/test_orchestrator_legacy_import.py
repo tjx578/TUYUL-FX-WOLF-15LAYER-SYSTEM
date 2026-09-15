@@ -169,6 +169,12 @@ class ModelRedis:
         raise AssertionError("unexpected modeled command")
 
 
+def _required_state(client: ModelRedis) -> bytes:
+    state = client.get(KEYS["state"])
+    assert state is not None, "expected committed state"
+    return state
+
+
 def backend() -> tuple[ModelRedis, bytes, bytes, dict[str, bytes]]:
     archive, manifest = prepared()
     _, raws = load_prepared(manifest, archive, now=NOW)
@@ -246,7 +252,7 @@ def test_apply_one_set_keeps_kill_heartbeat_and_real_fence() -> None:
     assert client.get(KEYS["kill"]) == raws["kill"]
     assert client.get(KEYS["heartbeat"]) == raws["heartbeat"]
     assert client.published == []
-    state = strict_json(client.get(KEYS["state"]))
+    state = strict_json(_required_state(client))
     assert state["owner_id"] == "legacy-import-" + OPERATION
     assert state["fence_generation"] == client.counter == 1
     assert state["legacy_import"]["old_state_sha256"] == digest(raws["state"])
@@ -286,7 +292,7 @@ def test_reply_loss_is_ambiguous_and_offline_reconciliation_does_not_retry() -> 
     result = apply_once(client, manifest, archive, now=NOW)
     assert result["status"] == "AMBIGUOUS"
     assert client.state_writes == 1
-    observation = client.get(KEYS["state"])
+    observation = _required_state(client)
     assert reconcile_observation(manifest, archive, observation)["status"] == "COMMITTED_PROVENANCE_OBSERVED"
     assert apply_once(client, manifest, archive, now=NOW)["reason"] == "FRESH_BYTES_MISMATCH"
     assert client.state_writes == 1
@@ -310,7 +316,7 @@ def test_release_failure_does_not_hide_committed_result() -> None:
 def test_successor_full_start_shutdown_and_later_publication_retain_provenance(monkeypatch: pytest.MonkeyPatch) -> None:
     client, archive, manifest, _ = backend()
     assert apply_once(client, manifest, archive, now=NOW)["status"] == "COMMITTED"
-    original = strict_json(client.get(KEYS["state"]))["legacy_import"]
+    original = strict_json(_required_state(client))["legacy_import"]
     owner = RedisFencedOwnership(
         client, owner_id="real-successor", lease_key=KEYS["lease"], generation_key=KEYS["generation"], ttl_seconds=30
     )
@@ -322,12 +328,12 @@ def test_successor_full_start_shutdown_and_later_publication_retain_provenance(m
 
     with pytest.raises(KeyboardInterrupt):
         manager.run_forever(on_started=stop)
-    terminal = strict_json(client.get(KEYS["state"]))
+    terminal = strict_json(_required_state(client))
     assert terminal["event"] == "SHUTDOWN"
     assert terminal["legacy_import"] == original
     assert terminal["fence_generation"] == 2 and terminal["state_revision"] == 3
     assert (
-        reconcile_observation(manifest, archive, client.get(KEYS["state"]))["status"] == "COMMITTED_PROVENANCE_OBSERVED"
+        reconcile_observation(manifest, archive, _required_state(client))["status"] == "COMMITTED_PROVENANCE_OBSERVED"
     )
     later_owner = RedisFencedOwnership(
         client, owner_id="later-successor", lease_key=KEYS["lease"], generation_key=KEYS["generation"], ttl_seconds=30
@@ -337,14 +343,14 @@ def test_successor_full_start_shutdown_and_later_publication_retain_provenance(m
     assert later.hydrate_committed_state() is True
     later.publish_state("MODE_CHANGED")
     later.publish_state("HEARTBEAT")
-    assert strict_json(client.get(KEYS["state"]))["legacy_import"] == original
+    assert strict_json(_required_state(client))["legacy_import"] == original
 
 
 @pytest.mark.parametrize("value", [None, {}, {"schema": "forged"}])
 def test_malformed_provenance_fails_full_run_before_state_write(value: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     client, archive, manifest, _ = backend()
     apply_once(client, manifest, archive, now=NOW)
-    state = strict_json(client.get(KEYS["state"]))
+    state = strict_json(_required_state(client))
     state["legacy_import"] = value
     client.values[KEYS["state"]] = encoded(state)
     before = client.values.copy()
@@ -368,6 +374,7 @@ def test_mutated_in_memory_provenance_rejected_before_publication() -> None:
     assert owner.acquire()
     manager = StateManager(redis_client=client, ownership=owner)  # type: ignore[arg-type]
     manager.hydrate_committed_state()
+    assert manager._legacy_import is not None  # noqa: SLF001
     manager._legacy_import["archive_sha256"] = "bad"  # noqa: SLF001
     before = client.values.copy()
     with pytest.raises(ImportHoldError):
@@ -604,7 +611,7 @@ def test_single_connection_wrapper_blocks_reconnect_after_failure() -> None:
 def test_ordinary_v2_hydration_size_boundary(extra_bytes: int) -> None:
     client, archive, manifest, _ = backend()
     apply_once(client, manifest, archive, now=NOW)
-    state = strict_json(client.get(KEYS["state"]))
+    state = strict_json(_required_state(client))
     del state["legacy_import"]
     state["details"] = ""
     state["details"] = "x" * (MAX_BYTES - len(encoded(state)) + extra_bytes)
@@ -629,7 +636,7 @@ def test_ordinary_v2_hydration_size_boundary(extra_bytes: int) -> None:
 def test_ordinary_v2_rejects_duplicate_and_nonfinite_json(malformation: str) -> None:
     client, archive, manifest, _ = backend()
     apply_once(client, manifest, archive, now=NOW)
-    state = strict_json(client.get(KEYS["state"]))
+    state = strict_json(_required_state(client))
     del state["legacy_import"]
     raw = encoded(state)
     suffix = {

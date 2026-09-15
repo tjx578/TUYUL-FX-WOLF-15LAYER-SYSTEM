@@ -15,6 +15,7 @@ from execution.mt5_demo_canary_authority_packet import (
     emitted_command_content_sha256,
 )
 from execution.mt5_engineering_demo_canary import EngineeringDemoCanaryRequest, build_engineering_demo_canary_command
+from tests.reconciliation_fixtures import configure_test_keys, fixture_attestation, fixture_identity
 from tests.test_mt5_engineering_demo_canary import SECRET, _executor, _snapshot
 
 NOW = datetime(2026, 9, 5, 1, 0, tzinfo=UTC)
@@ -58,7 +59,8 @@ def _packet_values() -> dict[str, object]:
     return values
 
 
-def test_frozen_packet_command_id_reaches_signed_command() -> None:
+def test_frozen_packet_command_id_reaches_signed_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_test_keys(monkeypatch)
     packet = DemoCanaryAuthorityPacketV1.model_validate(_packet_values())
     executor = _executor()
     snapshot = _snapshot()
@@ -94,12 +96,15 @@ def test_frozen_packet_command_id_reaches_signed_command() -> None:
         issued_at_utc=packet.issued_at_utc,
         expires_at_utc=packet.expires_at_utc,
     )
+    identity = fixture_identity(snapshot)
     command = build_engineering_demo_canary_command(
         request,
         executor=executor,
         snapshot=snapshot,
         signing_secret=SECRET,
         signing_key_id="fixture-key",
+        reconciliation_identity=identity,
+        reconciliation_evidence=fixture_attestation(identity),
     )
     assert command.command_id == COMMAND_ID
     assert command.idempotency_key == packet.idempotency_key

@@ -798,6 +798,7 @@ def run() -> None:
         details_provider=supervisor.details,
     )
     try:
+
         def request_stop(signum: int, frame: Any) -> None:
             del frame
             _ORCHESTRATOR_READY.clear()

@@ -21,6 +21,27 @@ import uuid
 from pathlib import Path
 
 
+def validate_orchestrator_dependency_failure(exit_code: int, logs: str, readiness: list[dict]) -> dict:
+    """Require the fenced owner to fail closed when Redis cannot be reached.
+
+    The owner can exit before its daemon health server listens. A missing HTTP
+    response is not readiness evidence; the exit and dependency failure must
+    still be verified, and every response actually observed must reject ready.
+    """
+    assert exit_code != 0, "orchestrator must fail on unavailable ownership storage"
+    assert "Orchestrator fatal error" in logs
+    assert "redis.exceptions.ConnectionError" in logs
+    assert "acquired ownership generation=" not in logs
+    for response in readiness:
+        assert response["status"] == 503 and response["body"]["status"] == "not_ready"
+    return {
+        "exit_code": exit_code,
+        "failure": "redis_connection_error_before_ownership",
+        "readiness_observations": readiness,
+        "http_readiness": "REJECTED" if readiness else "NOT_OBSERVED_BEFORE_EXIT",
+    }
+
+
 def child(mode: str) -> None:
     from core.health_probe import HealthProbe
     from startup.graceful_shutdown import GracefulShutdown
@@ -156,6 +177,8 @@ def docker(*args: str, timeout: int = 180) -> str:
     if result.returncode:
         # Never include docker invocation/env or raw container log in exceptions.
         raise RuntimeError(f"docker {args[0]} failed (exit {result.returncode})")
+    if args[0] == "logs":
+        return (result.stdout + result.stderr).strip()
     return result.stdout.strip()
 
 
@@ -320,16 +343,30 @@ print(json.dumps({'status':status,'body':json.loads(s.read())}))
                 docker("stop", "--time", "35", failed_router, timeout=45)
         orchestrator = launch(
             ["bash", "deploy/railway/start_orchestrator.sh"],
-            {
-                "DEGRADED_HOLD_TIMEOUT_SEC": "8",
-                "REDIS_RETRY_ATTEMPTS": "0",
-            },
+            {"REDIS_RETRY_ATTEMPTS": "0"},
         )
-        response = until(lambda: request(orchestrator, 8000, "/readyz"))
-        assert response["status"] == 503 and response["body"]["status"] == "not_ready"
-        until(lambda: exited(orchestrator), seconds=45)
-        assert json.loads(docker("inspect", orchestrator))[0]["State"]["ExitCode"] != 0
-        receipt["checks"]["orchestrator_actual_entrypoint_dependency_failure"] = response
+        readiness_observations: list[dict] = []
+
+        def orchestrator_exited() -> bool:
+            if exited(orchestrator):
+                return True
+            try:
+                response = request(orchestrator, 8000, "/readyz")
+            except (RuntimeError, ValueError):
+                # Fail-fast ownership acquisition can exit before the HTTP
+                # daemon binds; exit validation below must still prove why.
+                return exited(orchestrator)
+            assert response["status"] == 503 and response["body"]["status"] == "not_ready"
+            readiness_observations.append(response)
+            return exited(orchestrator)
+
+        until(orchestrator_exited, seconds=45)
+        orchestrator_exit = json.loads(docker("inspect", orchestrator))[0]["State"]["ExitCode"]
+        receipt["checks"]["orchestrator_actual_entrypoint_dependency_failure"] = (
+            validate_orchestrator_dependency_failure(
+                orchestrator_exit, docker("logs", orchestrator), readiness_observations
+            )
+        )
         legacy = launch(["python", "scripts/ci/p1_runtime_acceptance.py", "--child", "legacy-sink"])
         until(lambda: exited(legacy), seconds=30)
         assert json.loads(docker("inspect", legacy))[0]["State"]["ExitCode"] == 0

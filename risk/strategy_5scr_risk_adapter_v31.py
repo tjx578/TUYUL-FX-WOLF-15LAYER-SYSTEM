@@ -9,6 +9,7 @@ import json
 from collections.abc import Callable
 from decimal import Decimal
 from fractions import Fraction
+from typing import Literal
 
 from analysis.strategy_5scr_net_geometry_v31 import solve_net_geometry_v31
 from contracts.strategy_5scr_risk_adapter_v31 import (
@@ -36,7 +37,7 @@ def size_parent_v31(
     request = ParentSizingRequestV31.model_validate(request.model_dump())
     digest = parent_sizing_request_hash_v31(request)
 
-    def reject(reason: str, status="WAIT"):
+    def reject(reason: str, status: Literal["WAIT", "REJECTED"] = "WAIT") -> ParentSizingResultV31:
         return ParentSizingResultV31(status=status, reason=reason, request_hash=digest)
 
     if verify_inputs is None:

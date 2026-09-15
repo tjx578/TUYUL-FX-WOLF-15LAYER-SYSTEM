@@ -33,6 +33,8 @@ from contracts.mt5_execution_protocol import (
     verify_execution_command,
     verify_signed_execution_envelope_with_root,
 )
+from execution.broker_reconciliation_evidence import ReconciliationEvidenceError
+from execution.broker_reconciliation_repository import load_evidence
 from execution.mt5_demo_canary_authority_packet import (
     DemoCanaryAuthorityPacketV1,
     IssuanceDisposition,
@@ -653,6 +655,10 @@ class MT5CommandRepository:
                           'canary_purpose'
                       )
                 ) AS canary_lineage_columns,
+                to_regclass('public.executor_reconciliation_bindings') IS NOT NULL
+                    AND to_regclass('public.broker_reconciliation_evidence') IS NOT NULL
+                    AND to_regclass('wolf15_audit.backend_account_identity_v1') IS NOT NULL
+                    AS reconciliation_evidence_schema,
                 EXISTS (
                     SELECT 1 FROM pg_constraint AS c
                     WHERE c.conrelid = 'public.execution_commands'::regclass
@@ -726,6 +732,35 @@ class MT5CommandRepository:
             return {"ready": False, "reason": "D0 control schema status query returned no row"}
         details = dict(row)
         return {"ready": all(bool(value) for value in details.values()), **details}
+
+    async def load_engineering_reconciliation(
+        self, snapshot: AccountSnapshotV1
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        self._require_database()
+        async with self._pg.transaction() as connection:
+            return await load_evidence(connection, executor_id=snapshot.executor_id, snapshot=snapshot)
+
+    @staticmethod
+    async def _require_engineering_reconciliation(
+        connection: Any, command: ExecutionCommandV1, snapshot: AccountSnapshotV1
+    ) -> None:
+        guards = command.guards
+        if (
+            not isinstance(guards, EngineeringDemoCanaryGuards)
+            or guards.reconciliation_evidence_id is None
+            or guards.reconciliation_evidence_sha256 is None
+        ):
+            raise CommandConflictError("RECONCILIATION_EVIDENCE_MISSING")
+        try:
+            await load_evidence(
+                connection,
+                executor_id=command.executor_binding.executor_id,
+                snapshot=snapshot,
+                evidence_id=guards.reconciliation_evidence_id,
+                expected_digest=guards.reconciliation_evidence_sha256,
+            )
+        except ReconciliationEvidenceError as exc:
+            raise CommandConflictError(str(exc)) from exc
 
     async def latest_snapshot(self, executor_id: UUID | str) -> AccountSnapshotV1 | None:
         self._require_database()
@@ -1036,6 +1071,8 @@ class MT5CommandRepository:
                     raise CommandConflictError("authoritative direct broker reconciliation is stale")
             elif not snapshot.broker_ledger_reconciled:
                 raise CommandConflictError("engineering canary broker ledger is not reconciled")
+
+            await self._require_engineering_reconciliation(connection, command, snapshot)
             if snapshot.open_positions or snapshot.pending_orders:
                 raise CommandConflictError("engineering canary requires a flat account")
             symbol_capabilities = [
@@ -1145,23 +1182,28 @@ class MT5CommandRepository:
                 ):
                     raise CommandConflictError("command identity already exists with different content")
                 return command, IssuanceDisposition.ALREADY_ISSUED
-            await connection.execute(
-                """
-                INSERT INTO engineering_demo_canary_windows (
-                    canary_id, command_id, executor_id, account_id,
-                    broker_server, canonical_symbol, broker_symbol,
-                    state, max_broker_effects, expires_at
-                ) VALUES ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, 'QUEUED', 1, $8)
-                """,
-                source.canary_id,
-                str(command.command_id),
-                str(binding.executor_id),
-                binding.account_id,
-                binding.broker_server,
-                source.approved_canonical_symbol,
-                source.approved_broker_symbol,
-                command.expires_at_utc,
-            )
+            try:
+                await connection.execute(
+                    """
+                    INSERT INTO engineering_demo_canary_windows (
+                        canary_id, command_id, executor_id, account_id,
+                        broker_server, canonical_symbol, broker_symbol,
+                        state, max_broker_effects, expires_at
+                    ) VALUES ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, 'QUEUED', 1, $8)
+                    """,
+                    source.canary_id,
+                    str(command.command_id),
+                    str(binding.executor_id),
+                    binding.account_id,
+                    binding.broker_server,
+                    source.approved_canonical_symbol,
+                    source.approved_broker_symbol,
+                    command.expires_at_utc,
+                )
+            except Exception as exc:
+                if "uq_engineering_demo_canary_single_open" in str(exc):
+                    raise CommandConflictError("another engineering canary window is already open") from exc
+                raise
         return command, disposition
 
     async def enqueue_frozen_engineering_demo_canary_command(
@@ -1329,11 +1371,11 @@ class MT5CommandRepository:
             if (
                 not snapshot.trade_allowed
                 or not snapshot.autotrading_enabled
-                or not snapshot.broker_ledger_reconciled
                 or snapshot.open_positions
                 or snapshot.pending_orders
             ):
-                raise CommandConflictError("engineering canary account is no longer reconciled and flat")
+                raise CommandConflictError("engineering canary account is no longer tradeable and flat")
+            await self._require_engineering_reconciliation(connection, command, snapshot)
             symbol_capabilities = [
                 item
                 for item in snapshot.symbols

@@ -13,7 +13,7 @@ from analysis.source_lineage_guard import (
 )
 
 
-def _report(*, age_seconds=60.0, source_clean_block_id="USDCAD_BLOCK_1", end_age_seconds=30.0):
+def _report(*, age_seconds=60.0, source_clean_block_id: str | None = "USDCAD_BLOCK_1", end_age_seconds=30.0):
     now = datetime(2026, 6, 26, 4, 0, tzinfo=UTC)
     latest_seen = now - timedelta(seconds=age_seconds)
     micro_end = now - timedelta(seconds=end_age_seconds)

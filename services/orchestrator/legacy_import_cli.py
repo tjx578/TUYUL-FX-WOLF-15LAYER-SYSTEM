@@ -58,6 +58,8 @@ def protected_parent(path: Path):
 
 
 def protected_read(path: Path) -> bytes:
+    if os.name != "posix" or not hasattr(os, "O_NOFOLLOW"):
+        raise ImportHoldError("PROTECTED_ARCHIVE_REQUIRES_POSIX")
     with protected_parent(path) as parent:
         descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
         try:
@@ -81,6 +83,8 @@ def protected_read(path: Path) -> bytes:
 def protected_write(path: Path, raw: bytes) -> None:
     if len(raw) > MAX_BYTES:
         raise ImportHoldError("OUTPUT_TOO_LARGE")
+    if os.name != "posix" or not hasattr(os, "O_NOFOLLOW"):
+        raise ImportHoldError("PROTECTED_ARCHIVE_REQUIRES_POSIX")
     with protected_parent(path) as parent:
         descriptor = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
         try:

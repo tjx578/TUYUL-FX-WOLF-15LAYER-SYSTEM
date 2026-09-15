@@ -454,8 +454,10 @@ class RedisContextReader:
         from context.price_drift import compare_closed_h1
 
         return compare_closed_h1(
-            symbol, self.get_candles(symbol, "H1", count=250),
-            self.get_latest_tick(symbol), max_drift_pips,
+            symbol,
+            self.get_candles(symbol, "H1", count=250),
+            self.get_latest_tick(symbol),
+            max_drift_pips,
         )
 
     # ── Internal helpers ──────────────────────────────────────

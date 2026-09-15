@@ -111,6 +111,7 @@ def test_payload_market_structure_pending_object():
     payload = _microboost_watch_payload(
         _summary(latest_direction=None), _fallback_gate(), continuation_entry=None, counter_entry=None
     )
+    assert payload is not None
     ms = payload["market_structure"]
     assert ms["structure_ready"] is False
     assert ms["structure_source"] == "CLEAN_BLOCK_CONTEXT"
@@ -122,6 +123,7 @@ def test_clean_block_watch_is_never_executable():
     payload = _microboost_watch_payload(
         _summary(latest_direction=None), _fallback_gate(), continuation_entry=None, counter_entry=None
     )
+    assert payload is not None
     assert payload["final_direction"] == "WAIT"
     assert payload["valid_for_execution"] is False
     assert payload["is_final_signal"] is False

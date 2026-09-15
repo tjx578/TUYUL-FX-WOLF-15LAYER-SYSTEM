@@ -51,13 +51,14 @@ class StreamPublisher:
         client = await self._ensure_redis()
         trim_len = maxlen if maxlen is not None else self._default_maxlen
 
-        message_id: str = await client.xadd(
+        raw_message_id = await client.xadd(
             name=stream,
             fields=fields,  # pyright: ignore[reportArgumentType]
             maxlen=trim_len,
             approximate=approximate,
         )
 
+        message_id = raw_message_id.decode("utf-8") if isinstance(raw_message_id, bytes) else raw_message_id
         logger.debug("Published: stream=%s id=%s", stream, message_id)
         return message_id
 

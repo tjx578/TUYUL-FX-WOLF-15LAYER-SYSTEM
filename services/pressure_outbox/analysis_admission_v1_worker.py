@@ -74,13 +74,12 @@ class StrategyAnalysisAdmissionRuntimeConfig:
     def from_env(cls, environ: Mapping[str, str] | None = None) -> StrategyAnalysisAdmissionRuntimeConfig:
         source = os.environ if environ is None else environ
         requested = _enabled(source.get("STRATEGY_5SCR_ANALYSIS_ADMISSION_V1_ENABLED"))
-        execution_plane_active = (
-            ExecutionPlaneFlags.from_env(source, strict=True).any_execution_reachable
-            or parse_execution_flag(
-                "STRATEGY_5SCR_EXECUTION_ENABLED",
-                source.get("STRATEGY_5SCR_EXECUTION_ENABLED"),
-                strict=True,
-            )
+        execution_plane_active = ExecutionPlaneFlags.from_env(
+            source, strict=True
+        ).any_execution_reachable or parse_execution_flag(
+            "STRATEGY_5SCR_EXECUTION_ENABLED",
+            source.get("STRATEGY_5SCR_EXECUTION_ENABLED"),
+            strict=True,
         )
         config = cls(
             enabled=requested,

@@ -10,7 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -249,16 +250,40 @@ class ProcessLocalIssuanceCapability:
         self._command_id = command_id
         self._max_commands = max_commands
         self._consumed = False
+        self._in_flight = False
 
     @property
     def consumed(self) -> bool:
         return self._consumed
 
+    def _validate_binding(self, packet: DemoCanaryAuthorityPacketV1, packet_sha256_value: str) -> None:
+        if (
+            packet_sha256_value.removeprefix("sha256:") != self._packet_sha256
+            or packet.command_id != self._command_id
+            or packet.max_commands != self._max_commands
+        ):
+            raise ProcessLocalIssuanceError("packet is outside the process-local issuance capability")
+
+    @contextmanager
+    def issuance_scope(self, packet: DemoCanaryAuthorityPacketV1, *, packet_sha256_value: str) -> Iterator[bool]:
+        """Bind and reserve before yielding to any synchronous or async issuer."""
+
+        self._validate_binding(packet, packet_sha256_value)
+        if self._consumed:
+            yield False
+            return
+        if self._in_flight:
+            raise ProcessLocalIssuanceError("process-local issuance is already in flight")
+        self._in_flight = True
+        try:
+            yield True
+        finally:
+            self._in_flight = False
+
     def mark_consumed(self, packet: DemoCanaryAuthorityPacketV1, *, packet_sha256_value: str) -> None:
         """Close the capability after the durable repository transaction succeeds."""
 
-        if packet_sha256_value.removeprefix("sha256:") != self._packet_sha256 or packet.command_id != self._command_id:
-            raise ProcessLocalIssuanceError("cannot consume capability for a different packet")
+        self._validate_binding(packet, packet_sha256_value)
         self._consumed = True
 
     def issue_once(
@@ -270,19 +295,14 @@ class ProcessLocalIssuanceCapability:
         issuer: Callable[[DemoCanaryAuthorityPacketV1], IssuanceDisposition],
     ) -> IssuanceDisposition:
         actual = validate_authority_packet(packet, expected_sha256=expected_sha256, now=now)
-        if (
-            actual != self._packet_sha256
-            or packet.command_id != self._command_id
-            or packet.max_commands != self._max_commands
-        ):
-            raise ProcessLocalIssuanceError("packet is outside the process-local issuance capability")
-        if self._consumed:
-            return IssuanceDisposition.ALREADY_ISSUED
-        result = issuer(packet)
-        if result not in (IssuanceDisposition.CREATED, IssuanceDisposition.ALREADY_ISSUED):
-            raise ProcessLocalIssuanceError("issuer returned an unsupported disposition")
-        self._consumed = True
-        return result
+        with self.issuance_scope(packet, packet_sha256_value=actual) as should_issue:
+            if not should_issue:
+                return IssuanceDisposition.ALREADY_ISSUED
+            result = issuer(packet)
+            if result not in (IssuanceDisposition.CREATED, IssuanceDisposition.ALREADY_ISSUED):
+                raise ProcessLocalIssuanceError("issuer returned an unsupported disposition")
+            self.mark_consumed(packet, packet_sha256_value=actual)
+            return result
 
 
 def load_and_validate_authority_packet(

@@ -28,6 +28,7 @@ from contracts.mt5_execution_protocol import (
     OrderInstruction,
     sign_execution_command,
 )
+from execution.broker_reconciliation_evidence import ReconciliationEvidenceError, digest, verify_attestation
 from execution.mt5_command_repository import CommandConflictError, MT5CommandRepository
 from execution.mt5_demo_canary_authority_packet import (
     DemoCanaryAuthorityPacketV1,
@@ -122,6 +123,8 @@ def build_engineering_demo_canary_command(
     snapshot: AccountSnapshotV1,
     signing_secret: str | bytes,
     signing_key_id: str,
+    reconciliation_identity: dict[str, Any] | None = None,
+    reconciliation_evidence: dict[str, Any] | None = None,
 ) -> ExecutionCommandV1:
     """Build one signed market command whose lineage can never count as strategy evidence."""
 
@@ -143,8 +146,16 @@ def build_engineering_demo_canary_command(
         raise EngineeringDemoCanaryError("account snapshot identity differs from operator approval")
     if not snapshot.trade_allowed or not snapshot.autotrading_enabled:
         raise EngineeringDemoCanaryError("DEMO terminal trading is not enabled")
-    if not snapshot.broker_ledger_reconciled:
-        raise EngineeringDemoCanaryError("direct broker ledger is not reconciled")
+    try:
+        if reconciliation_identity is None or reconciliation_evidence is None:
+            raise ReconciliationEvidenceError("RECONCILIATION_EVIDENCE_MISSING")
+        if reconciliation_identity.get("broker_server") != request.approved_broker_server:
+            raise ReconciliationEvidenceError("RECONCILIATION_BINDING_MISMATCH")
+        proof = verify_attestation(
+            reconciliation_evidence, identity=reconciliation_identity, snapshot=snapshot, now=datetime.now(UTC)
+        )
+    except ReconciliationEvidenceError as exc:
+        raise EngineeringDemoCanaryError(str(exc)) from exc
     if snapshot.open_positions or snapshot.pending_orders:
         raise EngineeringDemoCanaryError("engineering canary requires a flat DEMO account")
 
@@ -203,6 +214,8 @@ def build_engineering_demo_canary_command(
             time_in_force="GTC",
         ),
         "guards": EngineeringDemoCanaryGuards(
+            reconciliation_evidence_id=proof.evidence_id,
+            reconciliation_evidence_sha256=digest(reconciliation_evidence),
             expected_margin_mode=snapshot.margin_mode,
             account_snapshot_id=snapshot.snapshot_id,
             balance_snapshot=snapshot.balance,
@@ -269,40 +282,41 @@ class EngineeringDemoCanaryAuthorityV1:
 
         now = datetime.now(UTC)
         digest = validate_authority_packet(packet, expected_sha256=expected_packet_sha256, now=now)
-        if capability.consumed:
-            return {
-                "schema_version": ENGINEERING_DEMO_CANARY_MANIFEST_VERSION,
-                "authority_packet_sha256": digest,
-                "command_id": str(packet.command_id),
-                "disposition": IssuanceDisposition.ALREADY_ISSUED.value,
-            }
-        request = EngineeringDemoCanaryRequest(
-            canary_id=packet.canary_id,
-            command_id=packet.command_id,
-            idempotency_key=packet.idempotency_key,
-            executor_id=packet.executor_id,
-            approved_account_id=packet.account_reference,
-            approved_broker_server=packet.broker_server,
-            approved_canonical_symbol=packet.canonical_symbol,
-            approved_broker_symbol=packet.broker_symbol,
-            expected_account_snapshot_id=packet.expected_account_snapshot_id,
-            side=packet.side,
-            volume=float(packet.volume),
-            entry_price=float(packet.entry_price),
-            stop_loss=float(packet.stop_loss),
-            take_profit=float(packet.take_profit),
-            max_spread_points=packet.max_spread_points,
-            max_price_drift_points=packet.max_price_drift_points,
-            max_slippage_points=packet.max_slippage_points,
-            magic_number=packet.magic_number,
-            issued_at_utc=packet.issued_at_utc,
-            expires_at_utc=packet.expires_at_utc,
-        )
-        result = await self._issue_frozen_request(request, packet=packet, packet_sha256_value=digest)
-        capability.mark_consumed(packet, packet_sha256_value=digest)
-        result["authority_packet_sha256"] = digest
-        result["command_content_sha256"] = packet.command_content_sha256
-        return result
+        with capability.issuance_scope(packet, packet_sha256_value=digest) as should_issue:
+            if not should_issue:
+                return {
+                    "schema_version": ENGINEERING_DEMO_CANARY_MANIFEST_VERSION,
+                    "authority_packet_sha256": digest,
+                    "command_id": str(packet.command_id),
+                    "disposition": IssuanceDisposition.ALREADY_ISSUED.value,
+                }
+            request = EngineeringDemoCanaryRequest(
+                canary_id=packet.canary_id,
+                command_id=packet.command_id,
+                idempotency_key=packet.idempotency_key,
+                executor_id=packet.executor_id,
+                approved_account_id=packet.account_reference,
+                approved_broker_server=packet.broker_server,
+                approved_canonical_symbol=packet.canonical_symbol,
+                approved_broker_symbol=packet.broker_symbol,
+                expected_account_snapshot_id=packet.expected_account_snapshot_id,
+                side=packet.side,
+                volume=float(packet.volume),
+                entry_price=float(packet.entry_price),
+                stop_loss=float(packet.stop_loss),
+                take_profit=float(packet.take_profit),
+                max_spread_points=packet.max_spread_points,
+                max_price_drift_points=packet.max_price_drift_points,
+                max_slippage_points=packet.max_slippage_points,
+                magic_number=packet.magic_number,
+                issued_at_utc=packet.issued_at_utc,
+                expires_at_utc=packet.expires_at_utc,
+            )
+            result = await self._issue_frozen_request(request, packet=packet, packet_sha256_value=digest)
+            capability.mark_consumed(packet, packet_sha256_value=digest)
+            result["authority_packet_sha256"] = digest
+            result["command_content_sha256"] = packet.command_content_sha256
+            return result
 
     async def _issue_frozen_request(
         self,
@@ -314,8 +328,12 @@ class EngineeringDemoCanaryAuthorityV1:
         """Run existing runtime checks, then persist packet and command atomically."""
 
         now = datetime.now(UTC)
+        self._require_enabled()
         schema = await self._repository.d0_canary_control_schema_status()
         if not schema.get("ready"):
+            raise EngineeringDemoCanaryError("engineering canary database schema is not ready")
+        base_schema = await self._repository.engineering_demo_canary_schema_status()
+        if not base_schema.get("ready"):
             raise EngineeringDemoCanaryError("engineering canary database schema is not ready")
         executor = await self._repository.get_executor(request.executor_id)
         governance = await self._repository.governance_snapshot(request.executor_id)
@@ -332,12 +350,18 @@ class EngineeringDemoCanaryAuthorityV1:
         key_id = os.getenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", "").strip()
         if len(secret.encode("utf-8")) < 32 or not key_id:
             raise EngineeringDemoCanaryError("canary signing authority is unavailable")
+        try:
+            identity, evidence = await self._repository.load_engineering_reconciliation(snapshot)
+        except ReconciliationEvidenceError as exc:
+            raise EngineeringDemoCanaryError(str(exc)) from exc
         command = build_engineering_demo_canary_command(
             request,
             executor=executor,
             snapshot=snapshot,
             signing_secret=secret,
             signing_key_id=key_id,
+            reconciliation_identity=identity,
+            reconciliation_evidence=evidence,
         )
         try:
             disposition = await self._repository.enqueue_frozen_engineering_demo_canary_command(

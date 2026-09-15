@@ -106,7 +106,7 @@ def filesystem_inventory(root: str) -> tuple[dict[str, Any], bool]:
         for relative, full in names:
             info = os.lstat(full)
             owners_match = owners_match and info.st_uid == 1000 and info.st_gid == 1000
-            record = {"mode": stat.S_IMODE(info.st_mode)}
+            record: dict[str, int | str] = {"mode": stat.S_IMODE(info.st_mode)}
             if stat.S_ISLNK(info.st_mode):
                 record.update(type="symlink", target=os.readlink(full))
             elif stat.S_ISDIR(info.st_mode):

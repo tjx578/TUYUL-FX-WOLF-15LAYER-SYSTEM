@@ -60,13 +60,17 @@ def test_guard_detects_verifier_mutating_supplied_object(nested):
             object.__setattr__(body, "reevaluation_receipt_hash", "sha256:" + "f" * 64)
         return True
 
+    guarded = detached.guard_callback_v31(mutate)
+    assert guarded is not None
     with pytest.raises(ValueError, match="DETACHED_VERIFIER_INPUT_CHANGED"):
-        detached.guard_callback_v31(mutate)(request)
+        guarded(request)
 
 
 def test_guard_preserves_rejection_and_missing_verifier():
     assert detached.guard_callback_v31(None) is None
-    assert detached.guard_callback_v31(lambda *_: False)(revision()) is False
+    guarded = detached.guard_callback_v31(lambda *_: False)
+    assert guarded is not None
+    assert guarded(revision()) is False
 
 
 @pytest.mark.parametrize("field", ["reservation", "handoff", "cost", "snapshot", "risk_state"])
@@ -83,6 +87,7 @@ def test_commit_freshness_rejects_expired_evidence_without_extending_deadline(fi
             handoff = handoff.model_copy(update={"handoff_receipt_valid_until": NOW})
             reason = "RECEIPT_EXPIRED"
         elif field == "cost":
+            assert request.geometry.costs is not None
             costs = request.geometry.costs.model_copy(update={"valid_until": NOW})
             request = request.model_copy(update={"geometry": request.geometry.model_copy(update={"costs": costs})})
             reason = "COST_EXPIRED"

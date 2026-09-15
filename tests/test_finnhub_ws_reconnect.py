@@ -813,7 +813,11 @@ class TestGracefulStop:
     @pytest.mark.asyncio
     async def test_stop_cancels_lock_renewal_task(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """stop() cancels the background lock renewal task."""
-        task = asyncio.create_task(asyncio.Event().wait())
+
+        async def wait_for_stop() -> None:
+            await asyncio.Event().wait()
+
+        task = asyncio.create_task(wait_for_stop())
         ws_client._lock_renewal_task = task
         ws_client._running = True
         await ws_client.stop()

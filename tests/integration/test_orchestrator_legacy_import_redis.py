@@ -13,7 +13,7 @@ import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -34,6 +34,7 @@ from services.orchestrator.legacy_import_contract import (
 )
 from services.orchestrator.legacy_state_import import apply_once, reconcile_observation
 from services.orchestrator.ownership import LegacyImportConflictError, OwnershipLostError, RedisFencedOwnership
+from storage.redis_client import RedisClient
 from tests.integration.test_orchestrator_process_recovery import disposable_redis as disposable_redis
 from tests.test_orchestrator_legacy_import import package as synthetic_package
 from tests.test_orchestrator_legacy_import import snapshot as synthetic_snapshot
@@ -182,8 +183,9 @@ def test_real_import_and_successor_boot_keep_provenance(disposable_redis: Any, b
         successor = _owner(successor_client, "successor-" + uuid4().hex)
         try:
             assert successor.acquire()
+            assert successor.identity is not None
             assert successor.identity.generation > result["fence_generation"]
-            manager = state_module.StateManager(redis_client=successor_client, ownership=successor)
+            manager = state_module.StateManager(redis_client=cast(RedisClient, successor_client), ownership=successor)
             assert manager.hydrate_committed_state() is True
             manager.publish_state("BOOT", {"hydrated": True, "prior_state_revision": 1})
             boot_raw = admin.get(KEYS["state"]).encode()
@@ -230,6 +232,7 @@ def test_real_cas_byte_type_and_ttl_conflicts_preserve_intervening_values(
             owner = _owner(actor, "legacy-import-" + p["operation_id"])
             try:
                 assert owner.acquire()
+                assert owner.identity is not None
                 if change == "bytes":
                     admin.set(KEYS[name], b"intervening-fixture-bytes")
                 elif change == "type":
@@ -244,6 +247,7 @@ def test_real_cas_byte_type_and_ttl_conflicts_preserve_intervening_values(
                 assert _fingerprints(admin) == before
                 ttl_after = admin.pttl(KEYS[name]) if change == "ttl" else None
                 if change == "ttl":
+                    assert ttl_before is not None and ttl_after is not None
                     assert 0 < ttl_after <= ttl_before
                 outcomes.append(
                     {
@@ -276,6 +280,7 @@ def test_real_expired_and_stale_leases_cannot_import(disposable_redis: Any, boun
             fresh = None
             try:
                 assert old.acquire()
+                assert old.identity is not None
                 old_generation = old.identity.generation
                 deadline = time.monotonic() + 5
                 while admin.exists(KEYS["lease"]):
@@ -283,7 +288,9 @@ def test_real_expired_and_stale_leases_cannot_import(disposable_redis: Any, boun
                     time.sleep(0.05)
                 if replacement:
                     fresh = _owner(actor, "replacement-" + uuid4().hex)
-                    assert fresh.acquire() and fresh.identity.generation > old_generation
+                    assert fresh.acquire()
+                    assert fresh.identity is not None
+                    assert fresh.identity.generation > old_generation
                 before = _fingerprints(admin)
                 with pytest.raises((LegacyImportConflictError, OwnershipLostError)):
                     _submit(old, p, raws, archive)
@@ -292,7 +299,7 @@ def test_real_expired_and_stale_leases_cannot_import(disposable_redis: Any, boun
                     {
                         "replacement": replacement,
                         "old_generation": old_generation,
-                        "new_generation": fresh.identity.generation if fresh else None,
+                        "new_generation": fresh.identity.generation if fresh and fresh.identity is not None else None,
                         "preserved": before,
                         "expiry": "REAL_3_SECOND_LEASE",
                     }

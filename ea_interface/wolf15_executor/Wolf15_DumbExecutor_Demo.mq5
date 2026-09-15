@@ -62,9 +62,9 @@ struct DemoExecutionState
 bool     g_demo_registered = false;
 bool     g_demo_blocked = false;
 bool     g_trade_event_pending = false;
-datetime g_demo_last_heartbeat = 0;
-datetime g_demo_last_poll = 0;
-datetime g_demo_last_recovery = 0;
+ulong    g_demo_last_heartbeat_ms = 0;
+ulong    g_demo_last_poll_ms = 0;
+ulong    g_demo_last_recovery_ms = 0;
 
 //+------------------------------------------------------------------+
 void AppendLedger(const string command_id, const string state, const string detail)
@@ -375,6 +375,74 @@ string BuildPendingOrdersJson()
 }
 
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+// DEMO heartbeat reports only the explicitly approved D0 symbol.
+// Full-universe synchronization remains an OnInit qualification concern;
+// a transiently unavailable non-D0 symbol must not starve snapshot freshness.
+// The approved symbol itself remains fail-closed.
+string BuildDemoApprovedSymbolJson()
+{
+   string canonical_symbol = InpApprovedCanonicalSymbol;
+   string broker_symbol = InpApprovedBrokerSymbol;
+
+   if(SymbolPairIndex(canonical_symbol, broker_symbol) < 0)
+   {
+      PrintFormat("[W15-D0] Approved symbol binding unavailable canonical=%s broker=%s",
+                  canonical_symbol, broker_symbol);
+      return "";
+   }
+   if(!SymbolSelect(broker_symbol, true) || !SymbolIsSynchronized(broker_symbol))
+   {
+      PrintFormat("[W15-D0] Approved symbol capability unavailable symbol=%s",
+                  broker_symbol);
+      return "";
+   }
+   if((ENUM_SYMBOL_TRADE_MODE)SymbolInfoInteger(
+         broker_symbol, SYMBOL_TRADE_MODE) != SYMBOL_TRADE_MODE_FULL)
+   {
+      PrintFormat("[W15-D0] Approved symbol trade mode invalid symbol=%s",
+                  broker_symbol);
+      return "";
+   }
+
+   double point = SymbolInfoDouble(broker_symbol, SYMBOL_POINT);
+   double tick_size = SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tick_value_profit =
+      SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_VALUE_PROFIT);
+   double tick_value_loss =
+      SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_VALUE_LOSS);
+   double volume_min = SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MIN);
+   double volume_max = SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MAX);
+   double volume_step = SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_STEP);
+
+   if(point <= 0.0 ||
+      tick_size <= 0.0 ||
+      tick_value_profit <= 0.0 ||
+      tick_value_loss <= 0.0 ||
+      volume_min <= 0.0 ||
+      volume_max < volume_min ||
+      volume_step <= 0.0)
+   {
+      PrintFormat("[W15-D0] Approved symbol capability invalid symbol=%s",
+                  broker_symbol);
+      return "";
+   }
+
+   return StringFormat(
+      "[{\"canonical_symbol\":\"%s\",\"broker_symbol\":\"%s\","
+      "\"digits\":%d,\"point\":%.10f,\"tick_size\":%.10f,"
+      "\"tick_value_profit\":%.8f,\"tick_value_loss\":%.8f,"
+      "\"volume_min\":%.8f,\"volume_max\":%.8f,\"volume_step\":%.8f,"
+      "\"stops_level_points\":%d,\"freeze_level_points\":%d,"
+      "\"expiration_modes\":[\"SPECIFIED\"]}]",
+      EscapeJson(canonical_symbol), EscapeJson(broker_symbol),
+      (int)SymbolInfoInteger(broker_symbol, SYMBOL_DIGITS),
+      point, tick_size, tick_value_profit, tick_value_loss,
+      volume_min, volume_max, volume_step,
+      (int)SymbolInfoInteger(broker_symbol, SYMBOL_TRADE_STOPS_LEVEL),
+      (int)SymbolInfoInteger(broker_symbol, SYMBOL_TRADE_FREEZE_LEVEL));
+}
 bool RegisterDemoExecutor()
 {
    string body = StringFormat(
@@ -404,7 +472,7 @@ bool SendDemoHeartbeat()
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    bool trade_allowed = (bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED);
    bool auto_enabled = (bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
-   string symbols_json = BuildSymbolsJson();
+   string symbols_json = BuildDemoApprovedSymbolJson();
    string positions_json = BuildPositionsJson();
    string orders_json = BuildPendingOrdersJson();
    if(StringLen(symbols_json) == 0 || StringLen(positions_json) == 0 || StringLen(orders_json) == 0)
@@ -775,7 +843,7 @@ bool ReconcileDemoBrokerState(DemoExecutionState &state,
       reason = "DEMO_RECONCILIATION_LINEAGE_INVALID";
       return false;
    }
-   if(!HistorySelect(issued - 300, TimeCurrent() + 60))
+   if(!HistorySelect(issued - 300, TimeTradeServer() + 60))
    {
       reason = "DEMO_RECONCILIATION_HISTORY_UNAVAILABLE";
       return false;
@@ -1198,17 +1266,27 @@ int OnInit()
    if(StringFind(InpBaseUrl, "https://") != 0 || StringLen(InpExecutorId) < 30 ||
       StringLen(InpLoginHash) != 71)
       return INIT_PARAMETERS_INCORRECT;
+   if(!ValidateSchedulerIntervals())
+      return INIT_PARAMETERS_INCORRECT;
    string credential_reason = "";
    if(!LoadRuntimeCredentials(credential_reason))
    {
       PrintFormat("[W15-D0] Credential loading rejected reason=%s", credential_reason);
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
+   // Structural re-check of the credentials that reached runtime memory. The
+   // server remains the authentication authority; this build never derives or
+   // cryptographically verifies the bearer token itself.
    uchar verification_key[];
-   if(StringLen(g_executor_token) != 64 ||
+   if(!IsLowerHexExact(g_executor_token, 64) ||
       !IsSafeWireIdentifier(g_command_verification_key_id) ||
-      !TaggedHexToBytes(g_command_verification_key, "hex:", 32, verification_key) ||
-      !RunSignedWireCryptoSelfTest())
+      !TaggedHexToBytes(g_command_verification_key, "hex:", 32, verification_key))
+   {
+      ClearRuntimeCredentials();
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(!RunSignedWireCryptoSelfTest())
    {
       ClearRuntimeCredentials();
       return INIT_FAILED;
@@ -1243,35 +1321,34 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnTimer()
 {
-   datetime now = TimeCurrent();
+   const ulong now_ms = GetTickCount64();
    if(!g_demo_registered)
    {
       g_demo_registered = RegisterDemoExecutor();
       return;
    }
-   if(now - g_demo_last_heartbeat >= InpHeartbeatSeconds)
+   if(now_ms - g_demo_last_heartbeat_ms >= (ulong)InpHeartbeatSeconds * 1000ULL)
    {
       SendDemoHeartbeat();
-      g_demo_last_heartbeat = now;
+      g_demo_last_heartbeat_ms = now_ms;
    }
-   // A stop blocks new issuance, not bounded reconciliation/reporting of the
-   // existing durable command. Recovery never submits and cannot clear this latch.
+   // Keep bounded recovery/reporting alive while new issuance is blocked.
    if(DemoStateExists())
    {
-      if(now - g_demo_last_recovery >= InpRecoveryRetrySeconds || g_trade_event_pending)
+      if(now_ms - g_demo_last_recovery_ms >= (ulong)InpRecoveryRetrySeconds * 1000ULL || g_trade_event_pending)
       {
          RecoverDemoState();
-         g_demo_last_recovery = now;
+         g_demo_last_recovery_ms = now_ms;
          g_trade_event_pending = false;
       }
       return;
    }
    if(g_demo_blocked)
       return;
-   if(now - g_demo_last_poll >= InpPollIntervalSeconds)
+   if(now_ms - g_demo_last_poll_ms >= (ulong)InpPollIntervalSeconds * 1000ULL)
    {
       PollOneDemoCommand();
-      g_demo_last_poll = now;
+      g_demo_last_poll_ms = now_ms;
    }
 }
 

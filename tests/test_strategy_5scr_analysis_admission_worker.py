@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -19,6 +19,7 @@ from services.pressure_outbox.analysis_admission_v1_worker import (
     StrategyAnalysisAdmissionV1Worker,
     build_analysis_evidence_snapshot_v1,
 )
+from storage.postgres_client import PostgresClient
 from storage.strategy_5scr_analysis_admission_v1_repository import (
     AnalysisAdmissionRadarEvent,
     AnalysisEvidenceWorkItemV1,
@@ -377,8 +378,7 @@ def _good_schema_constraints() -> list[dict[str, Any]]:
             "CHECK ((risk_authority = false) AND (execution_authority = false))"
         ),
         "ck_5scr_analysis_evidence_snapshot_shadow_only_v1": (
-            "CHECK ((valid_for_execution = false) AND (risk_authority = false) "
-            "AND (execution_authority = false))"
+            "CHECK ((valid_for_execution = false) AND (risk_authority = false) AND (execution_authority = false))"
         ),
     }
     return [
@@ -433,7 +433,9 @@ class _AnalysisAdmissionSchemaProbe:
 
 @pytest.mark.asyncio
 async def test_schema_status_requires_complete_fail_closed_catalog() -> None:
-    status = await StrategyAnalysisAdmissionV1Repository(pg=_AnalysisAdmissionSchemaProbe()).schema_status()
+    status = await StrategyAnalysisAdmissionV1Repository(
+        pg=cast(PostgresClient, _AnalysisAdmissionSchemaProbe())
+    ).schema_status()
 
     assert not any(status.values())
 
@@ -441,13 +443,11 @@ async def test_schema_status_requires_complete_fail_closed_catalog() -> None:
 @pytest.mark.asyncio
 async def test_schema_status_rejects_weakened_authority_check() -> None:
     constraints = _good_schema_constraints()
-    target = next(
-        row for row in constraints if row["conname"] == "ck_5scr_analysis_admission_shadow_only_v1"
-    )
+    target = next(row for row in constraints if row["conname"] == "ck_5scr_analysis_admission_shadow_only_v1")
     target["definition"] = "CHECK (((risk_authority = false) AND (execution_authority = false)) OR true)"
 
     status = await StrategyAnalysisAdmissionV1Repository(
-        pg=_AnalysisAdmissionSchemaProbe(constraints=constraints)
+        pg=cast(PostgresClient, _AnalysisAdmissionSchemaProbe(constraints=constraints))
     ).schema_status()
 
     assert "ck_5scr_analysis_admission_shadow_only_v1" in status["invalid_constraints"]
@@ -459,7 +459,7 @@ async def test_schema_status_rejects_disabled_immutability_trigger() -> None:
     triggers[0]["enabled"] = "D"
 
     status = await StrategyAnalysisAdmissionV1Repository(
-        pg=_AnalysisAdmissionSchemaProbe(triggers=triggers)
+        pg=cast(PostgresClient, _AnalysisAdmissionSchemaProbe(triggers=triggers))
     ).schema_status()
 
     assert triggers[0]["tgname"] in status["invalid_triggers"]

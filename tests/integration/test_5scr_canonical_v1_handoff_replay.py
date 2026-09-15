@@ -383,6 +383,7 @@ async def test_canonical_raw_to_durable_shadow_command_one_lineage(postgres: _Po
         }
     )
     command = verify_signed_execution_envelope_with_root(wire, root_secret=COMMAND_SECRET)
+    assert command is not None
     assert command.executor_binding.execution_mode.value == "SHADOW"
     assert isinstance(command.source, CommandSource)
     assert command.source.strategy_rule_version == RULE_TUPLE["strategy"]

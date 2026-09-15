@@ -278,6 +278,7 @@ async def test_context_material_transitions_publish_source_verbatim_shadow_event
             "MATERIAL_CONTEXT_CHANGED",
         ]
         assert rows[0].envelope.payload.body["previous_epoch_id"] is None
+        assert opened.epoch is not None
         assert rows[1].envelope.payload.body["previous_epoch_id"] == opened.epoch.context_epoch_id
         assert all(row.envelope.source.service.endswith("-shadow") for row in rows)
         assert all(row.envelope.payload.body["execution_authority"] is False for row in rows)

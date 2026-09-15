@@ -466,7 +466,7 @@ def _display_symbol(row: Mapping[str, Any]) -> str:
     direction = str(row.get("dominant_direction") or "NONE").upper()
     score = row.get("tier_score")
     try:
-        score_text = f"{float(score):.1f}"
+        score_text = f"{float(score):.1f}" if score is not None else "-"
     except (TypeError, ValueError):
         score_text = "-"
     return f"{symbol}:{direction}:{score_text}"
@@ -503,7 +503,7 @@ def _tier_count(snapshot: Mapping[str, Any], key: str) -> int:
     if isinstance(summary, Mapping):
         value = summary.get(key)
         try:
-            return max(0, int(value))
+            return max(0, int(value)) if value is not None else 0
         except (TypeError, ValueError):
             return 0
     tiers = snapshot.get("tiers")
@@ -654,7 +654,8 @@ def _low_event_count(row: Mapping[str, Any], max_events: int = 5) -> bool:
     metric_key = "live" if scope.startswith("live") else "session" if scope.startswith("session") else "archive"
     scoped_metrics = metrics.get(metric_key)
     if not isinstance(scoped_metrics, Mapping):
-        scoped_metrics = metrics.get("live") if isinstance(metrics.get("live"), Mapping) else {}
+        live_metrics = metrics.get("live")
+        scoped_metrics = live_metrics if isinstance(live_metrics, Mapping) else {}
     try:
         event_count = int(scoped_metrics.get("event_count") or 0)
     except (TypeError, ValueError):
@@ -838,7 +839,7 @@ def _score_metrics(
         "PREVIOUS_MAJOR_LEADER": 5.0,
         "SECONDARY_CANDIDATE": 3.0,
         "HISTORICAL_LEADER": 2.0,
-    }.get(lifecycle_role, 0.0)
+    }.get(lifecycle_role or "", 0.0)
     if role_bonus:
         score += role_bonus
         reasons.append(lifecycle_role or "")
@@ -1237,7 +1238,7 @@ def _latest_direction(events: Sequence[Any]) -> str | None:
 def _event_effective_ticks(event: Any) -> int:
     ticks = getattr(event, "effective_ticks", 1)
     try:
-        return max(1, int(ticks() if callable(ticks) else ticks))
+        return max(1, _nonnegative_int(ticks() if callable(ticks) else ticks, fallback=1))
     except (TypeError, ValueError):
         return 1
 

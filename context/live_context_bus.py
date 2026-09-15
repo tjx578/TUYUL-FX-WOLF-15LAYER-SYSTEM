@@ -81,9 +81,7 @@ def _h1_close_time(candle: dict[str, Any]) -> datetime | None:
         return open_time + timedelta(hours=1)
 
     semantics = str(candle.get("provider_timestamp_semantics", "")).strip().upper()
-    provider_time = _as_utc_datetime(
-        candle.get("provider_timestamp") or candle.get("timestamp") or candle.get("time")
-    )
+    provider_time = _as_utc_datetime(candle.get("provider_timestamp") or candle.get("timestamp") or candle.get("time"))
     if provider_time is None:
         return None
     if semantics == "PERIOD_END":
@@ -673,9 +671,7 @@ class LiveContextBus:
         """Compare only explicit, fresh, same-period REST/WS closed H1 evidence."""
         from context.price_drift import compare_closed_h1
 
-        return compare_closed_h1(
-            symbol, self.get_candles(symbol, "H1"), self.get_latest_tick(symbol), max_drift_pips
-        )
+        return compare_closed_h1(symbol, self.get_candles(symbol, "H1"), self.get_latest_tick(symbol), max_drift_pips)
 
     def get_warmup_bar_count(self, symbol: str, timeframe: str) -> int:
         """Return number of bars currently stored for symbol/timeframe."""

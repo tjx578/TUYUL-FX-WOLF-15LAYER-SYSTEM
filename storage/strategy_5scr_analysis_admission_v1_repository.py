@@ -62,12 +62,8 @@ _REQUIRED_CONSTRAINTS: dict[str, tuple[str, str]] = {
     "ck_5scr_analysis_evidence_snapshot_shadow_only_v1": (EVIDENCE_SNAPSHOT_TABLE, "c"),
 }
 _AUTHORITY_CHECK_DEFINITIONS = {
-    "ck_5scr_analysis_admission_shadow_only_v1": (
-        "checkrisk_authority=falseandexecution_authority=false"
-    ),
-    "ck_5scr_analysis_admission_evaluation_shadow_only_v1": (
-        "checkrisk_authority=falseandexecution_authority=false"
-    ),
+    "ck_5scr_analysis_admission_shadow_only_v1": ("checkrisk_authority=falseandexecution_authority=false"),
+    "ck_5scr_analysis_admission_evaluation_shadow_only_v1": ("checkrisk_authority=falseandexecution_authority=false"),
     "ck_5scr_analysis_evidence_snapshot_shadow_only_v1": (
         "checkvalid_for_execution=falseandrisk_authority=falseandexecution_authority=false"
     ),
@@ -134,7 +130,9 @@ def _json(value: Any) -> str:
 
 
 def _compact_sql(value: Any) -> str:
-    return "".join(character for character in str(value or "").lower() if not character.isspace() and character not in "()")
+    return "".join(
+        character for character in str(value or "").lower() if not character.isspace() and character not in "()"
+    )
 
 
 def analysis_evidence_job_id(strategy_lifecycle_id: str, analysis_material_hash: str) -> str:

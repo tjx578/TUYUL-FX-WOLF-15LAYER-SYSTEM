@@ -94,7 +94,15 @@ Go to **Tools → Options → Expert Advisors** and add your backend URL to the 
 Set the following input parameters:
 - `AgentId` — UUID from step 2 (**required**)
 - `ApiBaseUrl` — e.g. `http://your-backend.railway.app`
-- `ApiKey` — your JWT or API key
+- `ApiKey` — the backend's configured machine API key (`DASHBOARD_API_KEY`)
+
+All three `/api/v1/agent-ingest/*` POST endpoints require this machine key in
+`Authorization: Bearer <ApiKey>`, as sent by `CTuyulHttpClient`. Dashboard JWTs
+and session cookies are rejected, including JWTs with admin or wildcard claims.
+The existing key is a shared single-tenant machine credential; an `AgentId` or
+`X-Agent-Id` header does not establish a separate authenticated agent identity.
+Status-change audit records identify the verified machine principal as
+`api_key_user`.
 
 ---
 
@@ -106,7 +114,7 @@ Set the following input parameters:
 | ----------- | --------- | ------------- |
 | `AgentId` | *(empty)* | Agent Manager UUID — **REQUIRED** |
 | `ApiBaseUrl` | `http://localhost:8000` | Backend API URL |
-| `ApiKey` | *(empty)* | Bearer token for authentication |
+| `ApiKey` | *(empty)* | Configured machine API key, sent as a Bearer credential |
 | `EAClass` | `PRIMARY` | EA class (mirrors backend enum) |
 | `EASubtype` | `BROKER` | EA subtype (BROKER/PROP_FIRM/EDUMB) |
 | `ExecutionMode` | `LIVE` | LIVE / DEMO / SHADOW |
@@ -130,7 +138,7 @@ Set the following input parameters:
 | ----------- | --------- | ------------- |
 | `AgentId` | *(empty)* | Agent Manager UUID — **REQUIRED** |
 | `ApiBaseUrl` | `http://localhost:8000` | Backend API URL |
-| `ApiKey` | *(empty)* | Bearer token for authentication |
+| `ApiKey` | *(empty)* | Configured machine API key, sent as a Bearer credential |
 | `EASubtype` | `STANDARD_REPORTER` | STANDARD_REPORTER or BALANCE_ONLY |
 | `ReporterMode` | `FULL` | FULL / BALANCE_ONLY / DISABLED |
 | `HeartbeatIntervalSec` | `60` | Heartbeat frequency |

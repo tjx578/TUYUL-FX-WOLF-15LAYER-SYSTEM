@@ -13,11 +13,11 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from psycopg import sql
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 from psycopg.types.json import Jsonb
 from sqlalchemy.exc import DBAPIError
 
-from contracts.mt5_execution_protocol import build_signed_execution_envelope
+from contracts.mt5_execution_protocol import EngineeringDemoCanarySource, build_signed_execution_envelope
 from tests.test_mt5_engineering_demo_canary import EXECUTOR_ID, SECRET, _command, _executor, _request
 
 pytestmark = [pytest.mark.integration]
@@ -52,6 +52,7 @@ def _synthetic_row(label: str, state: str, *, terminal: bool) -> dict:
         expires_at_utc=HISTORICAL_TIME + timedelta(seconds=90),
     )
     signed = _command(request=request)
+    assert isinstance(signed.source, EngineeringDemoCanarySource)
     envelope = build_signed_execution_envelope(signed, root_secret=SECRET, key_id="d0-test-key")
     payload = signed.model_dump(mode="json")
     return {
@@ -205,7 +206,9 @@ def historical_database(monkeypatch):
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "storage" / "migrations"))
     command.upgrade(config, OBSERVED_MARKER)
-    with psycopg.connect(**params, dbname=name, autocommit=True, row_factory=dict_row) as connection:
+    with psycopg.Connection[DictRow].connect(
+        **params, dbname=name, autocommit=True, row_factory=dict_row
+    ) as connection:
         initial = _snapshot(connection)
         assert initial["versions"] == [OBSERVED_MARKER]
         assert not initial["new_tables"] and not NEW_COLUMNS.intersection(initial["columns"])
@@ -272,8 +275,10 @@ def test_ambiguous_history_aborts_upgrade_and_preserves_original_rows(historical
     _persist(case + "-before", before)
     with pytest.raises(DBAPIError) as error:
         command.upgrade(config, "head")
-    assert error.value.orig.sqlstate == "23514"
-    assert error.value.orig.diag.constraint_name == "ck_demo_historical_terminal_required"
+    original = error.value.orig
+    assert isinstance(original, psycopg.Error)
+    assert original.sqlstate == "23514"
+    assert original.diag.constraint_name == "ck_demo_historical_terminal_required"
     assert _snapshot(connection) == before
     _persist(
         case + "-result",
