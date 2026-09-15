@@ -155,6 +155,7 @@ from config_loader import CONFIG
 # local imports
 from constitution.l12_router_evaluator import L12Input, L12RouterEvaluator
 from constitution.verdict_engine import generate_l12_verdict
+from context.warmup_requirements import WARMUP_MIN_BARS
 from contracts.shadow_hook import begin_shadow_session, finalize_shadow_session
 from core.dag_engine import DagEngine
 from core.metrics import (
@@ -353,13 +354,7 @@ class WolfConstitutionalPipeline:
     # W1/MN are included because L1 regime context depends on them.
     # These are pipeline-gate minimums, intentionally lower than
     # config/finnhub.yaml min_bars (which are fetch targets).
-    WARMUP_MIN_BARS: dict[str, int] = {
-        "H1": 30,
-        "H4": 10,
-        "D1": 5,
-        "W1": 5,
-        "MN": 2,
-    }
+    WARMUP_MIN_BARS: dict[str, int] = dict(WARMUP_MIN_BARS)
 
     # Avoid log storms when a symbol remains degraded for long periods.
     DQ_WARNING_LOG_INTERVAL_SEC: float = 900.0

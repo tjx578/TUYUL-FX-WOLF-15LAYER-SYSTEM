@@ -268,6 +268,37 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
     )
 
 
+def get_verdicts(pairs: list[str]) -> dict[str, dict[str, Any] | None]:
+    """Read a bounded caller-selected batch without a Redis health probe.
+
+    Missing keys remain ``None``. Transport errors or malformed cache data fail
+    the entire batch closed and update the existing read-failure diagnostics.
+    The legacy single-key reader retains its existing behavior.
+    """
+    missing: dict[str, dict[str, Any] | None] = dict.fromkeys(pairs)
+    if not pairs or _read_redis_temporarily_unavailable():
+        return missing
+    try:
+        raw_values = _read_redis_client().mget([KEY_PREFIX + pair for pair in pairs])
+        if not isinstance(raw_values, (list, tuple)) or len(raw_values) != len(pairs):
+            raise ValueError("Invalid verdict batch response")
+        verdicts: dict[str, dict[str, Any] | None] = {}
+        for pair, raw in zip(pairs, raw_values, strict=True):
+            if raw is None:
+                verdicts[pair] = None
+                continue
+            if not isinstance(raw, (str, bytes)):
+                raise ValueError("Invalid cached verdict encoding")
+            decoded = json.loads(_decode_redis_text(raw))
+            if not isinstance(decoded, dict):
+                raise ValueError("Invalid cached verdict object")
+            verdicts[pair] = decoded
+        return verdicts
+    except Exception:
+        _mark_read_redis_unavailable()
+        return missing
+
+
 def get_verdict(pair: str) -> dict[str, Any] | None:
     raw = _read_cache_value(KEY_PREFIX + pair)
     return json.loads(_decode_redis_text(raw)) if raw else None

@@ -31,10 +31,10 @@ class _Reader:
             return self.failure_counts.pop(0)
         return 0
 
-    def check_warmup(self, symbol: str, min_bars: dict[str, int] | None = None) -> dict[str, Any]:
+    def check_warmup_many(self, symbols: list[str], min_bars: dict[str, int] | None = None) -> dict[str, Any]:
         if self.raises:
             raise RuntimeError("redis unavailable")
-        return {"ready": self.ready, "bars": {"H1": 40}, "missing": {}}
+        return {symbol: {"ready": self.ready, "bars": {"H1": 40}, "missing": {}} for symbol in symbols}
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def bind(monkeypatch):
                 raise value
             return value
 
-        monkeypatch.setattr(dashboard_routes, "get_verdict", _get_verdict)
+        monkeypatch.setattr(dashboard_routes, "get_verdicts", lambda symbols: {s: _get_verdict(s) for s in symbols})
         bound = reader or _Reader()
         monkeypatch.setattr(redis_context_reader, "RedisContextReader", lambda *a, **k: bound)
         monkeypatch.setattr(dashboard_routes, "verdict_read_source_ok", lambda: verdict_source_ok)
@@ -331,7 +331,8 @@ def test_publishes_a_row_for_every_configured_pair(bind) -> None:
         (900.0, "STALE"),
     ],
 )
-def test_quality_follows_the_stale_boundary(bind, age_offset: float, expected: str) -> None:
+def test_quality_follows_the_stale_boundary(bind, monkeypatch, age_offset: float, expected: str) -> None:
+    monkeypatch.setattr("api.verdict_normalization.time.time", lambda: 1_800_000_000.0)
     bind(
         [{"symbol": "EURUSD", "enabled": True}],
         {"EURUSD": _verdict(_cached_at=time.time() - age_offset)},
@@ -357,3 +358,46 @@ def test_an_unverifiable_timestamp_is_never_live(bind, stamped: Any) -> None:
 
     assert row["age_seconds"] is None
     assert row["quality"] is None
+
+
+@pytest.mark.parametrize("source", ["verdict", "context"])
+def test_failure_between_initial_health_and_counter_is_not_lost(bind, monkeypatch, source):
+    reader = _Reader()
+    bind([{"symbol": "EURUSD", "enabled": True}], {}, reader=reader)
+    generation = [0]
+
+    def sample_health():
+        generation[0] = 1
+        return True
+
+    if source == "verdict":
+        monkeypatch.setattr(dashboard_routes, "verdict_read_source_ok", sample_health)
+        monkeypatch.setattr(dashboard_routes, "verdict_read_failure_count", lambda: generation[0])
+    else:
+        monkeypatch.setattr(_Reader, "read_source_ok", property(lambda self: sample_health()))
+        monkeypatch.setattr(_Reader, "read_failure_count", property(lambda self: generation[0]))
+    assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
+
+
+def test_inventory_uses_one_batch_per_reader(bind, monkeypatch):
+    symbols = [f"PAIR{i}" for i in range(30)]
+    reader = bind([{"symbol": s} for s in symbols], {})
+    verdict_calls = []
+    warmup_calls = []
+
+    def verdict_batch(requested):
+        verdict_calls.append(requested)
+        return {}
+
+    def warmup_batch(requested):
+        warmup_calls.append(requested)
+        return {}
+
+    monkeypatch.setattr(dashboard_routes, "get_verdicts", verdict_batch)
+    monkeypatch.setattr(reader, "check_warmup_many", warmup_batch)
+    response = dashboard_routes.dashboard_pair_states()
+    assert verdict_calls == [symbols]
+    assert warmup_calls == [symbols]
+    assert response["count"] == 30
+    assert response["source_ok"] is True
+    assert all(not row["snapshot_present"] and not row["warmup_ready"] for row in response["items"])

@@ -36,6 +36,7 @@ from typing import Any, cast
 
 import redis
 
+from context.warmup_requirements import WARMUP_MIN_BARS
 from infrastructure.redis_url import get_redis_url
 
 # Key prefixes (must match what engine/ingest write)
@@ -47,8 +48,8 @@ _SESSION = "wolf15:session_state"
 _NEWS_PRESSURE = "wolf15:news_pressure"
 _FEED_TS = "wolf15:feed_ts"
 
-# Warmup requirements (mirrors wolf_constitutional_pipeline.py)
-_WARMUP_MIN_BARS = {"H1": 20, "H4": 10, "D1": 5, "W1": 5, "MN": 2}
+# Shared pipeline-gate requirements; separate from ingestion fetch targets.
+_WARMUP_MIN_BARS = dict(WARMUP_MIN_BARS)
 
 # Timeframes to check
 _ALL_TIMEFRAMES = ("M1", "M5", "M15", "H1", "H4", "D1", "W1", "MN")
@@ -441,6 +442,55 @@ class RedisContextReader:
             "missing": missing,
             "details": details,
         }
+
+    def check_warmup_many(
+        self,
+        symbols: list[str],
+        min_bars: dict[str, int] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Read all requested warmup counts in one Redis pipeline round trip.
+
+        A failed batch is unavailable as a whole, never a partial ready result.
+        The existing failure counter/cooldown records failures without a ping.
+        """
+        unique_symbols = list(dict.fromkeys(symbols))
+        if not unique_symbols:
+            return {}
+        requirements = dict(_WARMUP_MIN_BARS if min_bars is None else min_bars)
+        pairs = [(symbol, tf) for symbol in unique_symbols for tf in requirements]
+        counts: list[int] = [0] * len(pairs)
+        source_ok = not _redis_temporarily_unavailable()
+        if pairs and source_ok:
+            try:
+                with _context_redis_client().pipeline(transaction=False) as pipe:
+                    for symbol, tf in pairs:
+                        pipe.llen(f"{_CANDLE_HISTORY}:{symbol}:{tf}")
+                    raw = pipe.execute()
+                if len(raw) != len(pairs) or any(type(value) is not int or value < 0 for value in raw):
+                    raise ValueError("Invalid warmup count batch")
+                counts = cast(list[int], raw)
+            except Exception:
+                _mark_redis_unavailable()
+                source_ok = False
+
+        result: dict[str, dict[str, Any]] = {}
+        offset = 0
+        for symbol in unique_symbols:
+            bars = dict(zip(requirements, counts[offset : offset + len(requirements)], strict=True))
+            offset += len(requirements)
+            details = {
+                tf: {"have": bars[tf], "need": need, "missing": max(0, need - bars[tf])}
+                for tf, need in requirements.items()
+            }
+            missing = {tf: detail["missing"] for tf, detail in details.items() if detail["missing"] > 0}
+            result[symbol] = {
+                "ready": source_ok and not missing,
+                "bars": bars,
+                "required": dict(requirements),
+                "missing": missing,
+                "details": details,
+            }
+        return result
 
     @property
     def warmup_state(self) -> dict[str, Any]:

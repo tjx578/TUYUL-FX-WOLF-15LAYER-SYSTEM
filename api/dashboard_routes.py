@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from schemas.trade_models import Trade
-from storage.l12_cache import get_verdict, verdict_read_failure_count, verdict_read_source_ok
+from storage.l12_cache import get_verdicts, verdict_read_failure_count, verdict_read_source_ok
 from storage.price_feed import PriceFeed
 from storage.trade_ledger import TradeLedger
 
@@ -160,28 +160,34 @@ def dashboard_pair_states() -> dict[str, Any]:
     reader: Any = RedisContextReader()
     # Latch the readers' state around the scan: a source already down when it
     # starts, an exception during it, or a failure that healed before it ended.
-    healthy_at_start = verdict_read_source_ok() and bool(reader.read_source_ok)
+    # Capture counters first so failures during health sampling cannot enter
+    # the baseline and disappear when the cooldown expires.
     verdict_failures_at_start = verdict_read_failure_count()
     context_failures_at_start = reader.read_failure_count
+    healthy_at_start = verdict_read_source_ok() and bool(reader.read_source_ok)
     read_failed = False
     items: list[dict[str, Any]] = []
 
+    pairs: list[tuple[str, bool]] = []
     for pair_info in AVAILABLE_PAIRS:
         symbol = pair_info.get("symbol")
-        if not isinstance(symbol, str) or not symbol:
-            continue
+        if isinstance(symbol, str) and symbol:
+            pairs.append((symbol, bool(pair_info.get("enabled", True))))
+    symbols = [symbol for symbol, _ in pairs]
+    try:
+        verdicts = get_verdicts(symbols)
+    except Exception:
+        read_failed = True
+        verdicts = {}
+    try:
+        warmups = reader.check_warmup_many(symbols)
+    except Exception:
+        read_failed = True
+        warmups = {}
 
-        raw: dict[str, Any] | None = None
-        try:
-            raw = get_verdict(symbol)
-        except Exception:
-            read_failed = True
-
-        try:
-            warmup_ready = bool(reader.check_warmup(symbol).get("ready", False))
-        except Exception:
-            read_failed = True
-            warmup_ready = False
+    for symbol, active in pairs:
+        raw = verdicts.get(symbol)
+        warmup_ready = bool(warmups.get(symbol, {}).get("ready", False))
 
         age = snapshot_age_seconds(raw)
         items.append(
@@ -193,7 +199,7 @@ def dashboard_pair_states() -> dict[str, Any]:
                 "age_seconds": age,
                 "quality": quality_state(age),
                 "warmup_ready": warmup_ready,
-                "active": bool(pair_info.get("enabled", True)),
+                "active": active,
                 "snapshot_present": raw is not None,
             }
         )
