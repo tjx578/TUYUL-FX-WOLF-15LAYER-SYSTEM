@@ -33,6 +33,7 @@ from .verdict_normalization import (
     reason_code,
     snapshot_age_seconds,
     verdict_state,
+    warmup_state,
 )
 
 router = APIRouter(dependencies=[Depends(verify_token)])
@@ -139,32 +140,20 @@ def dashboard_pair_states() -> dict[str, Any]:
     operator can tell configured-but-not-ready apart from not-configured:
 
       * ``snapshot_present: false`` -- configured, no verdict cached yet;
-      * ``warmup_ready: false``     -- configured, warmup not finished;
+      * ``warmup_ready: false``     -- measured snapshot warmup was incomplete;
+      * ``warmup_ready: null``      -- no measured warmup in this snapshot;
       * ``active: false``           -- configured but disabled.
 
-    ``source_ok`` reports whether the underlying reads reached Redis *for this
-    whole response*.  Both readers are fail-soft -- a connection failure becomes
-    a missing verdict and zero warmup bars rather than an exception -- and the
-    health each one tracks is a cooldown window, not a latch.  Across a scan of
-    every configured pair that window can lapse before the scan ends, so asking
-    only at the end would report a healthy source while some rows were produced
-    by reads that had already failed.  Each reader therefore also counts its
-    failures, and this compares those counts across the scan: a failure anywhere
-    in it clears ``source_ok`` even if the source recovered by the last read.
+    ``warmup_ready`` is the engine's measured warmup result from this cached
+    analysis cycle, sharing the snapshot's age/quality. Missing evidence and
+    skipped warmup gates remain null; this API does not observe the live bus.
+    ``source_ok`` covers the verdict batch read. Counter sampling precedes
+    health sampling so a concurrent fail-soft error cannot enter the baseline.
     """
-    # Imported here: the pair universe is built at import time by the L12 routes,
-    # and this endpoint must report exactly the same set as /api/v1/verdict/all.
     from .l12_routes import AVAILABLE_PAIRS  # noqa: PLC0415
-    from .redis_context_reader import RedisContextReader  # noqa: PLC0415
 
-    reader: Any = RedisContextReader()
-    # Latch the readers' state around the scan: a source already down when it
-    # starts, an exception during it, or a failure that healed before it ended.
-    # Capture counters first so failures during health sampling cannot enter
-    # the baseline and disappear when the cooldown expires.
     verdict_failures_at_start = verdict_read_failure_count()
-    context_failures_at_start = reader.read_failure_count
-    healthy_at_start = verdict_read_source_ok() and bool(reader.read_source_ok)
+    healthy_at_start = verdict_read_source_ok()
     read_failed = False
     items: list[dict[str, Any]] = []
 
@@ -179,15 +168,9 @@ def dashboard_pair_states() -> dict[str, Any]:
     except Exception:
         read_failed = True
         verdicts = {}
-    try:
-        warmups = reader.check_warmup_many(symbols)
-    except Exception:
-        read_failed = True
-        warmups = {}
 
     for symbol, active in pairs:
         raw = verdicts.get(symbol)
-        warmup_ready = bool(warmups.get(symbol, {}).get("ready", False))
 
         age = snapshot_age_seconds(raw)
         items.append(
@@ -198,7 +181,7 @@ def dashboard_pair_states() -> dict[str, Any]:
                 "reason_code": reason_code(raw),
                 "age_seconds": age,
                 "quality": quality_state(age),
-                "warmup_ready": warmup_ready,
+                "warmup_ready": warmup_state(raw),
                 "active": active,
                 "snapshot_present": raw is not None,
             }
@@ -209,9 +192,7 @@ def dashboard_pair_states() -> dict[str, Any]:
         not read_failed
         and healthy_at_start
         and verdict_read_source_ok()
-        and bool(reader.read_source_ok)
         and verdict_read_failure_count() == verdict_failures_at_start
-        and reader.read_failure_count == context_failures_at_start
     )
     return {
         "observed_at": datetime.now(UTC).isoformat(),

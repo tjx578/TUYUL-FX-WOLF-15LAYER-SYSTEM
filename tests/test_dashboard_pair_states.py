@@ -1,195 +1,108 @@
-"""Contract tests for GET /api/v1/dashboard/pair-states.
+"""Viewer-safe projection of cached engine evidence, without bus reconstruction."""
 
-The endpoint exists so that governance normalization stays on the service side
-of the viewer boundary.  These tests pin both halves of that: the normalization
-is actually applied, and nothing outside the declared projection is published.
-"""
-
-from __future__ import annotations
-
-import time
 from typing import Any
 
 import pytest
 
-from api import dashboard_routes, l12_routes, redis_context_reader
-
-
-class _Reader:
-    """Stand-in for RedisContextReader with a fixed warmup answer."""
-
-    ready = True
-    raises = False
-    read_source_ok = True
-    # Successive values returned by read_failure_count, to model a failure that
-    # happens during a scan; empty means a steady count.
-    failure_counts: list[int] | None = None
-
-    @property
-    def read_failure_count(self) -> int:
-        if self.failure_counts:
-            return self.failure_counts.pop(0)
-        return 0
-
-    def check_warmup_many(self, symbols: list[str], min_bars: dict[str, int] | None = None) -> dict[str, Any]:
-        if self.raises:
-            raise RuntimeError("redis unavailable")
-        return {symbol: {"ready": self.ready, "bars": {"H1": 40}, "missing": {}} for symbol in symbols}
+from api import dashboard_routes, l12_routes, verdict_normalization
 
 
 @pytest.fixture
 def bind(monkeypatch):
-    """Bind the endpoint to an explicit pair universe and verdict store."""
+    monkeypatch.setattr(verdict_normalization.time, "time", lambda: 1_800_000_000.0)
 
-    def _bind(
-        pairs: list[dict[str, Any]],
-        verdicts: dict[str, Any],
-        reader: _Reader | None = None,
-        verdict_source_ok: bool = True,
-        verdict_failure_counts: list[int] | None = None,
-    ):
+    def configure(pairs, verdicts, healthy=True, failure_counts=None):
         monkeypatch.setattr(l12_routes, "AVAILABLE_PAIRS", pairs)
 
-        def _get_verdict(symbol: str) -> dict[str, Any] | None:
-            value = verdicts.get(symbol)
-            if isinstance(value, Exception):
-                raise value
-            return value
+        def batch(symbols):
+            if isinstance(verdicts, Exception):
+                raise verdicts
+            return {symbol: verdicts.get(symbol) for symbol in symbols}
 
-        monkeypatch.setattr(dashboard_routes, "get_verdicts", lambda symbols: {s: _get_verdict(s) for s in symbols})
-        bound = reader or _Reader()
-        monkeypatch.setattr(redis_context_reader, "RedisContextReader", lambda *a, **k: bound)
-        monkeypatch.setattr(dashboard_routes, "verdict_read_source_ok", lambda: verdict_source_ok)
+        monkeypatch.setattr(dashboard_routes, "get_verdicts", batch)
+        monkeypatch.setattr(dashboard_routes, "verdict_read_source_ok", lambda: healthy)
+        counts = list(failure_counts or [0, 0])
+        monkeypatch.setattr(dashboard_routes, "verdict_read_failure_count", lambda: counts.pop(0))
 
-        counts = list(verdict_failure_counts) if verdict_failure_counts else None
-
-        def _failure_count() -> int:
-            return counts.pop(0) if counts else 0
-
-        monkeypatch.setattr(dashboard_routes, "verdict_read_failure_count", _failure_count)
-        return bound
-
-    return _bind
+    return configure
 
 
-def _verdict(**changes: Any) -> dict[str, Any]:
-    base = {"verdict": "HOLD", "_cached_at": time.time()}
-    base.update(changes)
-    return base
+def record(**changes: Any) -> dict[str, Any]:
+    return {"verdict": "HOLD", "_cached_at": 1_800_000_000.0, **changes}
 
 
-def _by_symbol(response: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {item["symbol"]: item for item in response["items"]}
+def row():
+    return dashboard_routes.dashboard_pair_states()["items"][0]
 
 
-def test_projects_one_row_per_available_verdict(bind) -> None:
+def test_inventory_retains_missing_and_disabled_pairs(bind):
     bind(
-        [{"symbol": "GBPUSD", "enabled": True}, {"symbol": "EURUSD", "enabled": True}],
-        {
-            "EURUSD": _verdict(verdict="EXECUTE_REDUCED_RISK_BUY", governance={"action": "ALLOW_REDUCED"}),
-            "GBPUSD": _verdict(verdict="NO_TRADE"),
-        },
+        [{"symbol": "USDJPY", "enabled": False}, {"symbol": "GBPUSD"}, {"symbol": "EURUSD"}],
+        {"EURUSD": record(governance={"action": "ALLOW"}, warmup_ready=True)},
     )
     response = dashboard_routes.dashboard_pair_states()
-
-    assert response["count"] == 2
     assert response["source_ok"] is True
-    # Deterministic order regardless of the configured pair order.
-    assert [item["symbol"] for item in response["items"]] == ["EURUSD", "GBPUSD"]
+    assert response["count"] == 3
+    assert [r["symbol"] for r in response["items"]] == ["EURUSD", "GBPUSD", "USDJPY"]
+    first, missing, disabled = response["items"]
+    assert first["warmup_ready"] is True
+    assert first["admission"] == "ALLOW"
+    assert first["quality"] == "LIVE"
+    assert missing["snapshot_present"] is False
+    assert all(missing[k] is None for k in ("verdict", "admission", "age_seconds", "quality", "warmup_ready"))
+    assert disabled["active"] is False
 
-    rows = _by_symbol(response)
-    assert rows["EURUSD"]["verdict"] == "EXECUTE_REDUCED_RISK_BUY"
-    assert rows["EURUSD"]["admission"] == "ALLOW_REDUCED"
-    assert rows["EURUSD"]["quality"] == "LIVE"
-    assert rows["EURUSD"]["snapshot_present"] is True
-    assert rows["EURUSD"]["warmup_ready"] is True
-    assert rows["EURUSD"]["active"] is True
+
+@pytest.mark.parametrize("action", ["ALLOW", "ALLOW_REDUCED", "BLOCK", "HOLD"])
+def test_explicit_governance_is_published(bind, action):
+    bind([{"symbol": "EURUSD"}], {"EURUSD": record(governance={"action": action})})
+    assert row()["admission"] == action
 
 
-def test_publishes_an_explicit_governance_action(bind) -> None:
-    """An action the record actually carries is published as-is.
+@pytest.mark.parametrize(
+    "reason,action",
+    [
+        ("GOVERNANCE_BLOCK:private", "BLOCK"),
+        ("GOVERNANCE_HOLD:private", "HOLD"),
+        ("WARMUP_INSUFFICIENT:private", "HOLD"),
+    ],
+)
+def test_recognized_reason_carries_only_declared_code(bind, reason, action):
+    bind([{"symbol": "EURUSD"}], {"EURUSD": record(errors=[reason])})
+    result = row()
+    assert result["admission"] == action
+    assert result["reason_code"] == reason.split(":")[0]
+    assert "private" not in str(result)
 
-    This is the reason the endpoint exists: the browser cannot reach the
-    governance record, so the service resolves admission on its behalf.
-    """
+
+@pytest.mark.parametrize("errors", [[], ["PIPELINE_TIMEOUT:analysis"], ["PIPELINE_ERROR:failure"]])
+def test_degraded_or_missing_governance_stays_unmeasured(bind, errors):
+    bind([{"symbol": "EURUSD"}], {"EURUSD": record(errors=errors)})
+    assert row()["admission"] is None
+    assert verdict_normalization.extract_governance_action(record(errors=errors)) == "ALLOW"
+
+
+def test_undeclared_values_and_private_fields_are_not_published(bind):
     bind(
-        [{"symbol": "EURUSD", "enabled": True}],
-        {"EURUSD": _verdict(governance={"action": "ALLOW"})},
-    )
-    assert _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]["admission"] == "ALLOW"
-
-
-def test_never_reports_a_degraded_hold_as_allowed(bind) -> None:
-    """A degraded verdict carries no governance evidence, so admission is null.
-
-    _build_degraded_verdict() persists HOLD after a pipeline timeout or error
-    with neither a governance action nor a recognized governance reason.
-    Publishing ALLOW there would claim governance ran when it did not.
-    """
-    bind(
-        [{"symbol": "EURUSD", "enabled": True}, {"symbol": "GBPUSD", "enabled": True}],
+        [{"symbol": "EURUSD"}],
         {
-            "EURUSD": _verdict(errors=["PIPELINE_TIMEOUT:analysis"]),
-            "GBPUSD": _verdict(),
-        },
-    )
-    rows = _by_symbol(dashboard_routes.dashboard_pair_states())
-
-    assert rows["EURUSD"]["admission"] is None
-    # A record with no governance block at all is equally unmeasured.
-    assert rows["GBPUSD"]["admission"] is None
-
-
-def test_derives_admission_and_reason_from_a_hold(bind) -> None:
-    bind(
-        [{"symbol": "EURUSD", "enabled": True}],
-        {"EURUSD": _verdict(last_hold_block_reason="GOVERNANCE_HOLD:stale_preserved,vix_spike")},
-    )
-    row = _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]
-
-    assert row["admission"] == "HOLD"
-    # Only the leading token survives; the detail after ":" is free-form.
-    assert row["reason_code"] == "GOVERNANCE_HOLD"
-
-
-def test_reports_undeclared_values_as_unmeasured(bind) -> None:
-    bind(
-        [{"symbol": "EURUSD", "enabled": True}],
-        {
-            "EURUSD": _verdict(
+            "EURUSD": record(
                 verdict="WAIT",
                 governance={"action": "CANARY"},
-                last_hold_block_reason="CANARY:detail",
-            )
-        },
-    )
-    row = _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]
-
-    assert row["verdict"] is None
-    assert row["admission"] is None
-    assert row["reason_code"] is None
-
-
-def test_omits_every_field_outside_the_projection(bind) -> None:
-    bind(
-        [{"symbol": "EURUSD", "enabled": True}],
-        {
-            "EURUSD": _verdict(
-                confidence=0.91,
-                direction="BUY",
-                scores={"tii": 0.8},
-                gates={"passed": 9},
-                execution={"lot_size": 0.42, "risk_amount": 120.0},
-                execution_map={"halt_reason": "CANARY"},
-                mta_diagnostics={"detail": "CANARY"},
+                last_hold_block_reason="CANARY:private",
+                confidence=0.9,
+                scores={"x": 1},
+                gates={"x": True},
+                execution={"lot_size": 10},
+                diagnostics="CANARY",
                 errors=["CANARY"],
             )
         },
     )
     response = dashboard_routes.dashboard_pair_states()
-
     assert set(response) == {"observed_at", "source_ok", "count", "items"}
-    assert set(response["items"][0]) == {
+    result = response["items"][0]
+    assert set(result) == {
         "symbol",
         "verdict",
         "admission",
@@ -200,204 +113,95 @@ def test_omits_every_field_outside_the_projection(bind) -> None:
         "active",
         "snapshot_present",
     }
+    assert all(result[k] is None for k in ("verdict", "admission", "reason_code", "warmup_ready"))
     assert "CANARY" not in str(response)
     assert "lot_size" not in str(response)
 
 
-def test_marks_a_pair_without_a_snapshot(bind) -> None:
-    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": None})
-    row = _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]
-
-    assert row["snapshot_present"] is False
-    assert row["verdict"] is None
-    assert row["admission"] is None
-    assert row["age_seconds"] is None
-    assert row["quality"] is None
+@pytest.mark.parametrize("verdict", sorted(verdict_normalization.VERDICT_STATES))
+def test_declared_verdict_states_are_preserved(bind, verdict):
+    bind([{"symbol": "EURUSD"}], {"EURUSD": record(verdict=verdict)})
+    assert row()["verdict"] == verdict
 
 
-def test_reports_a_stale_snapshot(bind) -> None:
-    bind(
-        [{"symbol": "EURUSD", "enabled": True}],
-        {"EURUSD": _verdict(_cached_at=time.time() - 900)},
-    )
-    assert _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]["quality"] == "STALE"
+@pytest.mark.parametrize(
+    "ready,expected", [(True, True), (False, False), (None, None), (1, None), (0, None), ("true", None), ({}, None)]
+)
+def test_warmup_only_uses_typed_engine_evidence(bind, ready, expected):
+    bind([{"symbol": "EURUSD"}], {"EURUSD": record(warmup_ready=ready)})
+    assert row()["warmup_ready"] is expected
 
 
-def test_flags_an_unreadable_source_without_failing_the_read(bind) -> None:
-    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": RuntimeError("redis down")})
+def test_no_context_redis_reconstruction(bind, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Dashboard must not reconstruct engine warmup")
+
+    monkeypatch.setattr("api.redis_context_reader.RedisContextReader", forbidden)
+    bind([{"symbol": "EURUSD"}], {"EURUSD": record(warmup_ready=True)})
     response = dashboard_routes.dashboard_pair_states()
+    assert response["source_ok"] is True
+    assert response["items"][0]["warmup_ready"] is True
 
-    assert response["source_ok"] is False
-    assert response["items"][0]["snapshot_present"] is False
 
-
-def test_flags_a_suppressed_verdict_read_failure(bind) -> None:
-    """A fail-soft Redis failure returns None, not an exception.
-
-    Without the reader's own health signal this is indistinguishable from a pair
-    that simply has no verdict yet, which is exactly the confusion source_ok
-    exists to prevent.
-    """
-    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": None}, verdict_source_ok=False)
+@pytest.mark.parametrize("healthy,counts", [(False, [0, 0]), (True, [0, 1])])
+def test_suppressed_or_recovered_read_failure_is_latched(bind, healthy, counts):
+    bind([{"symbol": "EURUSD"}], {}, healthy=healthy, failure_counts=counts)
     assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
 
 
-def test_flags_a_suppressed_context_read_failure(bind) -> None:
-    reader = _Reader()
-    reader.read_source_ok = False
-    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": _verdict()}, reader=reader)
-    assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
-
-
-def test_latches_a_verdict_failure_that_healed_before_the_scan_ended(bind) -> None:
-    """Read health is a cooldown window, not a latch.
-
-    A failure on the first pair can lapse before the last pair is read, so
-    asking only at the end would report a healthy source for a response whose
-    rows came from reads that had already failed.  The failure count is what
-    makes that detectable.
-    """
-    bind(
-        [{"symbol": "EURUSD", "enabled": True}, {"symbol": "GBPUSD", "enabled": True}],
-        {"EURUSD": None, "GBPUSD": _verdict()},
-        verdict_source_ok=True,
-        verdict_failure_counts=[0, 1],
-    )
-    assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
-
-
-def test_latches_a_context_failure_that_healed_before_the_scan_ended(bind) -> None:
-    reader = _Reader()
-    reader.failure_counts = [0, 1]
-    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": _verdict()}, reader=reader)
-    assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
-
-
-def test_a_steady_failure_count_leaves_the_source_healthy(bind) -> None:
-    """Failures before this scan are not this response's problem."""
-    reader = _Reader()
-    reader.failure_counts = [7, 7]
-    bind(
-        [{"symbol": "EURUSD", "enabled": True}],
-        {"EURUSD": _verdict()},
-        reader=reader,
-        verdict_failure_counts=[3, 3],
-    )
+def test_prior_failures_do_not_poison_current_read(bind):
+    bind([{"symbol": "EURUSD"}], {}, failure_counts=[7, 7])
     assert dashboard_routes.dashboard_pair_states()["source_ok"] is True
 
 
-def test_a_missing_snapshot_on_a_healthy_source_is_not_a_failure(bind) -> None:
-    """Warmup is not an outage: no verdict yet, but both readers are healthy."""
-    reader = _Reader()
-    reader.ready = False
-    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": None}, reader=reader)
+def test_raised_read_failure_retains_unknown_inventory(bind):
+    bind([{"symbol": "EURUSD"}], RuntimeError("Redis unavailable"))
     response = dashboard_routes.dashboard_pair_states()
-
-    assert response["source_ok"] is True
-    assert response["items"][0]["snapshot_present"] is False
-    assert response["items"][0]["warmup_ready"] is False
-
-
-def test_reports_a_disabled_pair_as_inactive(bind) -> None:
-    bind([{"symbol": "EURUSD", "enabled": False}], {"EURUSD": _verdict()})
-    assert _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]["active"] is False
+    assert response["source_ok"] is False
+    assert response["count"] == 1
+    assert response["items"][0]["warmup_ready"] is None
 
 
-def test_publishes_a_row_for_every_configured_pair(bind) -> None:
-    """items is the configured inventory, so count is not a snapshot count."""
-    bind(
-        [
-            {"symbol": "EURUSD", "enabled": True},
-            {"symbol": "GBPUSD", "enabled": True},
-            {"symbol": "USDJPY", "enabled": False},
-        ],
-        {"EURUSD": _verdict()},
-    )
-    response = dashboard_routes.dashboard_pair_states()
-
-    assert response["count"] == 3
-    assert [item["symbol"] for item in response["items"]] == ["EURUSD", "GBPUSD", "USDJPY"]
-    rows = _by_symbol(response)
-    assert rows["GBPUSD"]["snapshot_present"] is False
-    assert rows["USDJPY"]["active"] is False
-
-
-@pytest.mark.parametrize(
-    ("age_offset", "expected"),
-    [
-        (0.0, "LIVE"),
-        (300.0, "LIVE"),
-        (300.5, "STALE"),
-        (900.0, "STALE"),
-    ],
-)
-def test_quality_follows_the_stale_boundary(bind, monkeypatch, age_offset: float, expected: str) -> None:
-    monkeypatch.setattr("api.verdict_normalization.time.time", lambda: 1_800_000_000.0)
-    bind(
-        [{"symbol": "EURUSD", "enabled": True}],
-        {"EURUSD": _verdict(_cached_at=time.time() - age_offset)},
-    )
-    assert _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]["quality"] == expected
-
-
-@pytest.mark.parametrize(
-    "stamped",
-    [
-        pytest.param(None, id="future"),
-        pytest.param(float("nan"), id="nan"),
-        pytest.param(float("inf"), id="+inf"),
-        pytest.param(float("-inf"), id="-inf"),
-        pytest.param("not-a-number", id="unparseable"),
-    ],
-)
-def test_an_unverifiable_timestamp_is_never_live(bind, stamped: Any) -> None:
-    """A future or non-finite stamp means the clocks disagree, not that it is fresh."""
-    value = time.time() + 600 if stamped is None else stamped
-    bind([{"symbol": "EURUSD", "enabled": True}], {"EURUSD": _verdict(_cached_at=value)})
-    row = _by_symbol(dashboard_routes.dashboard_pair_states())["EURUSD"]
-
-    assert row["age_seconds"] is None
-    assert row["quality"] is None
-
-
-@pytest.mark.parametrize("source", ["verdict", "context"])
-def test_failure_between_initial_health_and_counter_is_not_lost(bind, monkeypatch, source):
-    reader = _Reader()
-    bind([{"symbol": "EURUSD", "enabled": True}], {}, reader=reader)
+def test_failure_during_health_sampling_is_not_absorbed(bind, monkeypatch):
+    bind([{"symbol": "EURUSD"}], {})
     generation = [0]
 
-    def sample_health():
+    def health():
         generation[0] = 1
         return True
 
-    if source == "verdict":
-        monkeypatch.setattr(dashboard_routes, "verdict_read_source_ok", sample_health)
-        monkeypatch.setattr(dashboard_routes, "verdict_read_failure_count", lambda: generation[0])
-    else:
-        monkeypatch.setattr(_Reader, "read_source_ok", property(lambda self: sample_health()))
-        monkeypatch.setattr(_Reader, "read_failure_count", property(lambda self: generation[0]))
+    monkeypatch.setattr(dashboard_routes, "verdict_read_source_ok", health)
+    monkeypatch.setattr(dashboard_routes, "verdict_read_failure_count", lambda: generation[0])
     assert dashboard_routes.dashboard_pair_states()["source_ok"] is False
 
 
-def test_inventory_uses_one_batch_per_reader(bind, monkeypatch):
+def test_one_batch_for_inventory(bind, monkeypatch):
     symbols = [f"PAIR{i}" for i in range(30)]
-    reader = bind([{"symbol": s} for s in symbols], {})
-    verdict_calls = []
-    warmup_calls = []
+    bind([{"symbol": s} for s in symbols], {})
+    calls = []
 
-    def verdict_batch(requested):
-        verdict_calls.append(requested)
+    def batch(requested):
+        calls.append(requested)
         return {}
 
-    def warmup_batch(requested):
-        warmup_calls.append(requested)
-        return {}
-
-    monkeypatch.setattr(dashboard_routes, "get_verdicts", verdict_batch)
-    monkeypatch.setattr(reader, "check_warmup_many", warmup_batch)
+    monkeypatch.setattr(dashboard_routes, "get_verdicts", batch)
     response = dashboard_routes.dashboard_pair_states()
-    assert verdict_calls == [symbols]
-    assert warmup_calls == [symbols]
+    assert calls == [symbols]
     assert response["count"] == 30
     assert response["source_ok"] is True
-    assert all(not row["snapshot_present"] and not row["warmup_ready"] for row in response["items"])
+
+
+@pytest.mark.parametrize(
+    "age,quality", [(0.0, "LIVE"), (300.0, "LIVE"), (300.0001, "STALE"), (300.5, "STALE"), (900.0, "STALE")]
+)
+def test_snapshot_age_boundary(bind, age, quality):
+    bind([{"symbol": "EURUSD"}], {"EURUSD": record(_cached_at=1_800_000_000.0 - age)})
+    assert row()["quality"] == quality
+
+
+@pytest.mark.parametrize("stamp", [1_800_000_600.0, float("nan"), float("inf"), float("-inf"), "bad"])
+def test_unverifiable_freshness_is_not_live(bind, stamp):
+    bind([{"symbol": "EURUSD"}], {"EURUSD": record(_cached_at=stamp)})
+    result = row()
+    assert result["age_seconds"] is None
+    assert result["quality"] is None

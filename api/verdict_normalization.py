@@ -89,7 +89,7 @@ def snapshot_age_seconds(raw: dict[str, Any] | None, now: float | None = None) -
     # disagree -- so it is unmeasured rather than a positive live signal.
     if not math.isfinite(age) or age < 0:
         return None
-    return round(age, 3)
+    return age
 
 
 def extract_hold_block_reason(raw: dict[str, Any] | None) -> str | None:
@@ -175,3 +175,9 @@ def quality_state(age_seconds: float | None) -> str | None:
     if age_seconds is None:
         return None
     return "LIVE" if age_seconds <= VERDICT_STALE_THRESHOLD_SECONDS else "STALE"
+
+
+def warmup_state(raw: dict[str, Any] | None) -> bool | None:
+    """Only publish the engine's measured readiness in this cached cycle."""
+    ready = raw.get("warmup_ready") if raw else None
+    return ready if isinstance(ready, bool) else None

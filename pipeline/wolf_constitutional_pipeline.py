@@ -156,7 +156,6 @@ from config_loader import CONFIG
 # local imports
 from constitution.l12_router_evaluator import L12Input, L12RouterEvaluator
 from constitution.verdict_engine import generate_l12_verdict
-from context.warmup_requirements import WARMUP_MIN_BARS
 from contracts.shadow_hook import begin_shadow_session, finalize_shadow_session
 from core.dag_engine import DagEngine
 from core.metrics import (
@@ -355,7 +354,7 @@ class WolfConstitutionalPipeline:
     # W1/MN are included because L1 regime context depends on them.
     # These are pipeline-gate minimums, intentionally lower than
     # config/finnhub.yaml min_bars (which are fetch targets).
-    WARMUP_MIN_BARS: dict[str, int] = dict(WARMUP_MIN_BARS)
+    WARMUP_MIN_BARS: dict[str, int] = {"H1": 30, "H4": 10, "D1": 5, "W1": 5, "MN": 2}
 
     # Avoid log storms when a symbol remains degraded for long periods.
     DQ_WARNING_LOG_INTERVAL_SEC: float = 900.0
@@ -1730,17 +1729,22 @@ class WolfConstitutionalPipeline:
             layer_timings_ms[layer_name] = round((time.time() - started) * 1000.0, 3)
             return result
 
+        warmup_measured = False
+
         def _early_exit_with_map(
             _errors: list[str],
             _latency_ms: float,
         ) -> dict[str, Any]:
-            return self._early_exit(
+            result = self._early_exit(
                 symbol,
                 _errors,
                 _latency_ms,
                 layers_executed=layers_executed,
                 engines_invoked=engines_invoked,
             )
+            result["warmup"] = dict(warmup)
+            result["warmup_measured"] = warmup_measured
+            return result
 
         # ═══════════════════════════════════════════════════════
         # WARMUP GATE -- reject analysis if candle history is
@@ -1751,6 +1755,7 @@ class WolfConstitutionalPipeline:
         if not safe_mode:
             _warmup_raw = self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS)
             warmup = normalize_warmup(_warmup_raw, required=min(self.WARMUP_MIN_BARS.values())).to_dict()
+            warmup_measured = True
 
             if not warmup["ready"]:
                 missing = warmup["missing"]
@@ -3042,6 +3047,8 @@ class WolfConstitutionalPipeline:
             )
 
             result_dict = result.to_dict()
+            result_dict["warmup"] = dict(warmup)
+            result_dict["warmup_measured"] = warmup_measured
             # Preserve the admission actually assessed before analysis for cache
             # consumers; synthesis governance describes the separate rollout hook.
             result_dict["governance"] = _governance.to_dict()
