@@ -354,13 +354,7 @@ class WolfConstitutionalPipeline:
     # W1/MN are included because L1 regime context depends on them.
     # These are pipeline-gate minimums, intentionally lower than
     # config/finnhub.yaml min_bars (which are fetch targets).
-    WARMUP_MIN_BARS: dict[str, int] = {
-        "H1": 30,
-        "H4": 10,
-        "D1": 5,
-        "W1": 5,
-        "MN": 2,
-    }
+    WARMUP_MIN_BARS: dict[str, int] = {"H1": 30, "H4": 10, "D1": 5, "W1": 5, "MN": 2}
 
     # Avoid log storms when a symbol remains degraded for long periods.
     DQ_WARNING_LOG_INTERVAL_SEC: float = 900.0
@@ -1735,17 +1729,22 @@ class WolfConstitutionalPipeline:
             layer_timings_ms[layer_name] = round((time.time() - started) * 1000.0, 3)
             return result
 
+        warmup_measured = False
+
         def _early_exit_with_map(
             _errors: list[str],
             _latency_ms: float,
         ) -> dict[str, Any]:
-            return self._early_exit(
+            result = self._early_exit(
                 symbol,
                 _errors,
                 _latency_ms,
                 layers_executed=layers_executed,
                 engines_invoked=engines_invoked,
             )
+            result["warmup"] = dict(warmup)
+            result["warmup_measured"] = warmup_measured
+            return result
 
         # ═══════════════════════════════════════════════════════
         # WARMUP GATE -- reject analysis if candle history is
@@ -1756,6 +1755,7 @@ class WolfConstitutionalPipeline:
         if not safe_mode:
             _warmup_raw = self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS)
             warmup = normalize_warmup(_warmup_raw, required=min(self.WARMUP_MIN_BARS.values())).to_dict()
+            warmup_measured = True
 
             if not warmup["ready"]:
                 missing = warmup["missing"]
@@ -2539,6 +2539,7 @@ class WolfConstitutionalPipeline:
                 result["verdict_reason"] = f"No executable direction (reason={direction_reason})"
                 result["direction_resolution"] = direction_resolution
                 result["universe_ranking"] = universe_ranking
+                result["governance"] = _governance.to_dict()
                 result["l12_verdict"] = {
                     "verdict": "NO_TRADE",
                     "reason": direction_reason,
@@ -2569,6 +2570,7 @@ class WolfConstitutionalPipeline:
                 result["verdict"] = "NO_TRADE"
                 result["verdict_reason"] = "SL/TP zero (ATR warmup insufficient)"
                 result["l12_verdict"] = {"verdict": "NO_TRADE", "reason": "sl_tp_zero"}
+                result["governance"] = _governance.to_dict()
                 return result
 
             # ═══════════════════════════════════════════════════════
@@ -3045,6 +3047,11 @@ class WolfConstitutionalPipeline:
             )
 
             result_dict = result.to_dict()
+            result_dict["warmup"] = dict(warmup)
+            result_dict["warmup_measured"] = warmup_measured
+            # Preserve the admission actually assessed before analysis for cache
+            # consumers; synthesis governance describes the separate rollout hook.
+            result_dict["governance"] = _governance.to_dict()
 
             # ── Export per-layer constitutional diagnostics (non-invasive) ──
             # L2/L1/L7/L8/L9 already compute diagnostics internally for constitutional

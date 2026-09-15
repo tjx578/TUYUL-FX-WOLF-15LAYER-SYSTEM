@@ -34,6 +34,10 @@ VERDICT_STREAM_MAXLEN = 1000
 _READ_REDIS_CLIENT: redis.Redis | None = None
 _READ_REDIS_CLIENT_URL: str | None = None
 _READ_REDIS_UNAVAILABLE_UNTIL = 0.0
+# Monotonic count of read failures. The cooldown above only says whether reads
+# are believed broken *right now*; a caller that spans many reads needs to know
+# a failure happened at all, even if the cooldown lapsed before it looked.
+_READ_REDIS_FAILURE_COUNT = 0
 
 
 def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
@@ -69,9 +73,32 @@ def _read_redis_temporarily_unavailable() -> bool:
 
 
 def _mark_read_redis_unavailable() -> None:
-    global _READ_REDIS_UNAVAILABLE_UNTIL
+    global _READ_REDIS_UNAVAILABLE_UNTIL, _READ_REDIS_FAILURE_COUNT
     cooldown = _env_float("L12_CACHE_READ_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
     _READ_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+    _READ_REDIS_FAILURE_COUNT += 1
+
+
+def verdict_read_source_ok() -> bool:
+    """Whether verdict reads are currently believed to reach Redis.
+
+    Reads here are fail-soft: a connection failure returns None rather than
+    raising, so a caller cannot tell "no verdict stored" from "store
+    unreachable" by the return value alone. This exposes the failure cooldown
+    the reader already maintains so a caller can tell them apart. It reflects
+    the last observed read; it never issues one.
+    """
+    return not _read_redis_temporarily_unavailable()
+
+
+def verdict_read_failure_count() -> int:
+    """How many verdict read failures this process has recorded.
+
+    ``verdict_read_source_ok`` reports a cooldown window, so a caller whose work
+    spans many reads can miss a failure that healed before it asked. Comparing
+    this count before and after that work detects the failure either way.
+    """
+    return _READ_REDIS_FAILURE_COUNT
 
 
 def _decode_redis_text(raw: Any) -> str:
@@ -239,6 +266,37 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
             "l2_mta_summary": l2_mta_summary,
         },
     )
+
+
+def get_verdicts(pairs: list[str]) -> dict[str, dict[str, Any] | None]:
+    """Read a bounded caller-selected batch without a Redis health probe.
+
+    Missing keys remain ``None``. Transport errors or malformed cache data fail
+    the entire batch closed and update the existing read-failure diagnostics.
+    The legacy single-key reader retains its existing behavior.
+    """
+    missing: dict[str, dict[str, Any] | None] = dict.fromkeys(pairs)
+    if not pairs or _read_redis_temporarily_unavailable():
+        return missing
+    try:
+        raw_values = _read_redis_client().mget([KEY_PREFIX + pair for pair in pairs])
+        if not isinstance(raw_values, (list, tuple)) or len(raw_values) != len(pairs):
+            raise ValueError("Invalid verdict batch response")
+        verdicts: dict[str, dict[str, Any] | None] = {}
+        for pair, raw in zip(pairs, raw_values, strict=True):
+            if raw is None:
+                verdicts[pair] = None
+                continue
+            if not isinstance(raw, (str, bytes)):
+                raise ValueError("Invalid cached verdict encoding")
+            decoded = json.loads(_decode_redis_text(raw))
+            if not isinstance(decoded, dict):
+                raise ValueError("Invalid cached verdict object")
+            verdicts[pair] = decoded
+        return verdicts
+    except Exception:
+        _mark_read_redis_unavailable()
+        return missing
 
 
 def get_verdict(pair: str) -> dict[str, Any] | None:

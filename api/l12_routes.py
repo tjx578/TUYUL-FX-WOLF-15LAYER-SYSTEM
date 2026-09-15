@@ -17,6 +17,11 @@ from utils.timezone_utils import format_local, format_utc, now_utc
 
 from .middleware.auth import verify_token
 from .redis_context_reader import RedisContextReader
+from .verdict_normalization import (
+    VERDICT_STALE_THRESHOLD_SECONDS,
+    extract_governance_action,
+    extract_hold_block_reason,
+)
 
 router: APIRouter = APIRouter()
 
@@ -71,41 +76,6 @@ def _build_meta(data: dict[str, Any]) -> dict[str, Any]:
         "cached_at": cached_at,
         "cache_ttl_seconds": VERDICT_TTL_SEC,
     }
-
-
-def _extract_hold_block_reason(raw: dict[str, Any] | None) -> str | None:
-    if not raw:
-        return None
-    reason = raw.get("last_hold_block_reason")
-    if isinstance(reason, str) and reason:
-        return reason
-    errors = raw.get("errors")
-    if isinstance(errors, list):
-        for err in errors:
-            if isinstance(err, str) and (
-                err.startswith("GOVERNANCE_BLOCK:")
-                or err.startswith("GOVERNANCE_HOLD:")
-                or err.startswith("WARMUP_INSUFFICIENT:")
-            ):
-                return err
-    return None
-
-
-def _extract_governance_action(raw: dict[str, Any] | None) -> str:
-    if not raw:
-        return "UNKNOWN"
-    governance = raw.get("governance")
-    if isinstance(governance, dict):
-        action = governance.get("action")
-        if isinstance(action, str) and action:
-            return action
-    reason = _extract_hold_block_reason(raw)
-    if reason:
-        if reason.startswith("GOVERNANCE_BLOCK"):
-            return "BLOCK"
-        if reason.startswith("GOVERNANCE_HOLD") or reason.startswith("WARMUP_INSUFFICIENT"):
-            return "HOLD"
-    return "ALLOW"
 
 
 def _extract_mta_diagnostics(raw: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -184,7 +154,7 @@ class VerdictCache:
 
 _verdict_cache = VerdictCache(ttl_seconds=5.0)
 
-_STALE_THRESHOLD_SEC = 300.0  # 5 minutes
+_STALE_THRESHOLD_SEC = VERDICT_STALE_THRESHOLD_SECONDS
 
 
 def _filter_actionable_verdicts(verdicts: dict[str, Any]) -> dict[str, Any]:
@@ -803,11 +773,11 @@ def fetch_internal_verdict_path(pair: str | None = None) -> dict[str, Any]:
                     "required": warmup.get("required", {}),
                     "missing": warmup.get("missing", {}),
                 },
-                "governance_action": _extract_governance_action(raw),
+                "governance_action": extract_governance_action(raw),
                 "last_verdict": (raw or {}).get("verdict"),
                 "last_verdict_timestamp": verdict_ts,
                 "verdict_age_seconds": age_sec,
-                "last_hold_block_reason": _extract_hold_block_reason(raw),
+                "last_hold_block_reason": extract_hold_block_reason(raw),
             }
         )
 

@@ -291,6 +291,12 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
     l12 = dict(result.get("l12_verdict") or {})
     execution_map = dict(result.get("execution_map") or {})
     governance = dict(result.get("governance") or {})
+    warmup = result.get("warmup")
+    warmup_ready: bool | None = None
+    if result.get("warmup_measured") is True and isinstance(warmup, dict):
+        measured_ready = warmup.get("ready")
+        if isinstance(measured_ready, bool):
+            warmup_ready = measured_ready
 
     confidence_raw = l12.get("confidence", 0.0)
     if isinstance(confidence_raw, str):
@@ -357,6 +363,7 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
         "risk_reward_ratio": execution.get("rr_ratio"),
         "execution_map": execution_map,
         "governance": governance,
+        "warmup_ready": warmup_ready,
         "errors": errors,
         "last_hold_block_reason": hold_block_reason,
     }
