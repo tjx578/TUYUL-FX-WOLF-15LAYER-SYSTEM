@@ -24,10 +24,7 @@ WINDOW_COUNTS_SQL = """
 
 def upgrade() -> None:
     op.execute("CREATE SCHEMA IF NOT EXISTS wolf15_audit")
-    op.execute(
-        "CREATE VIEW wolf15_audit.d0_window_counts_v1 "
-        "WITH (security_barrier=true) AS " + WINDOW_COUNTS_SQL
-    )
+    op.execute("CREATE VIEW wolf15_audit.d0_window_counts_v1 WITH (security_barrier=true) AS " + WINDOW_COUNTS_SQL)
     op.execute("REVOKE ALL ON wolf15_audit.d0_window_counts_v1 FROM PUBLIC")
     op.execute("""
         DO $grant$ BEGIN

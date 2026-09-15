@@ -31,7 +31,10 @@ def test_exact_open_states_and_empty_aggregate(states, expected):
         )
         cursor = connection.execute(migration.WINDOW_COUNTS_SQL)
         assert [column[0] for column in cursor.description] == [
-            "open_window_count", "queued_count", "armed_count", "reconciliation_required_count"
+            "open_window_count",
+            "queued_count",
+            "armed_count",
+            "reconciliation_required_count",
         ]
         assert cursor.fetchall() == [expected]
         assert expected[0] == sum(expected[1:])
