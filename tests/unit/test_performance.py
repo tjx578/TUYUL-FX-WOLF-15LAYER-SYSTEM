@@ -10,6 +10,7 @@ import pytest
 class TestPerformanceBaselines:
     """Ensure key operations stay within time budget."""
 
+    @pytest.mark.benchmark
     def test_verdict_computation_under_10ms(self):
         start = time.perf_counter()
         # Simulate verdict computation
@@ -18,6 +19,7 @@ class TestPerformanceBaselines:
         elapsed = (time.perf_counter() - start) * 1000
         assert elapsed < 10, f"Verdict computation took {elapsed:.1f}ms"
 
+    @pytest.mark.benchmark
     def test_risk_check_under_5ms(self):
         start = time.perf_counter()
         daily_pnl = -1500
@@ -27,6 +29,7 @@ class TestPerformanceBaselines:
         elapsed = (time.perf_counter() - start) * 1000
         assert elapsed < 5, f"Risk check took {elapsed:.1f}ms"
 
+    @pytest.mark.benchmark
     def test_journal_append_under_1ms(self):
         journal = []
         start = time.perf_counter()
@@ -36,6 +39,7 @@ class TestPerformanceBaselines:
         assert elapsed < 50, f"100 journal appends took {elapsed:.1f}ms"
         assert len(journal) == 100
 
+    @pytest.mark.benchmark
     @pytest.mark.parametrize("n_pairs", [5, 10, 28])
     def test_batch_scoring_scales_linearly(self, n_pairs):
         """Scoring N pairs should scale roughly linearly."""
@@ -47,3 +51,10 @@ class TestPerformanceBaselines:
         elapsed = time.perf_counter() - start
         per_pair = elapsed / n_pairs
         assert per_pair < 0.01, f"Per-pair scoring took {per_pair * 1000:.1f}ms"
+
+    def test_journal_append_preserves_all_entries(self):
+        journal = []
+        for i in range(100):
+            journal.append({"id": i, "type": "J2", "verdict": "EXECUTE"})  # noqa: PERF401
+
+        assert len(journal) == 100

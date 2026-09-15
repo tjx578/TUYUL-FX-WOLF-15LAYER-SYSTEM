@@ -29,7 +29,6 @@ import redis.client
 from loguru import logger
 
 from config.logging_bootstrap import configure_loguru_logging
-from core.health_probe import HealthProbe
 from core.redis_keys import (
     ACCOUNT_STATE,
     HEARTBEAT_INGEST,
@@ -42,6 +41,7 @@ from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
 from services.orchestrator.mode_owner import ModeOwnerLease
 from services.orchestrator.redis_commands import CommandParseError, parse_set_mode_command
+from services.shared.health_probe_launcher import HealthProbeRuntime
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
 from storage.redis_client import RedisClient
 from utils.market_hours import is_forex_market_open
@@ -469,7 +469,7 @@ class StateManager:
             self.close()
 
 
-def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> HealthProbe:
+def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> HealthProbeRuntime:
     """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
     from services.shared.health_probe_launcher import start_probe_in_thread
 
@@ -488,13 +488,13 @@ def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = N
 def run() -> None:
     _ORCHESTRATOR_READY.clear()
     manager = None
-    health_probe = None
     previous_handlers = {}
-    health_probe = _start_health_probe_in_thread(
+    probe_runtime = _start_health_probe_in_thread(
         readiness_check=lambda: bool(
             _ORCHESTRATOR_READY.is_set() and manager is not None and manager._mode_owner.is_current()
         )
     )
+    health_probe = probe_runtime.probe
     try:
         manager = StateManager()
 
@@ -519,8 +519,11 @@ def run() -> None:
         raise
     finally:
         _ORCHESTRATOR_READY.clear()
-        for signum, handler in previous_handlers.items():
-            signal.signal(signum, handler)
+        try:
+            for signum, handler in previous_handlers.items():
+                signal.signal(signum, handler)
+        finally:
+            probe_runtime.close()
 
 
 if __name__ == "__main__":

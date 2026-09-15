@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import json
+import statistics
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -294,6 +296,77 @@ class TestBroadcastThroughput:
         # Bad clients removed
         for bc in bad_clients:
             assert bc not in mgr.active_connections
+
+    @pytest.mark.benchmark
+    @pytest.mark.asyncio
+    async def test_broadcast_1000_messages_to_10_clients_performance(self, record_property):
+        """Typical 1000-message broadcast throughput must remain within budget."""
+        from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
+        warmup_rounds = 5
+        measured_rounds = 30
+        budget_seconds = 1.0
+        mgr = ConnectionManager(name="sustained-performance-test")
+        clients = [_make_ws(f"ws-{i}") for i in range(10)]
+        for client in clients:
+            _register_connected_ws(mgr, client)
+
+        async def run_round() -> float:
+            for client in clients:
+                client.send_json.reset_mock()
+
+            start = time.perf_counter()
+            for i in range(1000):
+                await mgr.broadcast({"seq": i, "ts": time.time()})
+            elapsed = time.perf_counter() - start
+
+            assert len(mgr.active_connections) == 10
+            for client in clients:
+                assert client.send_json.call_count == 1000
+            return elapsed
+
+        for _ in range(warmup_rounds):
+            await run_round()
+        timings = [await run_round() for _ in range(measured_rounds)]
+
+        percentile_values = statistics.quantiles(timings, n=100, method="inclusive")
+        median = statistics.median(timings)
+        p90 = percentile_values[89]
+        p95 = percentile_values[94]
+        maximum = max(timings)
+        standard_deviation = statistics.pstdev(timings)
+
+        record_property("policy_id", "WS_CONNECTION_STRESS_PERF_V1_PROVISIONAL")
+        record_property("warmup_rounds", warmup_rounds)
+        record_property("measured_rounds", measured_rounds)
+        record_property("budget_seconds", budget_seconds)
+        record_property("timings_seconds", json.dumps(timings, separators=(",", ":")))
+        record_property("median_seconds", median)
+        record_property("p90_seconds", p90)
+        record_property("p95_seconds", p95)
+        record_property("maximum_seconds", maximum)
+        record_property("standard_deviation_seconds", standard_deviation)
+
+        assert median <= budget_seconds, (
+            f"Median 1000-broadcast workload took {median:.3f}s "
+            f"(budget: {budget_seconds:.1f}s; p95: {p95:.3f}s; max: {maximum:.3f}s)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_broadcast_1000_messages_to_10_clients_portable(self):
+        """Portable delivery completeness is independent of the timing lanes."""
+        from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
+        mgr = ConnectionManager(name="sustained-portable-test")
+        clients = [_RecordingClient() for _ in range(10)]
+        for client in clients:
+            _register_connected_ws(mgr, client)
+        for index in range(1000):
+            await mgr.broadcast({"seq": index, "ts": time.time()})
+        assert len(mgr.active_connections) == 10
+        for client in clients:
+            assert len(client.messages) == 1000
+            assert [message["seq"] for message in client.messages] == list(range(1, 1001))
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -54,6 +54,7 @@ class TestFeedToVerdictLatency:
             "confidence": min(avg / 10, 1.0),
         }
 
+    @pytest.mark.benchmark
     def test_single_pair_latency(self):
         start = time.perf_counter()
 
@@ -65,6 +66,7 @@ class TestFeedToVerdictLatency:
         assert elapsed < 2.0, f"E2E latency {elapsed:.3f}s exceeds 2s target"
         assert verdict["verdict"] in ("EXECUTE", "NO_TRADE")
 
+    @pytest.mark.benchmark
     @pytest.mark.parametrize("symbol", ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD"])
     def test_multi_pair_latency(self, symbol):
         start = time.perf_counter()
@@ -76,6 +78,7 @@ class TestFeedToVerdictLatency:
         elapsed = time.perf_counter() - start
         assert elapsed < 2.0, f"{symbol} E2E latency {elapsed:.3f}s exceeds 2s"
 
+    @pytest.mark.benchmark
     def test_concurrent_multi_pair_latency(self):
         """5 pairs analyzed concurrently should complete in < 3s total."""
         import concurrent.futures  # noqa: PLC0415
@@ -94,5 +97,30 @@ class TestFeedToVerdictLatency:
 
         assert len(results) == 5
         assert elapsed < 3.0, f"Concurrent 5-pair latency {elapsed:.3f}s exceeds 3s"
+        for r in results:
+            assert "verdict" in r
+
+    def test_single_pair_produces_valid_verdict(self):
+        feed = self._simulate_feed("EURUSD")
+        analysis = self._simulate_analysis(feed)
+        verdict = self._simulate_verdict(analysis)
+
+        assert verdict["verdict"] in ("EXECUTE", "NO_TRADE")
+
+    def test_concurrent_multi_pair_produces_five_verdicts(self):
+        """Five concurrent synthetic pairs must retain their verdict shape."""
+        import concurrent.futures  # noqa: PLC0415
+
+        symbols = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD"]
+
+        def process(symbol):
+            feed = self._simulate_feed(symbol)
+            analysis = self._simulate_analysis(feed)
+            return self._simulate_verdict(analysis)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            results = list(executor.map(process, symbols))
+
+        assert len(results) == 5
         for r in results:
             assert "verdict" in r

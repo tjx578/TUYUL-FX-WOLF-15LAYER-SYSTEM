@@ -142,6 +142,7 @@ class TestNineGateConcurrentLoad:
         "EURJPY",
     ]
 
+    @pytest.mark.benchmark
     def test_single_call_within_latency_budget(self) -> None:
         """A single generate_l12_verdict call must complete within budget."""
         outcome = _run_verdict("EURUSD")
@@ -155,6 +156,7 @@ class TestNineGateConcurrentLoad:
             "NO_TRADE",
         }
 
+    @pytest.mark.benchmark
     def test_concurrent_calls_within_wall_clock_budget(self) -> None:
         """All 8 pairs running concurrently must finish within wall-clock cap."""
         start = time.perf_counter()
@@ -184,6 +186,7 @@ class TestNineGateConcurrentLoad:
                 f"Contamination: expected {symbol}, got {outcome['result']['symbol']}"
             )
 
+    @pytest.mark.benchmark
     def test_all_calls_within_per_call_latency_budget(self) -> None:
         """Each individual concurrent call must stay within the latency cap."""
         barrier = threading.Barrier(len(self._PAIRS))
@@ -213,6 +216,7 @@ class TestNineGateConcurrentLoad:
         result = generate_l12_verdict(synthesis)
         assert result["gates"]["gate_8_latency"] == "PASS", "Gate 8 (latency) should PASS for 200 ms synthesis latency"
 
+    @pytest.mark.benchmark
     def test_sustained_load_50_sequential_calls(self) -> None:
         """50 sequential calls must all complete; no degradation over time."""
         elapsed_ms_list: list[float] = []
@@ -225,3 +229,20 @@ class TestNineGateConcurrentLoad:
         assert p99 < self._MAX_SINGLE_CALL_MS, (
             f"P99 latency {p99:.1f} ms over 50 sequential calls exceeds budget {self._MAX_SINGLE_CALL_MS} ms"
         )
+
+    def test_single_call_returns_valid_verdict(self) -> None:
+        """A single 9-gate call must retain its portable verdict contract."""
+        outcome = _run_verdict("EURUSD")
+        assert outcome["result"]["verdict"] in {
+            "EXECUTE_BUY",
+            "EXECUTE_SELL",
+            "HOLD",
+            "NO_TRADE",
+        }
+
+    def test_concurrent_calls_return_all_outcomes(self) -> None:
+        """All eight concurrent calls must complete in the portable suite."""
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self._PAIRS)) as ex:
+            outcomes = list(ex.map(_run_verdict, self._PAIRS))
+
+        assert len(outcomes) == len(self._PAIRS)
