@@ -294,8 +294,8 @@ class PostgresEvidenceRepository:
             result = await conn.execute(
                 """
             UPDATE strategy_5scr_inbox
-            SET status = $2,
-                processed_at = CASE WHEN $2 = 'PROCESSED' THEN NOW() ELSE NULL END,
+            SET status = $2::varchar,
+                processed_at = CASE WHEN $2::varchar = 'PROCESSED' THEN NOW() ELSE NULL END,
                 result_id = $3,
                 result_payload = $4::jsonb,
                 evidence_snapshot_id = $5,

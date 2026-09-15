@@ -227,6 +227,9 @@ jobs:
       - name: Require authenticated D0 reconciliation on disposable PostgreSQL
         run: python scripts/ci/run_d0_reconciliation_acceptance.py
 
+      - name: Require isolated canonical V1 handoff replay
+        run: python scripts/ci/run_canonical_v1_replay_acceptance.py
+
       - name: Require distributed mode-owner Redis acceptance
         run: |
           python -m pytest tests/integration/test_orchestrator_mode_owner_redis.py \
@@ -277,10 +280,21 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Require D1 process recovery and exact-source container acceptance
+        run: python scripts/ci/run_d1_process_acceptance.py
+
+      - name: Require historical marker migration acceptance
+        run: python scripts/ci/run_observed_marker_acceptance.py
+
       - name: Run pytest with coverage
         run: |
           pytest tests/ \
             --ignore=tests/test_native_mt5_readonly_mcp.py \
+            --ignore=tests/integration/test_orchestrator_container_entrypoints.py \
+            --ignore=tests/integration/test_orchestrator_process_recovery.py \
+            --ignore=tests/integration/test_orchestrator_legacy_import_redis.py \
+            --ignore=tests/integration/test_observed_marker_migration_postgres.py \
+            --ignore=tests/integration/test_5scr_canonical_v1_handoff_replay.py \
             -v --tb=short -m "not benchmark" \
             --timeout=60 \
             --cov=analysis --cov=constitution --cov=execution \
@@ -318,7 +332,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: python-suite-junit
-          path: artifacts/python-suite/*.xml
+          path: |
+            artifacts/python-suite/*.xml
+            artifacts/python-suite/canonical-v1-lineage.json
+            artifacts/python-suite/d1-process/
+            artifacts/observed-marker/
           if-no-files-found: error
           retention-days: 14
 
@@ -631,10 +649,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  typecheck:
+    name: Python typecheck
+    uses: ./.github/workflows/lint.yml
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, runtime-acceptance, built-api]
+    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, runtime-acceptance, built-api, typecheck]
     if: always()
     steps:
       - name: Evaluate all upstream jobs
@@ -647,6 +669,7 @@ jobs:
           echo "drift-guard: ${{ needs.drift-guard.result }}"
           echo "runtime:     ${{ needs.runtime-acceptance.result }}"
           echo "built-api:   ${{ needs.built-api.result }}"
+          echo "typecheck:   ${{ needs.typecheck.result }}"
 
           FAILED=0
           for JOB in \
@@ -657,7 +680,8 @@ jobs:
             "${{ needs.shim-guard.result }}" \
             "${{ needs.drift-guard.result }}" \
             "${{ needs.runtime-acceptance.result }}" \
-            "${{ needs.built-api.result }}"; do
+            "${{ needs.built-api.result }}" \
+            "${{ needs.typecheck.result }}"; do
             if [[ "$JOB" != "success" ]]; then
               FAILED=1
             fi

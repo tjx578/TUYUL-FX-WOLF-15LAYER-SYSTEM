@@ -160,7 +160,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     outbox_task: asyncio.Task[None] | None = None
     if not read_only_startup:
         try:
-            outbox_worker = TradeOutboxWorker(consumer_name="api-1")
+            # This is API projection delivery, not compliance orchestration or an
+            # execution consumer. A per-process identity avoids aliasing Redis
+            # consumer state across Gunicorn workers and rolling replicas.
+            projection_consumer = f"api-projection-{os.getenv('RAILWAY_REPLICA_ID') or 'local'}-{os.getpid()}"
+            outbox_worker = TradeOutboxWorker(consumer_name=projection_consumer)
             outbox_task = supervisor.start("trade_outbox", outbox_worker.run())
         except Exception:
             supervisor.fail("trade_outbox", "bootstrap_failed")

@@ -1,4 +1,4 @@
-"""Preserve an existing TEST_ONLY capacity ledger across the supported 05->head upgrade."""
+"""Prove supported ledger preservation and both published D1 histories on disposable PostgreSQL."""
 
 import asyncio
 import hashlib
@@ -21,6 +21,75 @@ from scripts.ci.run_strategy_persistence_acceptance import isolated_domain_datab
 from storage.strategy_5scr_capacity_v31 import CapacityRepositoryV31  # noqa: E402
 from tests.integration.test_candidate_revision_v31_postgres import DB  # noqa: E402
 from tests.test_strategy_5scr_candidate_handoff_v31 import bundle  # noqa: E402
+
+_PUBLISHED_HEADS = ("20260908_01", "20260911_01")
+_MERGED_HEAD = "20260915_01"
+_D1_TABLES = (
+    "strategy_5scr_analysis_admissions_v1",
+    "strategy_5scr_analysis_admission_evaluations_v1",
+    "strategy_5scr_analysis_evidence_jobs_v1",
+    "strategy_5scr_analysis_evidence_snapshots_v1",
+    "engineering_demo_canary_authority_packets",
+    "direct_broker_reconciliation_receipts",
+    "executor_mode_transition_authority_packets",
+    "executor_mode_transition_receipts",
+    "executor_account_binding_identifiers",
+)
+
+
+def verify_published_head_upgrade(starting_head: str, folder: Path, receipt: dict) -> None:
+    """Exercise one published history without inheriting another case's schema."""
+    if starting_head not in _PUBLISHED_HEADS:
+        raise ValueError("UNSUPPORTED_PUBLISHED_STARTING_HEAD")
+    if migration_graph(ROOT)["repository_heads"] != [_MERGED_HEAD]:
+        raise ValueError("D1_MERGE_HEAD_MISMATCH")
+    folder.mkdir(parents=True, exist_ok=False)
+    receipt.update(starting_head=starting_head, expected_head=_MERGED_HEAD, accepted=False, steps=[])
+    try:
+        with isolated_domain_database(empty=True) as database:
+            env = dict(os.environ)
+            env.update(DATABASE_URL=env["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"], WOLF15_LOAD_DOTENV="false")
+            receipt["database"] = database
+            for target in (starting_head, "head"):
+                result = subprocess.run(
+                    [sys.executable, "-m", "alembic", "upgrade", target],
+                    cwd=ROOT,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                )
+                (folder / f"upgrade-{target}.log").write_text(
+                    redact(result.stdout + result.stderr, env), encoding="utf-8"
+                )
+                receipt["steps"].append({"target": target, "exit_code": result.returncode})
+                if result.returncode:
+                    raise ValueError("MIGRATION_SUBPROCESS_FAILED")
+                with psycopg.connect(env["DATABASE_URL"]) as connection:
+                    heads = sorted(row[0] for row in connection.execute("SELECT version_num FROM alembic_version"))
+                    tables = {}
+                    for name in _D1_TABLES:
+                        row = connection.execute("SELECT to_regclass(%s)::text", (f"public.{name}",)).fetchone()
+                        assert row is not None
+                        tables[name] = row[0]
+                    if target == starting_head:
+                        assert heads == [starting_head]
+                        receipt["baseline"] = {"migration_heads": heads, "tables": tables}
+                        # Each case must begin with only its published branch's
+                        # capabilities; a premerged fixture cannot pass this gate.
+                        assert bool(tables["strategy_5scr_analysis_admissions_v1"]) == (starting_head == "20260908_01")
+                        assert bool(tables["executor_account_binding_identifiers"]) == (starting_head == "20260911_01")
+                    else:
+                        assert heads == [_MERGED_HEAD]
+                        assert all(tables.values())
+                        receipt["upgraded_tables"] = tables
+                        receipt["postgres"] = observe_postgres(connection, database, _MERGED_HEAD, 16)
+            receipt["accepted"] = True
+    except Exception as exc:
+        receipt["failure_class"] = type(exc).__name__
+        raise
+    finally:
+        (folder / "upgrade-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
 
 
 def main():
@@ -99,7 +168,12 @@ def main():
                     assert connection.execute(
                         "SELECT to_regclass(%s)", (f"public.strategy_5scr_transaction_a_{name}_v31",)
                     ).fetchone()[0]
-            receipt["accepted"] = True
+        receipt["published_head_upgrades"] = []
+        for starting_head in _PUBLISHED_HEADS:
+            branch_receipt = {"source_commit": receipt["source_commit"]}
+            receipt["published_head_upgrades"].append(branch_receipt)
+            verify_published_head_upgrade(starting_head, folder / f"from-{starting_head}", branch_receipt)
+        receipt["accepted"] = True
     except Exception as exc:
         receipt["failure_class"] = type(exc).__name__
     finally:

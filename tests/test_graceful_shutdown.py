@@ -17,6 +17,52 @@ import pytest
 
 from startup.graceful_shutdown import GracefulShutdown
 
+
+class _ShutdownOwnership:
+    """Minimal fenced-owner double for shutdown sequencing tests."""
+
+    def __init__(self, redis_client: MagicMock) -> None:
+        from services.orchestrator.ownership import LeaseIdentity
+
+        self._redis = redis_client
+        self._lease_identity = LeaseIdentity(owner_id="shutdown-test", generation=1)
+        self.identity = None
+
+    @property
+    def held(self) -> bool:
+        return self.identity is not None
+
+    def acquire(self) -> bool:
+        self.identity = self._lease_identity
+        return True
+
+    def renew(self) -> bool:
+        return self.held
+
+    def release(self) -> bool:
+        was_held = self.held
+        self.identity = None
+        return was_held
+
+    def fenced_state_write(
+        self,
+        *,
+        state_key: str,
+        state_payload: str,
+        heartbeat_key: str,
+        heartbeat_payload: str,
+        channel: str,
+    ) -> None:
+        pipe = self._redis.pipeline()
+        pipe.set(state_key, state_payload)
+        pipe.set(heartbeat_key, heartbeat_payload)
+        pipe.publish(channel, state_payload)
+        pipe.execute()
+
+    def fenced_value_write(self, *, key: str, value: str) -> None:
+        self._redis.set(key, value)
+
+
 # ── Helpers ────────────────────────────────────────────────────────
 
 
@@ -175,11 +221,15 @@ class TestOrchestratorShutdownState:
         mock_pubsub = MagicMock()
         mock_redis.pubsub.return_value = mock_pubsub
         mock_pubsub.get_message.return_value = None
+        mock_redis.get.return_value = None
         mock_redis.mget.return_value = [None, None]
         mock_pipe = MagicMock()
         mock_redis.pipeline.return_value = mock_pipe
 
-        sm = StateManager(redis_client=mock_redis)
+        sm = StateManager(
+            redis_client=mock_redis,
+            ownership=_ShutdownOwnership(mock_redis),  # type: ignore[arg-type]
+        )
         sm.configure_intervals(compliance_interval_sec=999, heartbeat_interval_sec=999)
 
         call_count = 0
@@ -198,10 +248,12 @@ class TestOrchestratorShutdownState:
             sm.run_forever()
 
         # Verify SHUTDOWN was published (last pipeline call before close)
-        publish_calls = [c for c in mock_redis.eval.call_args_list]
+        publish_calls = list(mock_pipe.publish.call_args_list)
         # At least one publish should contain "SHUTDOWN"
         shutdown_published = any("SHUTDOWN" in str(args) for args in publish_calls)
         assert shutdown_published, f"Expected SHUTDOWN publish, got: {publish_calls}"
+        assert "SHUTDOWN" in str(publish_calls[-1])
+        mock_pubsub.close.assert_called_once()
 
     def test_run_forever_closes_pubsub_after_shutdown(self) -> None:
         """Pubsub should be closed even if SHUTDOWN publish fails."""
@@ -212,11 +264,15 @@ class TestOrchestratorShutdownState:
         mock_pubsub = MagicMock()
         mock_redis.pubsub.return_value = mock_pubsub
         mock_pubsub.get_message.return_value = None
+        mock_redis.get.return_value = None
         mock_redis.mget.return_value = [None, None]
         mock_pipe = MagicMock()
         mock_redis.pipeline.return_value = mock_pipe
 
-        sm = StateManager(redis_client=mock_redis)
+        sm = StateManager(
+            redis_client=mock_redis,
+            ownership=_ShutdownOwnership(mock_redis),  # type: ignore[arg-type]
+        )
         sm.configure_intervals(compliance_interval_sec=999, heartbeat_interval_sec=999)
 
         call_count = 0
@@ -226,7 +282,7 @@ class TestOrchestratorShutdownState:
             call_count += 1
             if call_count >= 1:
                 # NOW make pipeline fail — after BOOT publish succeeded
-                mock_redis.eval.side_effect = ConnectionError("redis down")
+                mock_pipe.execute.side_effect = ConnectionError("redis down")
                 raise KeyboardInterrupt("test exit")
 
         sm.process_once = limited_process
@@ -234,5 +290,7 @@ class TestOrchestratorShutdownState:
         with pytest.raises(KeyboardInterrupt):
             sm.run_forever()
 
-        # Pubsub must be closed even when publish_state("SHUTDOWN") fails
+        # The injected failure must actually run after BOOT, then pubsub closes.
+        assert mock_pipe.execute.call_count == 2
+        assert "SHUTDOWN" in str(mock_pipe.publish.call_args_list[-1])
         mock_pubsub.close.assert_called_once()

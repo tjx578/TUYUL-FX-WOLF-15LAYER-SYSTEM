@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
@@ -43,7 +44,9 @@ def events() -> list[SignalThrottleLogEvent]:
     ]
 
 
-def context(raw: list[SignalThrottleLogEvent], *, status: str = "COMPLETE") -> PairActivityReportContextV31:
+def context(
+    raw: list[SignalThrottleLogEvent], *, status: Literal["COMPLETE", "INCOMPLETE", "UNKNOWN"] = "COMPLETE"
+) -> PairActivityReportContextV31:
     return PairActivityReportContextV31(
         coverage=RawActivityCoverageV31(
             status=status,
@@ -90,7 +93,9 @@ def test_process_buffer_without_bound_context_stays_unbound() -> None:
 
 
 @pytest.mark.parametrize("status", ["INCOMPLETE", "UNKNOWN"])
-def test_unverified_coverage_preserves_activity_but_cannot_grant(status: str) -> None:
+def test_unverified_coverage_preserves_activity_but_cannot_grant(
+    status: Literal["INCOMPLETE", "UNKNOWN"],
+) -> None:
     raw = events()
     report = analyze_signal_throttle_events(raw, pair_activity_context=context(raw, status=status))
     rows = report["pair_activity_v31"]["audit"]["evaluations"]

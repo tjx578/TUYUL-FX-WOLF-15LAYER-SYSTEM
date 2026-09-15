@@ -24,7 +24,9 @@ def _plan(*, direction: str = "BUY") -> Strategy5SCRTradePlan:
         symbol="EURUSD",
         direction=direction,
         decision_at_utc=DECISION_AT,
-        **prices,
+        entry=prices["entry"],
+        stop_loss=prices["stop_loss"],
+        tp1=prices["tp1"],
     )
 
 

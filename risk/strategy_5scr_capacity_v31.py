@@ -44,14 +44,15 @@ def capacity_content_hash_v31(value) -> str:
 
 
 def capacity_used_v31(ledger: CapacityLedgerV31) -> Fraction:
-    return risk_amount_fraction_v31(ledger.baseline_external_risk_usd) + sum(
-        (
-            risk_amount_fraction_v31(r.sizing.planned_loss_usd)
-            for r in ledger.reservations
-            if r.state in {"HELD_UNISSUED", "PENDING_RECONCILIATION"}
-        ),
-        Fraction(0),
-    )
+    used = risk_amount_fraction_v31(ledger.baseline_external_risk_usd)
+    for reservation in ledger.reservations:
+        if reservation.state not in {"HELD_UNISSUED", "PENDING_RECONCILIATION"}:
+            continue
+        loss = reservation.sizing.planned_loss_usd
+        if loss is None:
+            raise CapacityRejectedError("CAPACITY_SIZING_AMOUNT_UNBOUND")
+        used += risk_amount_fraction_v31(loss)
+    return used
 
 
 def _control(ledger, owner_epoch, now):
@@ -211,6 +212,7 @@ def transition_capacity_v31(
         state = "EXPIRED_UNISSUED"
     elif action == "RELEASE_RECONCILED":
         assert release_evidence is not None
+        assert release_hash is not None  # computed for RELEASE_RECONCILED above
         evidence = release_evidence
         if (
             evidence.account_id,

@@ -16,9 +16,9 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Protocol
 
 from loguru import logger
 from sqlalchemy.engine import make_url
@@ -27,6 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from config.logging_bootstrap import configure_loguru_logging, configure_stdlib_logging
 from services.engine.runtime_state import EngineRuntimeState
 from services.shared.db_revision_guard import DatabaseSchemaError, assert_required_tables
+
+if TYPE_CHECKING:
+    from core.health_probe import HealthProbe
 
 configure_stdlib_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
 configure_loguru_logging()
@@ -87,7 +90,13 @@ def _start_health_probe_in_thread(runtime: EngineRuntimeState):
     return start_probe_in_thread(port=port, service_name="engine", readiness_check=runtime.ready)
 
 
-def _import_main() -> Callable[[], Coroutine[Any, Any, None]]:
+class EngineMain(Protocol):
+    async def __call__(
+        self, *, health_probe: HealthProbe | None = None, runtime_state: EngineRuntimeState | None = None
+    ) -> None: ...
+
+
+def _import_main() -> EngineMain:
     """Import main() from root main.py with explicit sys.path setup.
 
     Ensures the project root is on sys.path so the import succeeds

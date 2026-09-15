@@ -1075,7 +1075,8 @@ void PollOneDemoCommand()
    if(code != 200)
       return;
    string command_id = JsonValue(response, "command_id");
-   if(StringLen(command_id) == 0 || command_id == g_last_command_id || DemoStateExists())
+   if(StringLen(command_id) == 0 || command_id == g_last_command_id ||
+      command_id == g_quarantined_command_id || DemoStateExists())
       return;
    string claim_response;
    int claim_code = HttpRequest("POST", "/api/v1/commands/" + command_id + "/claim",

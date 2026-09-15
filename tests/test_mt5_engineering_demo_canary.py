@@ -540,7 +540,7 @@ async def test_authority_is_default_off(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delenv("WOLF15_ENABLE_ENGINEERING_DEMO_CANARY_ISSUANCE", raising=False)
     authority = EngineeringDemoCanaryAuthorityV1(_FakeRepository())  # type: ignore[arg-type]
 
-    with pytest.raises(EngineeringDemoCanaryError, match="disabled"):
+    with pytest.raises(EngineeringDemoCanaryError, match="unbound issuance is disabled"):
         await authority.issue(_request())
 
 
@@ -552,11 +552,9 @@ async def test_authority_queues_under_engaged_kill_switch(monkeypatch: pytest.Mo
     repository = _FakeRepository()
     authority = EngineeringDemoCanaryAuthorityV1(repository)  # type: ignore[arg-type]
 
-    manifest = await authority.issue(_request())
-
-    assert manifest["demo_only"] is True
-    assert len(repository.enqueued) == 1
-    assert repository.enqueued[0].executor_binding.execution_mode is ExecutorMode.DEMO
+    with pytest.raises(EngineeringDemoCanaryError, match="use issue_frozen"):
+        await authority.issue(_request())
+    assert repository.enqueued == []
 
 
 @pytest.mark.asyncio
@@ -565,5 +563,178 @@ async def test_authority_refuses_issue_after_global_disarm(monkeypatch: pytest.M
     repository = _FakeRepository(kill_switch_active=False)
     authority = EngineeringDemoCanaryAuthorityV1(repository)  # type: ignore[arg-type]
 
-    with pytest.raises(EngineeringDemoCanaryError, match="kill switch"):
+    with pytest.raises(EngineeringDemoCanaryError, match="unbound issuance is disabled"):
         await authority.issue(_request())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", [None, "disabled", "reconciliation", "schema", "kill_switch"])
+async def test_frozen_issuance_retains_main_safety_gates(monkeypatch: pytest.MonkeyPatch, fault: str | None) -> None:
+    from execution.broker_reconciliation_evidence import ReconciliationEvidenceError
+    from execution.mt5_demo_canary_authority_packet import (
+        DemoCanaryAuthorityPacketV1,
+        IssuanceDisposition,
+        ProcessLocalIssuanceCapability,
+        command_content_sha256_from_fields,
+        emitted_command_content_sha256,
+        packet_sha256,
+    )
+    from tests.test_d0_canary_control_capabilities import _packet_values
+
+    class FrozenRepository(_FakeRepository):
+        async def d0_canary_control_schema_status(self):
+            return {"ready": True}
+
+        async def engineering_demo_canary_schema_status(self):
+            return {"ready": fault != "schema"}
+
+        async def load_engineering_reconciliation(self, snapshot):
+            if fault == "reconciliation":
+                raise ReconciliationEvidenceError("RECONCILIATION_EVIDENCE_MISSING")
+            return await super().load_engineering_reconciliation(snapshot)
+
+        async def enqueue_frozen_engineering_demo_canary_command(
+            self, command, *, authority_packet, authority_packet_sha256
+        ):
+            assert authority_packet_sha256 == packet_sha256(authority_packet)
+            assert emitted_command_content_sha256(command) == authority_packet.command_content_sha256
+            assert command.guards.reconciliation_evidence_id is not None
+            self.enqueued.append(command)
+            return IssuanceDisposition.CREATED
+
+    monkeypatch.setenv("WOLF15_ENABLE_ENGINEERING_DEMO_CANARY_ISSUANCE", "false" if fault == "disabled" else "true")
+    monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_SECRET", SECRET)
+    monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", "d0-test-key")
+    repository = FrozenRepository(kill_switch_active=fault != "kill_switch")
+    values = _packet_values()
+    now = datetime.now(UTC)
+    values.update(
+        executor_id=EXECUTOR_ID,
+        expected_account_snapshot_id=repository.snapshot.snapshot_id,
+        account_reference=repository.snapshot.account_id,
+        approved_at_utc=now - timedelta(seconds=2),
+        issued_at_utc=now - timedelta(seconds=1),
+        expires_at_utc=now + timedelta(seconds=89),
+    )
+    values["command_content_sha256"] = command_content_sha256_from_fields(values)
+    packet = DemoCanaryAuthorityPacketV1.model_validate(values)
+    digest = packet_sha256(packet)
+    capability = ProcessLocalIssuanceCapability(packet_sha256_value=digest, command_id=packet.command_id)
+    authority = EngineeringDemoCanaryAuthorityV1(repository)  # type: ignore[arg-type]
+    if fault is not None:
+        message = {
+            "disabled": "disabled",
+            "reconciliation": "RECONCILIATION_",
+            "schema": "schema",
+            "kill_switch": "kill switch",
+        }[fault]
+        with pytest.raises(EngineeringDemoCanaryError, match=message):
+            await authority.issue_frozen(packet, expected_packet_sha256=digest, capability=capability)
+        assert repository.enqueued == []
+        assert not capability.consumed
+    else:
+        manifest = await authority.issue_frozen(packet, expected_packet_sha256=digest, capability=capability)
+        assert manifest["disposition"] == "CREATED"
+        assert len(repository.enqueued) == 1
+        assert capability.consumed
+        repeated = await authority.issue_frozen(packet, expected_packet_sha256=digest, capability=capability)
+        assert repeated["disposition"] == "ALREADY_ISSUED"
+        assert len(repository.enqueued) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("consumed", [False, True])
+@pytest.mark.parametrize("binding", ["digest", "command"])
+async def test_frozen_issuance_rejects_wrong_capability_before_side_effects(monkeypatch, consumed, binding):
+    from unittest.mock import AsyncMock
+
+    from execution.mt5_demo_canary_authority_packet import (
+        DemoCanaryAuthorityPacketV1,
+        ProcessLocalIssuanceCapability,
+        ProcessLocalIssuanceError,
+        command_content_sha256_from_fields,
+        packet_sha256,
+    )
+    from tests.test_d0_canary_control_capabilities import _packet_values
+
+    values = _packet_values()
+    now = datetime.now(UTC)
+    values.update(approved_at_utc=now, issued_at_utc=now, expires_at_utc=now + timedelta(seconds=60))
+    values["command_content_sha256"] = command_content_sha256_from_fields(values)
+    original = DemoCanaryAuthorityPacketV1.model_validate(values)
+    original_digest = packet_sha256(original)
+    capability = ProcessLocalIssuanceCapability(packet_sha256_value=original_digest, command_id=original.command_id)
+    if consumed:
+        capability.mark_consumed(original, packet_sha256_value=original_digest)
+    if binding == "digest":
+        values["approved_by"] = "another-operator"
+    else:
+        values["command_id"] = uuid4()
+    values["command_content_sha256"] = command_content_sha256_from_fields(values)
+    different = DemoCanaryAuthorityPacketV1.model_validate(values)
+    authority = EngineeringDemoCanaryAuthorityV1(_FakeRepository())  # type: ignore[arg-type]
+    issuer = AsyncMock()
+    monkeypatch.setattr(authority, "_issue_frozen_request", issuer)
+    with pytest.raises(ProcessLocalIssuanceError, match="outside"):
+        await authority.issue_frozen(different, expected_packet_sha256=packet_sha256(different), capability=capability)
+    issuer.assert_not_awaited()
+    assert capability.consumed is consumed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["success", "error", "cancel"])
+async def test_frozen_issuance_reserves_capability_across_awaits(monkeypatch, outcome):
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from execution.mt5_demo_canary_authority_packet import (
+        DemoCanaryAuthorityPacketV1,
+        ProcessLocalIssuanceCapability,
+        ProcessLocalIssuanceError,
+        command_content_sha256_from_fields,
+        packet_sha256,
+    )
+    from tests.test_d0_canary_control_capabilities import _packet_values
+
+    values = _packet_values()
+    now = datetime.now(UTC)
+    values.update(approved_at_utc=now, issued_at_utc=now, expires_at_utc=now + timedelta(seconds=60))
+    values["command_content_sha256"] = command_content_sha256_from_fields(values)
+    packet = DemoCanaryAuthorityPacketV1.model_validate(values)
+    digest = packet_sha256(packet)
+    capability = ProcessLocalIssuanceCapability(packet_sha256_value=digest, command_id=packet.command_id)
+    authority = EngineeringDemoCanaryAuthorityV1(_FakeRepository())  # type: ignore[arg-type]
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def blocked_issuer(*args, **kwargs):
+        entered.set()
+        await release.wait()
+        if outcome == "error":
+            raise RuntimeError("transaction rolled back")
+        return {"disposition": "CREATED"}
+
+    issuer = AsyncMock(side_effect=blocked_issuer)
+    monkeypatch.setattr(authority, "_issue_frozen_request", issuer)
+    first = asyncio.create_task(authority.issue_frozen(packet, expected_packet_sha256=digest, capability=capability))
+    await asyncio.wait_for(entered.wait(), timeout=2)
+    try:
+        with pytest.raises(ProcessLocalIssuanceError, match="in flight"):
+            await authority.issue_frozen(packet, expected_packet_sha256=digest, capability=capability)
+        assert issuer.await_count == 1
+    finally:
+        if outcome == "cancel":
+            first.cancel()
+        release.set()
+    if outcome == "success":
+        assert (await first)["disposition"] == "CREATED"
+        assert capability.consumed
+    else:
+        with pytest.raises(asyncio.CancelledError if outcome == "cancel" else RuntimeError):
+            await first
+        assert not capability.consumed
+        retry = AsyncMock(return_value={"disposition": "CREATED"})
+        monkeypatch.setattr(authority, "_issue_frozen_request", retry)
+        await authority.issue_frozen(packet, expected_packet_sha256=digest, capability=capability)
+        retry.assert_awaited_once()
+        assert capability.consumed

@@ -47,7 +47,12 @@ class OutboxEvent:
 
 
 class TradeOutboxWorker:
-    """Separate outbox worker for re-delivery and durable DB-backed retries."""
+    """API-owned WebSocket projection delivery with durable retry bookkeeping.
+
+    This worker does not claim commands, create execution intents, or contact a
+    broker. Its only external delivery effect is the API's live WebSocket
+    projection; PostgreSQL writes record projection publication/retry state.
+    """
 
     def __init__(
         self,

@@ -34,11 +34,18 @@ def _function(source: str, name: str) -> str:
     return source[start:next_marker]
 
 
-def test_contract_is_one_shot_local_and_bounded() -> None:
+def test_contract_is_local_bounded_and_supports_reconnectable_mode() -> None:
     contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
     assert contract["transport"] == "WINDOWS_LOCAL_NAMED_PIPE"
     assert contract["maximum_server_instances"] == 1
-    assert contract["serve_count"] == 1
+    assert contract["serve_modes"] == ["once", "persistent"]
+    assert contract["default_serve_mode"] == "once"
+    assert contract["once_mode"] == {"serve_count": 1, "exit_after_success": True}
+    assert contract["persistent_mode"]["connections"] == "UNBOUNDED_UNTIL_PROCESS_EXIT"
+    assert contract["persistent_mode"]["vault_revalidation"] == "PER_CONNECTION"
+    assert contract["persistent_mode"]["dpapi_decrypt"] == "PER_CONNECTION"
+    assert contract["persistent_mode"]["secrets_retained_between_connections"] is False
+    assert contract["persistent_mode"]["wait_timeout_behavior"] == "CONTINUE_LISTENING"
     assert contract["frame"]["maximum_payload_bytes"] == 4096
     assert contract["credential_fields"] == ["executor_token", "verification_material"]
     assert contract["network_access"] is False
@@ -81,8 +88,6 @@ def test_contract_does_not_overclaim_secret_zeroization() -> None:
 
 def test_ea_uses_a_pipe_path_input_and_no_direct_secret_inputs() -> None:
     source = _source(EA)
-    # Named for what it is: a Windows local named-pipe endpoint, never a file
-    # a credential could be parked in.
     assert "input string InpCredentialPipePath" in source
     assert "InpCredentialFile" not in source
     assert "input string InpExpectedAccountReferenceSha256" in source
@@ -93,20 +98,18 @@ def test_ea_uses_a_pipe_path_input_and_no_direct_secret_inputs() -> None:
     assert 'reason = "CREDENTIAL_PIPE_UNAVAILABLE"' in source
 
 
-def test_loader_rejects_malformed_truncated_oversize_trailing_and_extra_fields() -> None:
+def test_loader_rejects_malformed_truncated_oversize_and_extra_fields() -> None:
     loader = _function(_source(EA), "LoadRuntimeCredentials")
     assert "W15_CREDENTIAL_MAX_BYTES" in loader
     assert "header_read != W15_CREDENTIAL_HEADER_BYTES" in loader
     assert "payload_read != (uint)payload_length" in loader
-    assert "trailing_read != 0" in loader
-    # Re-serialising and comparing rejects missing, reordered, duplicated and
-    # unknown fields in one step.
+    assert "trailing_read" not in loader
+    assert loader.index("FileClose(handle);", loader.index("uint payload_read")) < loader.index("string payload_json")
     assert "canonical != payload_json" in loader
     for reason in (
         "CREDENTIAL_SCHEMA_INVALID",
         "CREDENTIAL_PAYLOAD_OVERSIZE",
         "CREDENTIAL_PAYLOAD_TRUNCATED",
-        "CREDENTIAL_TRAILING_BYTES",
     ):
         assert f'reason = "{reason}"' in loader
 
@@ -131,11 +134,6 @@ def test_loader_checks_all_nonsecret_bindings_and_exact_two_credentials() -> Non
 
 
 def test_credential_shapes_are_exact_lowercase_hex() -> None:
-    """The backend derives the token as hmac-sha256 hexdigest: 64 lowercase hex.
-
-    Length alone would accept uppercase or non-hex characters, so both secrets
-    get an explicit alphabet contract.
-    """
     source = _source(EA)
     loader = _function(source, "LoadRuntimeCredentials")
     assert "IsLowerHexExact(executor_token, 64)" in loader
@@ -147,7 +145,6 @@ def test_credential_shapes_are_exact_lowercase_hex() -> None:
     assert "StringLen(value) != exact_length" in helper
     assert "character >= '0' && character <= '9'" in helper
     assert "character >= 'a' && character <= 'f'" in helper
-    # No uppercase branch: uppercase hex must be rejected, not normalised.
     assert "'A'" not in helper and "'F'" not in helper
 
 
@@ -187,7 +184,6 @@ def test_logs_contain_reason_codes_but_never_secret_values() -> None:
 
 def test_helper_binds_to_the_running_sid_and_has_no_network_surface() -> None:
     helper = _source(HELPER)
-    # Repaired: no hardcoded workstation account anywhere in canonical source.
     assert "INTEL" not in helper
     assert "ResolveCurrentUserSid" in helper
     assert "WindowsIdentity.GetCurrent()" in helper
@@ -209,15 +205,42 @@ def test_helper_binds_to_the_running_sid_and_has_no_network_surface() -> None:
     assert "Console.WriteLine(" not in helper
 
 
-def test_functional_evidence_is_recorded_for_the_live_path() -> None:
-    """Source greps cannot show the pipe works, so the live proof is recorded.
+def test_helper_persistent_mode_revalidates_vault_per_connection() -> None:
+    helper = _source(HELPER)
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
 
-    The PowerShell harness that produced these results is reproduced verbatim in
-    the evidence document rather than stored as a .ps1 in the tree: on the build
-    host, security software holds an exclusive handle on that specific script
-    content, which made the file unreadable to git. See the document for the
-    exact reproduction steps and the helper source digest the run was bound to.
-    """
+    assert 'return "once";' in helper
+    assert 'value != "once" && value != "persistent"' in helper
+    assert 'serveMode == "persistent"' in helper
+    assert "ServePersistent(" in helper
+    assert "while (true)" in helper
+    assert "if (!WaitForConnection(server, timeoutMs))" in helper
+    assert "continue;" in helper
+
+    persistent_start = helper.index("private static void ServePersistent(")
+    persistent_end = helper.index("private static Dictionary<string, object> ParseExactVault", persistent_start)
+    persistent = helper[persistent_start:persistent_end]
+    assert "BuildEnvelope(" in persistent
+    assert "Zero(envelope);" in persistent
+
+    build_start = helper.index("private static byte[] BuildEnvelope(")
+    build_end = helper.index("private static PipeSecurity BuildPipeSecurity", build_start)
+    build = helper[build_start:build_end]
+    assert "File.ReadAllBytes(vaultPath)" in build
+    assert "ProtectedData.Unprotect(cipher, null, DataProtectionScope.CurrentUser)" in build
+    assert 'RequireExactString(vault, "executor_id", expectedExecutorId' in build
+    assert 'RequireExactString(vault, "account_id_reference", expectedAccountReference' in build
+    assert 'RequireExactString(vault, "broker_server", expectedBrokerServer' in build
+    assert 'RequireExactString(vault, "verification_key_id", expectedVerificationKeyId' in build
+    assert "Zero(cipher);" in build
+    assert "Zero(plain);" in build
+    assert "Zero(envelope);" in build
+
+    assert contract["persistent_mode"]["vault_revalidation"] == "PER_CONNECTION"
+    assert contract["persistent_mode"]["secrets_retained_between_connections"] is False
+
+
+def test_functional_evidence_is_recorded_for_the_live_path() -> None:
     evidence = _source(EVIDENCE)
     for gate in ("C16", "C17", "C18a", "C18b", "C18c", "C12", "C13", "C19", "C20"):
         assert f"| {gate} " in evidence
@@ -239,10 +262,17 @@ def test_repair_does_not_change_order_entrypoints_or_arm_gate() -> None:
 
 
 def test_credential_port_preserves_the_monotonic_scheduler() -> None:
-    """P2 must survive P3 untouched."""
     for path in (DEMO, EA):
         source = _source(path)
         timer = source[source.index("void OnTimer()") : source.index("void OnTick()")]
         assert "const ulong now_ms = GetTickCount64();" in timer
         assert "TimeCurrent(" not in timer
     assert "HistorySelect(issued - 300, TimeTradeServer() + 60)" in _source(DEMO)
+
+
+def test_length_delimited_contract_does_not_require_eof() -> None:
+    frame = json.loads(CONTRACT.read_text(encoding="utf-8"))["frame"]
+    assert frame["completion"] == "EXACT_HEADER_AND_DECLARED_PAYLOAD_LENGTH"
+    assert frame["client_after_payload"] == "CLOSE_HANDLE_WITHOUT_EOF_PROBE"
+    assert frame["bytes_after_payload"] == "OUTSIDE_FRAME_NOT_READ_OR_PARSED"
+    assert frame["server_frames_per_connection"] == 1

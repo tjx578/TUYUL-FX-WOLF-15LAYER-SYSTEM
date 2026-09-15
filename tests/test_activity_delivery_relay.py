@@ -11,7 +11,7 @@ from tests.test_activity_delivery_contract import delivery, scope
 class Store:
     def __init__(self):
         self.event = delivery()
-        self.row = dict(
+        self.row: dict[str, str] | None = dict(
             delivery_id=self.event.delivery_id,
             payload=self.event.model_dump_json(),
             payload_hash=self.event.payload_hash,
@@ -54,6 +54,7 @@ def test_network_is_outside_transaction_and_exact_bytes_are_sent():
 
     def send(wire):
         assert not store.active
+        assert store.row is not None
         assert wire == store.row["payload"].encode("utf-8")
         return store.event.delivery_id, store.event.payload_hash, "COMMITTED"
 
@@ -99,6 +100,7 @@ def test_replaced_or_expired_lease_cannot_acknowledge():
 
 def test_corrupt_payload_never_reaches_transport():
     store = Store()
+    assert store.row is not None
     store.row["payload_hash"] = "sha256:" + "0" * 64
     with pytest.raises(ValueError, match="RELAY_IMMUTABLE_PAYLOAD_CONFLICT"):
         store.relay(lambda _: pytest.fail("transport must not run")).poll_once()

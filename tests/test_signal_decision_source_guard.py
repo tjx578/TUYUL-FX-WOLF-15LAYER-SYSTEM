@@ -82,10 +82,67 @@ def test_pressure_contract_resolves_direction_but_never_promotes_raw_pressure():
     assert payload["price_location"] == "PREMIUM"
     assert payload["pressure_direction_resolution"] == "ACCEPTED"
     assert payload["pressure_resolution_direction"] == "BUY"
+    assert payload["pressure_resolution_direction_role"] == "ACCEPTED_PRESSURE_REACTION_NOT_STRATEGY_AUTHORITY"
+    assert payload["pressure_resolution_direction_authorized"] is False
+    assert payload["legal_strategy_direction"] is None
+    assert payload["legal_strategy_direction_status"] == "PENDING_H1_M15_PROOF"
+    assert payload["strategy_next_required_stage"] == "H1_M15_STRATEGY_5SCR_CONFIRMATION"
+    assert payload["strategy_next_required_stage_role"] == "CANONICAL_DIRECTION_WORKFLOW_STAGE"
+    assert payload["next_required_stage"] == "MICROBOOST_OR_MARKET_CONTEXT"
+    assert payload["next_required_stage_role"] == "LEGACY_PRESSURE_TRANSPORT_STAGE"
     assert payload["raw_direction_direct_entry_eligible"] is False
     assert payload["raw_direction_swing_eligible"] is False
     assert payload["final_direction"] == "WAIT"
     assert payload["valid_for_execution"] is False
+
+
+def test_rejected_pressure_records_counter_reaction_without_authorizing_opposite_strategy():
+    payload = convert_to_signal_pressure_state(
+        {
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "symbol": "GBPUSD",
+            "raw_direction": "BUY",
+            "candidate_direction": "BUY",
+            "watch_direction": "BUY",
+            "block_direction": "BUY",
+            "htf_structure_context": {
+                "allowed_playbook": "WAIT_FOR_BUY_LOCATION",
+                "liquidity_resolution": "BUY_SIDE_REJECTED",
+            },
+        }
+    )
+
+    assert payload["pressure_direction_resolution"] == "REJECTED"
+    assert payload["pressure_resolution_direction"] == "SELL"
+    assert payload["observed_reaction_direction"] == "SELL"
+    assert payload["pressure_resolution_direction_role"] == "COUNTER_REACTION_ONLY_NOT_OPPOSITE_STRATEGY_AUTHORITY"
+    assert payload["pressure_resolution_direction_authorized"] is False
+    assert payload["opposite_strategy_direction_authorized"] is False
+    assert payload["legal_strategy_direction"] is None
+    assert payload["legal_strategy_direction_status"] == "PENDING_H1_M15_PROOF"
+    assert payload["final_direction"] == "WAIT"
+    assert payload["valid_for_execution"] is False
+
+
+def test_pressure_direction_lineage_conflict_is_explicit_and_non_authoritative():
+    payload = convert_to_signal_pressure_state(
+        {
+            "source_stage": "MICROBOOST",
+            "symbol": "XAUUSD",
+            "raw_direction": "BUY",
+            "candidate_direction": "BUY",
+            "watch_direction": "BUY",
+            "block_direction": "SELL",
+            "htf_structure_context": {"liquidity_resolution": "BUY_SIDE_TESTING"},
+        }
+    )
+
+    assert payload["pressure_direction_consensus_status"] == "CONFLICT"
+    assert payload["pressure_direction_consensus_direction"] is None
+    assert payload["pressure_direction_conflict_fields"] == ["block_direction"]
+    assert payload["pressure_direction_conflict_execution_authority"] is False
+    assert payload["legal_strategy_direction"] is None
+    assert payload["final_direction"] == "WAIT"
 
 
 def test_pressure_contract_expires_raw_direction_before_swing_horizon(monkeypatch):

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 from copy import deepcopy
@@ -16,6 +18,8 @@ from scripts.ci import railway_release_source_gate as gate
 
 SHA = "a" * 40
 ROOT = Path(__file__).resolve().parents[1]
+PYRIGHT_JOB_NAMES = ("Python typecheck / Pyright (core)", "Python typecheck / Pyright (native-mcp)")
+TYPECHECK_JOB_NAMES = (*PYRIGHT_JOB_NAMES, "Python typecheck / lint")
 
 
 @pytest.fixture
@@ -117,6 +121,37 @@ def test_release_rejects_missing_postgres_or_runner_step(receipt, missing):
     job["steps"] = [step for step in job["steps"] if step["name"] != missing]
     with pytest.raises(gate.ReleaseGateError, match="required CI step absent"):
         gate.validate_receipt(**receipt)
+
+
+@pytest.mark.parametrize("job_name", TYPECHECK_JOB_NAMES)
+def test_release_rejects_missing_typecheck_job(receipt, job_name):
+    receipt["jobs"] = [job for job in receipt["jobs"] if job["name"] != job_name]
+    with pytest.raises(gate.ReleaseGateError, match="missing or duplicate CI jobs"):
+        gate.validate_receipt(**receipt)
+
+
+@pytest.mark.parametrize("job_name", PYRIGHT_JOB_NAMES)
+@pytest.mark.parametrize(
+    "missing",
+    ["Run Pyright without suppressing failures", "Validate and summarize report", "Upload typecheck evidence"],
+)
+def test_release_rejects_missing_typecheck_evidence_step(receipt, job_name, missing):
+    job = next(job for job in receipt["jobs"] if job["name"] == job_name)
+    job["steps"] = [step for step in job["steps"] if step["name"] != missing]
+    with pytest.raises(gate.ReleaseGateError, match="required CI step absent"):
+        gate.validate_receipt(**receipt)
+
+
+def test_release_rejects_missing_typecheck_aggregation_step(receipt):
+    job = next(job for job in receipt["jobs"] if job["name"] == "Python typecheck / lint")
+    job["steps"] = [{"name": "Unrelated executed step", "status": "completed", "conclusion": "success"}]
+    with pytest.raises(gate.ReleaseGateError, match="required CI step absent"):
+        gate.validate_receipt(**receipt)
+
+
+@pytest.mark.parametrize("job_name", TYPECHECK_JOB_NAMES)
+def test_p1_governance_inherits_required_typecheck_evidence(job_name):
+    assert governance.REQUIRED_WORKFLOWS[gate.CI_PATH][job_name] == gate.REQUIRED_STEPS[job_name]
 
 
 @pytest.mark.parametrize("field", ["release_sha", "checkout_sha", "remote_main_sha"])
@@ -308,7 +343,8 @@ def _governance_observer():
 @pytest.mark.parametrize("event_name", ["workflow_dispatch", "workflow_run"])
 @pytest.mark.parametrize("rerun", [False, True])
 @pytest.mark.parametrize("new_run", [False, True])
-def test_cli_event_binding_and_rerun_race(receipt, tmp_path, monkeypatch, event_name, rerun, new_run):
+@pytest.mark.parametrize("advance_main", [False, True])
+def test_cli_event_binding_and_rerun_race(receipt, tmp_path, monkeypatch, event_name, rerun, new_run, advance_main):
     event = {"inputs": {"release_sha": SHA, "ci_run_id": "42"}, "workflow_run": {"head_sha": SHA, "id": 42}}
     event_path = tmp_path / "event.json"
     event_path.write_text(json.dumps(event), encoding="utf-8")
@@ -324,6 +360,8 @@ def test_cli_event_binding_and_rerun_race(receipt, tmp_path, monkeypatch, event_
 
     def github_json(endpoint):
         calls.append(endpoint)
+        if endpoint.endswith("/branches/main"):
+            return {"commit": {"sha": "b" * 40 if advance_main and calls.count(endpoint) > 1 else SHA}}
         for path, fixture in fixtures.items():
             name = path.rsplit("/", 1)[1]
             if endpoint.endswith("/" + name):
@@ -344,19 +382,46 @@ def test_cli_event_binding_and_rerun_race(receipt, tmp_path, monkeypatch, event_
     monkeypatch.setattr(gate, "github_json", github_json)
     monkeypatch.setattr(governance, "github_json", _governance_observer())
     monkeypatch.setattr(gate, "command", lambda args: "" if "status" in args else SHA)
-    assert gate.main() == int(rerun or new_run)
+    assert gate.main() == int(rerun or new_run or advance_main)
     assert all("railway" not in endpoint for endpoint in calls)
 
 
-def test_required_workflow_names_and_steps_match_repository():
+def _repository_workflow_jobs(path: Path, prefix: str = "", seen: frozenset[Path] = frozenset()):
+    """Resolve the local reusable workflows and explicit include matrices in CI."""
     import yaml
 
+    path = path.resolve()
+    assert path.parent == (ROOT / ".github/workflows").resolve()
+    assert path not in seen, "recursive reusable workflow"
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    jobs = {}
+    for key, job in workflow["jobs"].items():
+        name = job.get("name", key)
+        matrix = job.get("strategy", {}).get("matrix", {})
+        assert set(matrix).issubset({"include"}), "extend this resolver for new matrix dimensions"
+        for values in matrix.get("include", [{}]):
+            resolved = name
+            for field, value in values.items():
+                resolved = resolved.replace("${{ matrix." + field + " }}", str(value))
+            assert "${{" not in resolved, "unresolved workflow job name"
+            full_name = prefix + resolved
+            if "uses" in job:
+                assert job["uses"].startswith("./.github/workflows/"), "expected a local source-bound workflow"
+                nested = _repository_workflow_jobs(ROOT / job["uses"][2:], full_name + " / ", seen | {path})
+                assert not jobs.keys() & nested.keys(), "duplicate workflow job names"
+                jobs.update(nested)
+            else:
+                assert full_name not in jobs, "duplicate workflow job name"
+                jobs[full_name] = {step.get("name") for step in job["steps"]}
+    return jobs
+
+
+def test_required_workflow_names_and_steps_match_repository():
     for path, required_jobs in gate.RELEASE_WORKFLOWS.items():
-        workflow = yaml.safe_load((ROOT / path).read_text())
-        jobs = {job.get("name", key): job for key, job in workflow["jobs"].items()}
+        jobs = _repository_workflow_jobs(ROOT / path)
         assert set(required_jobs).issubset(jobs)
         for name, required_steps in required_jobs.items():
-            assert required_steps.issubset({step.get("name") for step in jobs[name]["steps"]})
+            assert required_steps.issubset(jobs[name])
 
 
 def test_real_cli_rejects_before_provider_when_dispatch_missing_evidence(tmp_path):
@@ -382,17 +447,140 @@ def test_real_cli_rejects_before_provider_when_dispatch_missing_evidence(tmp_pat
 
 
 def test_workflow_binds_checkout_and_never_swallows_provider_failure():
+    import yaml
+
     source = (ROOT / ".github/workflows/railway-deploy.yml").read_text(encoding="utf-8")
-    assert "ref: ${{ env.RELEASE_SHA }}" in source
+    steps = yaml.safe_load(source)["jobs"]["deploy"]["steps"]
+    assert steps[0]["name"] == "Bind release to trusted main workflow before checkout"
+    assert steps[0]["env"] == {
+        "TRUSTED_WORKFLOW_SHA": "${{ github.workflow_sha }}",
+        "TRUSTED_WORKFLOW_REF": "${{ github.workflow_ref }}",
+    }
+    checkout = steps[1]
+    assert checkout["uses"].startswith("actions/checkout@")
+    assert checkout["with"]["ref"] == "${{ github.sha }}"
+    assert checkout["with"]["persist-credentials"] is False
+    assert "ref: ${{ env.RELEASE_SHA }}" not in source
     assert "fetch-depth: 0" in source
     assert "cancel-in-progress: false" in source
     assert "environment: production" in source
     assert "@railway/cli@5.41.0" in source
     assert "          - wolf15-worker\n" not in source
-    assert source.index("python scripts/ci/railway_release_source_gate.py") < source.index("secrets['RAILWAY_TOKEN']")
+    gates = [step for step in steps if "import railway_release_source_gate" in step.get("run", "")]
+    assert len(gates) == 2
+    assert gates[0]["run"] == gates[1]["run"]
+    assert source.index("python -I -S -c") < source.index("secrets['RAILWAY_TOKEN']")
+    assert steps[-2] == gates[1]
     assert "set -euo pipefail" in source
     assert "continue-on-error" not in source
     assert "|| true" not in source
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {},
+        {"RELEASE_SHA": "b" * 40},
+        {"RELEASE_SHA": "A" * 40},
+        {"RELEASE_SHA": "main"},
+        {"RELEASE_SHA": "$(touch candidate-executed)"},
+        {"GITHUB_SHA": "b" * 40},
+        {"TRUSTED_WORKFLOW_SHA": "b" * 40},
+        {"TRUSTED_WORKFLOW_REF": "owner/repo/.github/workflows/railway-deploy.yml@refs/heads/attack"},
+        {"GITHUB_REF": "refs/heads/attack"},
+        {"GITHUB_EVENT_NAME": "workflow_run"},
+    ],
+)
+def test_actual_workflow_bootstrap_rejects_source_substitution_before_candidate_execution(tmp_path, override):
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/railway-deploy.yml").read_text(encoding="utf-8"))
+    bootstrap = workflow["jobs"]["deploy"]["steps"][0]["run"]
+    # A substituted release validator would claim success and mark its execution.
+    candidate = tmp_path / "scripts/ci/railway_release_source_gate.py"
+    candidate.parent.mkdir(parents=True)
+    candidate.write_text("from pathlib import Path\nPath('candidate-executed').touch()\n", encoding="utf-8")
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"}
+    }
+    env.update(
+        GITHUB_EVENT_NAME="workflow_dispatch",
+        GITHUB_REF="refs/heads/main",
+        GITHUB_REPOSITORY="owner/repo",
+        GITHUB_SHA=SHA,
+        RELEASE_SHA=SHA,
+        TRUSTED_WORKFLOW_SHA=SHA,
+        TRUSTED_WORKFLOW_REF="owner/repo/.github/workflows/railway-deploy.yml@refs/heads/main",
+    )
+    env.update(override)
+    # Windows' System32 bash is WSL, so use the Git-for-Windows bash when available.
+    git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+    bash = str(git_bash) if os.name == "nt" and git_bash.is_file() else shutil.which("bash")
+    assert bash is not None, "Bash is required to exercise the deployed workflow bootstrap"
+    python = shlex.quote(Path(sys.executable).as_posix())
+    result = subprocess.run(
+        [bash, "--noprofile", "--norc", "-c", bootstrap + f"\n{python} {candidate.relative_to(tmp_path).as_posix()}"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == (1 if override else 0), result.stderr
+    assert (tmp_path / "candidate-executed").exists() is (not override)
+
+
+def test_workflow_gate_ignores_ambient_python_imports(tmp_path):
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/railway-deploy.yml").read_text(encoding="utf-8"))
+    invocation = next(
+        step["run"]
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if "import railway_release_source_gate" in step.get("run", "")
+    )
+    trusted_scripts = tmp_path / "trusted/scripts/ci"
+    trusted_scripts.mkdir(parents=True)
+    for name in ("railway_release_source_gate.py", "p1_governance_gate.py"):
+        shutil.copyfile(ROOT / "scripts/ci" / name, trusted_scripts / name)
+    untrusted = tmp_path / "untrusted"
+    untrusted.mkdir()
+    marker = tmp_path / "untrusted-executed"
+    poison = f"from pathlib import Path\nPath({str(marker)!r}).touch()\nraise SystemExit(0)\n"
+    for name in (
+        "sitecustomize.py",
+        "usercustomize.py",
+        "railway_release_source_gate.py",
+        "p1_governance_gate.py",
+        "json.py",
+    ):
+        (untrusted / name).write_text(poison, encoding="utf-8")
+    event = tmp_path / "event.json"
+    event.write_text('{"inputs": {}}', encoding="utf-8")
+    env = dict(
+        os.environ,
+        PYTHONPATH=str(untrusted),
+        PYTHONUSERBASE=str(untrusted),
+        GITHUB_EVENT_PATH=str(event),
+        GITHUB_REPOSITORY="owner/repo",
+        GITHUB_EVENT_NAME="workflow_dispatch",
+        GITHUB_REF="refs/heads/main",
+    )
+    result = subprocess.run(
+        [sys.executable, *shlex.split(invocation)[1:]],
+        cwd=trusted_scripts.parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 1
+    assert "Exact-source CI gate rejected" in result.stderr
+    assert not marker.exists()
 
 
 @pytest.mark.parametrize("standalone", [False, True])
@@ -410,6 +598,7 @@ def test_release_entrypoint_enforces_real_governance_with_fixture_reads(
         spec = importlib.util.spec_from_file_location(
             "release_standalone_fixture", ROOT / "scripts/ci/railway_release_source_gate.py"
         )
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         governance_module = importlib.import_module("p1_governance_gate")
@@ -426,6 +615,8 @@ def test_release_entrypoint_enforces_real_governance_with_fixture_reads(
     fixtures = {path: for_workflow(receipt, path) for path in module.RELEASE_WORKFLOWS}
 
     def ci_read(endpoint):
+        if endpoint.endswith("/branches/main"):
+            return {"commit": {"sha": SHA}}
         for path, fixture in fixtures.items():
             name = path.rsplit("/", 1)[1]
             if endpoint.endswith("/" + name):

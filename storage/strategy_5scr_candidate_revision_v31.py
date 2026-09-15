@@ -181,12 +181,17 @@ class CandidateRevisionRepositoryV31:
             raise ValueError("CANDIDATE_LATEST_REVISION_MISMATCH")
         binding = self._parent_binding(latest, ledger, kwargs)
         before = transaction_content_hash_v31(binding)
-        callback_kwargs = {
-            k: detached.guard_callback_v31(v) if k.startswith("verify_") else v
-            for k, v in kwargs.items()
-            if k
-            not in {"request", "expected_candidate_revision_hash", "capacity_owner_epoch", "expected_capacity_version"}
-        }
+        callback_kwargs = kwargs.copy()
+        for name in (
+            "request",
+            "expected_candidate_revision_hash",
+            "capacity_owner_epoch",
+            "expected_capacity_version",
+        ):
+            callback_kwargs.pop(name, None)
+        for name, value in callback_kwargs.items():
+            if name.startswith("verify_"):
+                callback_kwargs[name] = detached.guard_callback_v31(value)
         result = propose_canonical_parent_v31(
             ledger,
             latest.request.handoff,

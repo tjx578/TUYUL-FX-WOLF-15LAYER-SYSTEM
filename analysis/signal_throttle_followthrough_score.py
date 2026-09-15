@@ -657,17 +657,23 @@ def _maturity_positive(score: float, bucket: str) -> list[str]:
 def _metric_for_scope(pressure_tier: Mapping[str, Any] | None) -> Mapping[str, Any]:
     if not isinstance(pressure_tier, Mapping):
         return {}
+
     metrics = pressure_tier.get("metrics")
     if not isinstance(metrics, Mapping):
         return {}
+
     scope = str(pressure_tier.get("tier_scope") or "live").lower()
+
     if scope.startswith("live"):
-        return metrics.get("live") if isinstance(metrics.get("live"), Mapping) else {}
-    if scope.startswith("session"):
-        return metrics.get("session") if isinstance(metrics.get("session"), Mapping) else {}
-    if scope.startswith("archive"):
-        return metrics.get("archive") if isinstance(metrics.get("archive"), Mapping) else {}
-    return {}
+        selected = metrics.get("live")
+    elif scope.startswith("session"):
+        selected = metrics.get("session")
+    elif scope.startswith("archive"):
+        selected = metrics.get("archive")
+    else:
+        return {}
+
+    return selected if isinstance(selected, Mapping) else {}
 
 
 def _microboost_for_symbol(summary: Mapping[str, Any] | None, symbol: str) -> Mapping[str, Any] | None:
@@ -718,6 +724,8 @@ def _field(source: Any, name: str) -> Any:
     if isinstance(source, Mapping):
         return source.get(name)
     if is_dataclass(source):
+        if isinstance(source, type):
+            raise TypeError("asdict() should be called on dataclass instances")
         return asdict(source).get(name)
     return getattr(source, name, None)
 

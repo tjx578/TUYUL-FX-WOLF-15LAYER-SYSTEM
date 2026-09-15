@@ -40,6 +40,18 @@ REQUIRED_STEPS = {
         "Require actual pressure outbox role process acceptance",
     },
     "Native MCP fixture tests": {"Install isolated MCP test dependencies", "Run native MCP fixture suite"},
+    # Nested job names observed in GitHub CI run 34819969957.
+    "Python typecheck / Pyright (core)": {
+        "Run Pyright without suppressing failures",
+        "Validate and summarize report",
+        "Upload typecheck evidence",
+    },
+    "Python typecheck / Pyright (native-mcp)": {
+        "Run Pyright without suppressing failures",
+        "Validate and summarize report",
+        "Upload typecheck evidence",
+    },
+    "Python typecheck / lint": {"Require all typecheck scopes to pass"},
     "Built API bootstrap": {"Build exact-source API image", "Exercise built API bootstrap and served readiness"},
     "Deprecated shim guard": {"Block resurrected shim files", "Block deprecated imports in production code"},
     "Architecture drift guard": {
@@ -189,7 +201,9 @@ def main() -> int:
         require(isinstance(attempt, int) and attempt > 0, "missing CI attempt")
         jobs = collect_jobs(prefix, run)
         require(not command(["git", "status", "--porcelain", "--untracked-files=all"]), "release checkout is dirty")
-        current_main = command(["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"]).split()[0]
+        # Use the scoped GitHub token; checkout deliberately persists no Git credentials.
+        main_endpoint = f"/repos/{repository}/branches/main"
+        current_main = github_json(main_endpoint)["commit"]["sha"]
         validate_receipt(
             release_sha=release_sha,
             checkout_sha=command(["git", "rev-parse", "HEAD"]),
@@ -236,7 +250,7 @@ def main() -> int:
                 "required workflow was rerun or changed during verification",
             )
         require(
-            command(["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"]).split()[0] == release_sha,
+            github_json(main_endpoint)["commit"]["sha"] == release_sha,
             "main advanced during verification",
         )
         if __package__:

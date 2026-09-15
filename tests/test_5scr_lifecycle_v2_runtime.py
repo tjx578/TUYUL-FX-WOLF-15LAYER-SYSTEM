@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -23,10 +23,12 @@ from services.pressure_outbox.lifecycle_shadow_worker import (
     LifecycleV2ShadowRunner,
     build_lifecycle_v2_shadow_runner,
 )
+from storage.strategy_5scr_lifecycle_v2_repository import StrategyLifecycleV2Repository
 
 START = datetime(2026, 7, 17, 13, 0, 0, tzinfo=UTC)
 
 
+# Injection casts below are limited to this double's exercised repository surface.
 class _FakeRepository:
     def __init__(self, rows=None, active=None):
         self._batches = [list(rows)] if rows else []
@@ -133,7 +135,9 @@ def test_config_rejects_a_non_integer_gap():
 @pytest.mark.asyncio
 async def test_disabled_runner_does_not_read_anything():
     repository = _FakeRepository(rows=[_row(1)])
-    runner = LifecycleV2ShadowRunner(repository=repository, config=_config(enabled=False))
+    runner = LifecycleV2ShadowRunner(
+        repository=cast(StrategyLifecycleV2Repository, repository), config=_config(enabled=False)
+    )
 
     await runner.run()
 
@@ -143,7 +147,9 @@ async def test_disabled_runner_does_not_read_anything():
 
 @pytest.mark.asyncio
 async def test_runner_refuses_to_start_when_not_shadow_only():
-    runner = LifecycleV2ShadowRunner(repository=_FakeRepository(), config=_config(shadow_only=False))
+    runner = LifecycleV2ShadowRunner(
+        repository=cast(StrategyLifecycleV2Repository, _FakeRepository()), config=_config(shadow_only=False)
+    )
 
     with pytest.raises(RuntimeError, match="SHADOW_ONLY_REQUIRED"):
         await runner.run()
@@ -153,7 +159,7 @@ async def test_runner_refuses_to_start_when_not_shadow_only():
 async def test_runner_paces_a_successful_nonempty_poll(monkeypatch):
     repository = _FakeRepository(rows=[_row(1)])
     runner = LifecycleV2ShadowRunner(
-        repository=repository,
+        repository=cast(StrategyLifecycleV2Repository, repository),
         config=_config(dual_write_enabled=False, poll_seconds=2.5),
     )
     sleeps = []
@@ -178,7 +184,7 @@ async def test_runner_paces_a_successful_nonempty_poll(monkeypatch):
 async def test_poll_folds_a_batch_into_one_episode():
     rows = [_row(i, offset_seconds=i * 60) for i in range(5)]
     repository = _FakeRepository(rows=rows)
-    runner = LifecycleV2ShadowRunner(repository=repository, config=_config())
+    runner = LifecycleV2ShadowRunner(repository=cast(StrategyLifecycleV2Repository, repository), config=_config())
 
     processed = await runner.poll_once()
 
@@ -193,7 +199,7 @@ async def test_poll_accepts_json_text_payload_from_postgres():
     row = _row(1)
     row["payload"] = json.dumps(row["payload"])
     repository = _FakeRepository(rows=[row])
-    runner = LifecycleV2ShadowRunner(repository=repository, config=_config())
+    runner = LifecycleV2ShadowRunner(repository=cast(StrategyLifecycleV2Repository, repository), config=_config())
 
     processed = await runner.poll_once()
 
@@ -207,7 +213,9 @@ async def test_poll_accepts_json_text_payload_from_postgres():
 @pytest.mark.asyncio
 async def test_poll_with_dual_write_off_reads_but_does_not_write():
     repository = _FakeRepository(rows=[_row(1)])
-    runner = LifecycleV2ShadowRunner(repository=repository, config=_config(dual_write_enabled=False))
+    runner = LifecycleV2ShadowRunner(
+        repository=cast(StrategyLifecycleV2Repository, repository), config=_config(dual_write_enabled=False)
+    )
 
     processed = await runner.poll_once()
 
@@ -217,7 +225,9 @@ async def test_poll_with_dual_write_off_reads_but_does_not_write():
 
 @pytest.mark.asyncio
 async def test_empty_poll_returns_zero():
-    runner = LifecycleV2ShadowRunner(repository=_FakeRepository(), config=_config())
+    runner = LifecycleV2ShadowRunner(
+        repository=cast(StrategyLifecycleV2Repository, _FakeRepository()), config=_config()
+    )
 
     assert await runner.poll_once() == 0
 
@@ -232,7 +242,7 @@ async def test_active_episode_is_recovered_before_the_first_event_is_folded():
     """Polling first would open a duplicate episode on restart."""
     existing = _lifecycle()
     repository = _FakeRepository(rows=[_row(9, offset_seconds=120)], active=existing)
-    runner = LifecycleV2ShadowRunner(repository=repository, config=_config())
+    runner = LifecycleV2ShadowRunner(repository=cast(StrategyLifecycleV2Repository, repository), config=_config())
 
     await runner.poll_once()
 
@@ -246,7 +256,7 @@ async def test_active_episode_is_recovered_before_the_first_event_is_folded():
 async def test_recovery_happens_once_per_symbol():
     rows = [_row(i, offset_seconds=i * 60) for i in range(4)]
     repository = _FakeRepository(rows=rows)
-    runner = LifecycleV2ShadowRunner(repository=repository, config=_config())
+    runner = LifecycleV2ShadowRunner(repository=cast(StrategyLifecycleV2Repository, repository), config=_config())
 
     await runner.poll_once()
 
@@ -257,7 +267,7 @@ async def test_recovery_happens_once_per_symbol():
 async def test_each_symbol_is_recovered_separately():
     rows = [_row(1, symbol="CHFJPY"), _row(2, symbol="NZDCAD", offset_seconds=30)]
     repository = _FakeRepository(rows=rows)
-    runner = LifecycleV2ShadowRunner(repository=repository, config=_config())
+    runner = LifecycleV2ShadowRunner(repository=cast(StrategyLifecycleV2Repository, repository), config=_config())
 
     await runner.poll_once()
 
@@ -270,17 +280,23 @@ async def test_restart_midway_matches_a_continuous_run():
     rows = [_row(i, offset_seconds=i * 60) for i in range(6)]
 
     continuous_repo = _FakeRepository(rows=list(rows))
-    continuous = LifecycleV2ShadowRunner(repository=continuous_repo, config=_config())
+    continuous = LifecycleV2ShadowRunner(
+        repository=cast(StrategyLifecycleV2Repository, continuous_repo), config=_config()
+    )
     await continuous.poll_once()
     continuous_final, _ = continuous_repo.persisted[-1]
 
     # Restart: first three events, then a fresh runner recovering from storage.
     first_repo = _FakeRepository(rows=rows[:3])
-    await LifecycleV2ShadowRunner(repository=first_repo, config=_config()).poll_once()
+    await LifecycleV2ShadowRunner(
+        repository=cast(StrategyLifecycleV2Repository, first_repo), config=_config()
+    ).poll_once()
     midpoint, _ = first_repo.persisted[-1]
 
     second_repo = _FakeRepository(rows=rows[3:], active=midpoint)
-    await LifecycleV2ShadowRunner(repository=second_repo, config=_config()).poll_once()
+    await LifecycleV2ShadowRunner(
+        repository=cast(StrategyLifecycleV2Repository, second_repo), config=_config()
+    ).poll_once()
     restarted_final, _ = second_repo.persisted[-1]
 
     assert restarted_final.strategy_lifecycle_id == continuous_final.strategy_lifecycle_id
@@ -300,7 +316,7 @@ async def test_restart_midway_matches_a_continuous_run():
 async def test_runner_never_leases_or_mutates_transport_rows():
     """The shadow reader must not compete with the dispatcher for delivery."""
     repository = _FakeRepository(rows=[_row(1)])
-    runner = LifecycleV2ShadowRunner(repository=repository, config=_config())
+    runner = LifecycleV2ShadowRunner(repository=cast(StrategyLifecycleV2Repository, repository), config=_config())
 
     await runner.poll_once()
 

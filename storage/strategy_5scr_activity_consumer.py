@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 from uuid import UUID, uuid4
 
 from contracts.strategy_5scr_activity_delivery import (
@@ -97,7 +99,9 @@ async def bind_owner(connection, fence: LifecycleOwnerFence):
 
 
 class ActivityLifecycleConsumer:
-    def __init__(self, *, owner, scope, fence, policy_hash, select_lifecycle, validate_source):
+    def __init__(
+        self, *, owner, scope, fence, policy_hash, select_lifecycle: Callable[..., StrategyLifecycleV2], validate_source
+    ):
         self.owner = owner
         self.scope = ActivityConsumerScopeV1.model_validate(scope.model_dump(mode="json"))
         self.fence = fence
@@ -182,15 +186,18 @@ class ActivityLifecycleConsumer:
             lifecycle = StrategyLifecycleV2.model_validate(lifecycle.model_dump(mode="json"))
             if lifecycle.symbol != self.fence.symbol or lifecycle.last_event_at_utc > now:
                 raise ValueError("OWNER_LIFECYCLE_SCOPE_MISMATCH")
+            emission_purposes: dict[
+                str, Literal["ACTIVITY_ATTACHED", "ACTIVITY_SUSPENDED", "ACTIVITY_RECONCILIATION"]
+            ] = {
+                "GRANTED": "ACTIVITY_ATTACHED",
+                "SUSPENDED": "ACTIVITY_SUSPENDED",
+                "RECONCILIATION_REQUIRED": "ACTIVITY_RECONCILIATION",
+            }
             link = ActivityLifecycleEmissionLinkV1(
                 delivery=event,
                 strategy_lifecycle_id=lifecycle.strategy_lifecycle_id,
                 material_state_hash=lifecycle.material_state_hash,
-                emission_purpose={
-                    "GRANTED": "ACTIVITY_ATTACHED",
-                    "SUSPENDED": "ACTIVITY_SUSPENDED",
-                    "RECONCILIATION_REQUIRED": "ACTIVITY_RECONCILIATION",
-                }[evaluation.decision],
+                emission_purpose=emission_purposes[evaluation.decision],
             )
             if previous:
                 validate_existing_activity_owner(previous, link)

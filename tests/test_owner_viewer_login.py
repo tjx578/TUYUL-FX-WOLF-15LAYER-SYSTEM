@@ -107,6 +107,7 @@ def test_owner_token_expiry_is_bounded_independently(monkeypatch):
     monkeypatch.setattr(auth, "TOKEN_EXPIRE_MIN", 60 * 24)
     response = _client().post("/api/auth/owner-login", json={"username": USERNAME, "password": PASSWORD})
     payload = auth.decode_token(response.json()["token"])
+    assert payload is not None
     assert payload["exp"] - payload["iat"] == 900
     assert payload["role"] == "viewer"
     assert payload["scopes"] == ["read:dashboard"]
@@ -251,6 +252,55 @@ def test_worker_exception_releases_slot(monkeypatch):
     router._owner_login_gate.release()
 
 
+def test_suppressed_scope_cancellation_without_result_rejects_login(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import anyio
+    from fastapi import HTTPException, Response
+
+    import api.auth_router as router
+
+    credentials = Mock(return_value=True)
+    token = Mock(side_effect=AssertionError("unverified login must not issue a token"))
+    monkeypatch.setattr(router, "_owner_credentials_valid", credentials)
+    monkeypatch.setattr(router, "create_token", token)
+
+    async def scenario():
+        scope = anyio.CancelScope(shield=True)
+
+        def login_scope(*, shield):
+            assert shield is True
+            return scope
+
+        async def interrupted_result(verify, *, abandon_on_cancel):
+            assert abandon_on_cancel is False
+            # Fault injection: verification releases its slot, but cancellation
+            # is suppressed by the real scope before its result is assigned.
+            assert verify() is True
+            scope.cancel()
+            await anyio.lowlevel.checkpoint()
+            raise AssertionError("cancelled scope must interrupt result delivery")
+
+        monkeypatch.setattr(
+            router,
+            "anyio",
+            SimpleNamespace(CancelScope=login_scope, to_thread=SimpleNamespace(run_sync=interrupted_result)),
+        )
+        with pytest.raises(HTTPException) as rejected:
+            await router.owner_login(router.OwnerLoginRequest(username=USERNAME, password=PASSWORD), Response())
+        assert scope.cancelled_caught is True
+        assert rejected.value.status_code == 401
+        assert rejected.value.detail == "Invalid credentials"
+        assert rejected.value.headers == {"Cache-Control": "no-store"}
+
+    asyncio.run(scenario())
+    credentials.assert_called_once_with(USERNAME, PASSWORD)
+    token.assert_not_called()
+    assert router._owner_login_gate.acquire()
+    router._owner_login_gate.release()
+
+
 @pytest.mark.parametrize("password", ["short", "x" * 1025, "界" * 1024 + "x", "😀" * 600, "\x01" * 600])
 def test_hash_generator_rejects_out_of_bounds_input_without_output(monkeypatch, capsys, password):
     from scripts import generate_dashboard_owner_password_hash as generator
@@ -295,6 +345,7 @@ def test_owner_password_token_cannot_use_legacy_reissuance(monkeypatch, endpoint
     login = client.post("/api/auth/owner-login", json={"username": USERNAME, "password": PASSWORD})
     token = login.json()["token"]
     original = auth.decode_token(token)
+    assert original is not None
     headers = {"authorization": f"Bearer {token}"} if transport == "bearer" else {}
     if transport == "cookie":
         client.cookies.set(auth.COOKIE_NAME, token)

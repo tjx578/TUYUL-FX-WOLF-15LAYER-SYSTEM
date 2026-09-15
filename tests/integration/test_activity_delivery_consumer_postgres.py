@@ -5,6 +5,7 @@ import json
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import TypeVar, cast
 
 import asyncpg
 import pytest
@@ -16,6 +17,7 @@ from contracts.strategy_5scr_activity_runtime import ActivityCoverageCheckpointV
 from contracts.strategy_5scr_lifecycle_v2 import StrategyLifecycleV2
 from scripts.ci.pair_activity_run_evidence import record_runtime_fixture
 from services.pressure_outbox.activity_delivery_relay import ActivityDeliveryRelay
+from storage.postgres_client import PostgresClient
 from storage.strategy_5scr_activity_consumer import bind_owner, transfer_owner
 from storage.strategy_5scr_activity_runtime import PostgresActivityRuntime
 from storage.strategy_5scr_shadow_evidence_v2_repository import StrategyShadowEvidenceV2Repository
@@ -24,6 +26,7 @@ from tests.integration.test_pair_activity_runtime_postgres import fixture_bindin
 __all__ = ["pg_dsn"]
 
 
+# Injection casts below are limited to this double's exercised repository surface.
 class DB:
     def __init__(self, dsn):
         self.dsn = dsn
@@ -56,6 +59,7 @@ class FaultConnection:
 def setup(dsn, *, evaluated_at=None, grant_ttl_seconds=600):
     start = (evaluated_at or datetime.now(UTC)) - timedelta(seconds=300)
     original_binding = fixture_binding()
+    assert original_binding.policy is not None
     policy = original_binding.policy.model_copy(
         update={"policy_id": f"TEST_ONLY_GAP150_TTL{grant_ttl_seconds}", "grant_ttl_seconds": grant_ttl_seconds}
     )
@@ -92,7 +96,7 @@ def setup(dsn, *, evaluated_at=None, grant_ttl_seconds=600):
     producer.append(events)
     producer.evaluate()
     db = DB(dsn)
-    owner = StrategyShadowEvidenceV2Repository(pg=db)
+    owner = StrategyShadowEvidenceV2Repository(pg=cast(PostgresClient, db))
 
     async def claim():
         async with db.transaction() as c:
@@ -201,17 +205,21 @@ def test_commit_expired_lease_replay_then_successor(pg_dsn):
     assert calls == ["COMMITTED", "DUPLICATE_NO_EFFECT", "COMMITTED"]
     with producer._connect() as c:
         assert (
-            c.execute(
-                "SELECT count(*) AS n FROM public.strategy_5scr_activity_emissions_v1 WHERE lifecycle_id=%s",
-                (lifecycle.strategy_lifecycle_id,),
-            ).fetchone()["n"]
+            _required_row(
+                c.execute(
+                    "SELECT count(*) AS n FROM public.strategy_5scr_activity_emissions_v1 WHERE lifecycle_id=%s",
+                    (lifecycle.strategy_lifecycle_id,),
+                ).fetchone()
+            )["n"]
             == 1
         )
         assert (
-            c.execute(
-                "SELECT count(*) AS n FROM public.strategy_5scr_activity_mappings_v1 WHERE lifecycle_id=%s",
-                (lifecycle.strategy_lifecycle_id,),
-            ).fetchone()["n"]
+            _required_row(
+                c.execute(
+                    "SELECT count(*) AS n FROM public.strategy_5scr_activity_mappings_v1 WHERE lifecycle_id=%s",
+                    (lifecycle.strategy_lifecycle_id,),
+                ).fetchone()
+            )["n"]
             == 1
         )
 
@@ -224,17 +232,21 @@ def test_consumer_rollback_all_writes(pg_dsn, table):
         asyncio.run(consumer.consume(wire()[0]["payload"].encode()))
     with producer._connect() as c:
         assert (
-            c.execute(
-                "SELECT count(*) AS n FROM public.strategy_5scr_analysis_lifecycles_v2 WHERE strategy_lifecycle_id=%s",
-                (lifecycle.strategy_lifecycle_id,),
-            ).fetchone()["n"]
+            _required_row(
+                c.execute(
+                    "SELECT count(*) AS n FROM public.strategy_5scr_analysis_lifecycles_v2 WHERE strategy_lifecycle_id=%s",
+                    (lifecycle.strategy_lifecycle_id,),
+                ).fetchone()
+            )["n"]
             == 0
         )
         assert (
-            c.execute(
-                "SELECT count(*) AS n FROM public.strategy_5scr_activity_inbox_v1 WHERE delivery_id=%s",
-                (ActivityDeliveryV1.model_validate_json(wire()[0]["payload"]).delivery_id,),
-            ).fetchone()["n"]
+            _required_row(
+                c.execute(
+                    "SELECT count(*) AS n FROM public.strategy_5scr_activity_inbox_v1 WHERE delivery_id=%s",
+                    (ActivityDeliveryV1.model_validate_json(wire()[0]["payload"]).delivery_id,),
+                ).fetchone()
+            )["n"]
             == 0
         )
     db.fault = None
@@ -270,10 +282,12 @@ def test_payload_conflict_quarantined_in_database(pg_dsn):
     assert asyncio.run(consumer.consume(json.dumps(changed).encode()))[-1] == "QUARANTINE_PAYLOAD_CONFLICT"
     with producer._connect() as c:
         assert (
-            c.execute(
-                "SELECT count(*) AS n FROM public.strategy_5scr_activity_conflicts_v1 WHERE delivery_id=%s",
-                (changed["delivery_id"],),
-            ).fetchone()["n"]
+            _required_row(
+                c.execute(
+                    "SELECT count(*) AS n FROM public.strategy_5scr_activity_conflicts_v1 WHERE delivery_id=%s",
+                    (changed["delivery_id"],),
+                ).fetchone()
+            )["n"]
             == 1
         )
 
@@ -299,10 +313,12 @@ def test_existing_advisory_lifecycle_is_attached_without_remint(pg_dsn):
     asyncio.run(run())
     with producer._connect() as c:
         assert (
-            c.execute(
-                "SELECT lifecycle_id FROM public.strategy_5scr_activity_mappings_v1 WHERE scope_hash=%s",
-                (consumer.scope.scope_hash,),
-            ).fetchone()["lifecycle_id"]
+            _required_row(
+                c.execute(
+                    "SELECT lifecycle_id FROM public.strategy_5scr_activity_mappings_v1 WHERE scope_hash=%s",
+                    (consumer.scope.scope_hash,),
+                ).fetchone()
+            )["lifecycle_id"]
             == lifecycle.strategy_lifecycle_id
         )
 
@@ -322,7 +338,7 @@ def test_fresh_consumer_after_restart_recovers_committed_inbox(pg_dsn):
     producer, consumer, db, owner, lifecycle, wire = setup(pg_dsn)
     payload = wire()[0]["payload"].encode()
     assert asyncio.run(consumer.consume(payload))[-1] == "COMMITTED"
-    restarted = StrategyShadowEvidenceV2Repository(pg=DB(pg_dsn)).activity_consumer(
+    restarted = StrategyShadowEvidenceV2Repository(pg=cast(PostgresClient, DB(pg_dsn))).activity_consumer(
         scope=consumer.scope,
         fence=consumer.fence,
         policy_hash=consumer.scope.lifecycle_policy_hash,
@@ -495,7 +511,8 @@ def test_unseen_delivery_expiry_through_authenticated_caller_postgres(pg_dsn):
     assert event.evaluation.decision == "GRANTED"
     with producer._connect() as connection:
         assert (
-            connection.execute("SELECT clock_timestamp() AS now").fetchone()["now"] >= event.evaluation.valid_until_utc
+            _required_row(connection.execute("SELECT clock_timestamp() AS now").fetchone())["now"]
+            >= event.evaluation.valid_until_utc
         )
     before = _delivery_effects(producer, consumer, lifecycle, event)
     assert all(not rows for rows in before.values())
@@ -530,11 +547,12 @@ def test_expired_committed_delivery_replay_through_authenticated_caller_postgres
     deadline = time.monotonic() + 15
     with producer._connect() as connection:
         while (
-            connection.execute("SELECT clock_timestamp() AS now").fetchone()["now"] < event.evaluation.valid_until_utc
+            _required_row(connection.execute("SELECT clock_timestamp() AS now").fetchone())["now"]
+            < event.evaluation.valid_until_utc
         ):
             assert time.monotonic() < deadline, "actual server clock did not reach the bound expiry"
             time.sleep(0.05)
-    restarted = StrategyShadowEvidenceV2Repository(pg=DB(pg_dsn)).activity_consumer(
+    restarted = StrategyShadowEvidenceV2Repository(pg=cast(PostgresClient, DB(pg_dsn))).activity_consumer(
         scope=consumer.scope,
         fence=consumer.fence,
         policy_hash=consumer.scope.lifecycle_policy_hash,
@@ -582,7 +600,7 @@ def test_missing_policy_cannot_reopen_committed_postgres_delivery(pg_dsn):
     assert response.status_code == 200 and response.json()["outcome"] == "COMMITTED"
     before = _delivery_effects(producer, consumer, lifecycle, event)
     with pytest.raises(ValueError, match="CONSUMER_POLICY_OR_OWNER_UNBOUND"):
-        StrategyShadowEvidenceV2Repository(pg=DB(pg_dsn)).activity_consumer(
+        StrategyShadowEvidenceV2Repository(pg=cast(PostgresClient, DB(pg_dsn))).activity_consumer(
             scope=consumer.scope,
             fence=consumer.fence,
             policy_hash=None,
@@ -591,3 +609,11 @@ def test_missing_policy_cannot_reopen_committed_postgres_delivery(pg_dsn):
         )
     assert _delivery_effects(producer, consumer, lifecycle, event) == before
     _assert_no_new_authority(before)
+
+
+_Row = TypeVar("_Row")
+
+
+def _required_row(row: _Row | None) -> _Row:
+    assert row is not None, "expected the database query to return a row"
+    return row
