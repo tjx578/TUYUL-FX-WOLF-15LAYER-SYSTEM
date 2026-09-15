@@ -26,6 +26,8 @@ def docker(*args, timeout=90):
     result = subprocess.run(["docker", *args], text=True, capture_output=True, timeout=timeout)
     if result.returncode:
         raise RuntimeError(f"docker {args[0]} failed: {result.stderr[-1000:]}")
+    if args[0] == "logs":
+        return (result.stdout + result.stderr).strip()
     return result.stdout.strip()
 
 
@@ -55,7 +57,7 @@ def run(image, redis_image, output):
     network_created = False
     files = [
         "services/orchestrator/state_manager.py",
-        "services/orchestrator/mode_owner.py",
+        "services/orchestrator/ownership.py",
         "deploy/railway/start_orchestrator.sh",
         "core/health_probe.py",
         "services/shared/diagnostics.py",
@@ -99,8 +101,9 @@ def run(image, redis_image, output):
                 REDIS_SOCKET_TIMEOUT_SEC="1",
                 REDIS_SOCKET_CONNECT_TIMEOUT_SEC="1",
                 REDIS_POOL_TIMEOUT_SEC="1",
-                DEGRADED_HOLD_TIMEOUT_SEC="8",
-                ORCHESTRATOR_FATAL_DIAGNOSTIC_HOLD_SEC="8",
+                ORCHESTRATOR_STATE_KEY=f"{network}:{case}:state",
+                ORCHESTRATOR_LEASE_KEY=f"{network}:{case}:lease",
+                ORCHESTRATOR_FENCE_COUNTER_KEY=f"{network}:{case}:generation",
             )
             command = [
                 "run",
@@ -166,13 +169,18 @@ print(json.dumps({'status':status,'body':json.loads(r.read())}))
                     app,
                     "python",
                     "-c",
-                    "import json;from core.redis_keys import ORCHESTRATOR_STATE,HEARTBEAT_ORCHESTRATOR,KILL_SWITCH;print(json.dumps({'state':ORCHESTRATOR_STATE,'heartbeat':HEARTBEAT_ORCHESTRATOR,'kill':KILL_SWITCH,'lease':KILL_SWITCH+':mode-owner'}))",
+                    "import json,os;from core.redis_keys import HEARTBEAT_ORCHESTRATOR,KILL_SWITCH;print(json.dumps({'state':os.environ['ORCHESTRATOR_STATE_KEY'],'heartbeat':HEARTBEAT_ORCHESTRATOR,'kill':KILL_SWITCH,'lease':os.environ['ORCHESTRATOR_LEASE_KEY'],'generation':os.environ['ORCHESTRATOR_FENCE_COUNTER_KEY']}))",
                 )
             )
             state = until(lambda key=keys["state"]: (value := read(key)) and value["mode"] == "KILL_SWITCH" and value)
             assert state["compliance_code"] == "ACCOUNT_STATE_MISSING"
             assert read(keys["kill"])["active"] is True
-            assert docker("exec", cache, "redis-cli", "EXISTS", keys["lease"]) == "1"
+            assert keys["lease"] == env["ORCHESTRATOR_LEASE_KEY"]
+            lease = docker("exec", cache, "redis-cli", "--raw", "GET", keys["lease"])
+            assert lease == f"{state['owner_id']}|{state['fence_generation']}"
+            assert (
+                int(docker("exec", cache, "redis-cli", "--raw", "GET", keys["generation"])) == state["fence_generation"]
+            )
             # Count only sockets owned by the actual role PID1, excluding Docker DNS.
             listeners = json.loads(
                 docker(
@@ -192,6 +200,7 @@ print(json.dumps([int(r.split()[1].split(':')[1],16) for f in ['tcp','tcp6'] for
                 )
             )
             assert listeners == [18083]
+            failure_readiness = None
             if case == "graceful":
                 docker("stop", "--time", "20", app, timeout=30)
                 exit_code = json.loads(docker("inspect", app))[0]["State"]["ExitCode"]
@@ -205,12 +214,41 @@ print(json.dumps([int(r.split()[1].split(':')[1],16) for f in ['tcp','tcp6'] for
                 assert not subscribed
             else:
                 docker("stop", "--time", "5", cache, timeout=15)
-                receipt["fault_stage"] = "awaiting_dependency_readiness_rejection"
-                until(lambda: request()["status"] == 503, timeout=10)
-                receipt["fault_stage"] = "awaiting_nonzero_exit_after_bounded_diagnostics"
-                until(lambda app=app: not json.loads(docker("inspect", app))[0]["State"]["Running"], timeout=25)
+                receipt["fault_stage"] = "awaiting_fatal_dependency_exit"
+                observations = []
+                rejection_observed = False
+
+                def failed_process_exited(app=app, observations=observations, request=request):
+                    nonlocal rejection_observed
+                    if not json.loads(docker("inspect", app))[0]["State"]["Running"]:
+                        return True
+                    try:
+                        response = request()
+                    except (RuntimeError, ValueError, KeyError):
+                        return not json.loads(docker("inspect", app))[0]["State"]["Running"]
+                    # A request may precede the synchronous Redis failure being
+                    # detected. Once rejected, readiness must never recover.
+                    assert response["status"] in (200, 503)
+                    if response["status"] == 503:
+                        assert response["body"]["status"] == "not_ready"
+                        rejection_observed = True
+                    else:
+                        assert not rejection_observed, "readiness recovered after fatal dependency failure"
+                    observations.append(response["status"])
+                    return not json.loads(docker("inspect", app))[0]["State"]["Running"]
+
+                until(failed_process_exited, timeout=25)
                 exit_code = json.loads(docker("inspect", app))[0]["State"]["ExitCode"]
                 assert exit_code not in (0, 137)
+                failure_logs = docker("logs", app)
+                assert "Orchestrator fatal error" in failure_logs
+                assert "redis.exceptions.ConnectionError" in failure_logs
+                failure_readiness = {
+                    "observed_statuses_during_failure_detection": observations,
+                    "terminal_http_readiness": "REJECTED" if rejection_observed else "NOT_OBSERVED_BEFORE_EXIT",
+                    "process_available_after_failure": False,
+                    "failure_class": "RedisConnectionError",
+                }
             receipt["cases"].append(
                 {
                     "case": case,
@@ -218,6 +256,7 @@ print(json.dumps([int(r.split()[1].split(':')[1],16) for f in ['tcp','tcp6'] for
                     "missing_account_mode": "KILL_SWITCH",
                     "listener_ports": listeners,
                     "exit_code": exit_code,
+                    "dependency_failure_readiness": failure_readiness,
                     "passed": True,
                 }
             )
