@@ -21,6 +21,8 @@ from typing import Any, cast
 
 import orjson
 
+from context.candle_history_keys import CANDLE_HISTORY_LIST_PREFIXES as CANDLE_HISTORY_LIST_PREFIXES
+from context.candle_history_keys import get_candle_prefixes as get_candle_prefixes
 from context.live_context_bus import LiveContextBus
 from core.redis_consumer_fix import get_bars_fixed, sanitize_redis_keys
 from core.redis_keys import (
@@ -28,7 +30,6 @@ from core.redis_keys import (
 )
 from core.redis_keys import (
     CANDLE_HASH_SCAN,
-    CANDLE_HISTORY_PREFIX,
     CANDLE_HISTORY_SCAN,
     latest_candle,
     latest_tick,
@@ -46,34 +47,6 @@ CANDLE_HISTORY_KEY_PREFIX = "candle_history"
 # If a candle_history key has one of these types it was written by the wrong
 # code path (e.g., HSET instead of RPUSH) and lrange would raise WRONGTYPE.
 _INCOMPATIBLE_REDIS_TYPES: frozenset[str] = frozenset({"hash", "string", "set", "zset", "stream"})
-
-# Default ordered list of prefixes that hold *List* data (safe for LRANGE warmup).
-# NOTE: wolf15:candle:{sym}:{tf} is a Hash (HSET by RedisContextBridge)
-#       — handled separately via HGETALL as a single-bar fallback.
-#
-# Override at runtime via env var (comma-separated, first-wins):
-#   CANDLE_HISTORY_KEY_PREFIXES=wolf15:candle_history,candle_history
-CANDLE_HISTORY_LIST_PREFIXES: list[str] = [
-    CANDLE_HISTORY_PREFIX,  # noqa: F821
-    "candle_history",
-]
-
-
-def get_candle_prefixes() -> list[str]:
-    """Resolve candle List prefixes at call-time.
-
-    Reading at call-time (not import-time) lets tests override
-    ``CANDLE_HISTORY_KEY_PREFIXES`` without reloading the module.
-    Falls back to module defaults when the env var is absent, empty, or
-    contains only whitespace/commas.
-    """
-    env_val = os.environ.get("CANDLE_HISTORY_KEY_PREFIXES", "").strip()
-    if env_val:
-        parsed = [p.strip() for p in env_val.split(",") if p.strip()]
-        if parsed:
-            return parsed
-    return list(CANDLE_HISTORY_LIST_PREFIXES)
-
 
 # Private alias kept for backward-compat with internal callers
 _get_candle_prefixes = get_candle_prefixes

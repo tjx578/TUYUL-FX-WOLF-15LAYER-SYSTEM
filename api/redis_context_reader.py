@@ -36,6 +36,7 @@ from typing import Any, cast
 
 import redis
 
+from context.candle_history_keys import get_candle_prefixes
 from context.warmup_requirements import WARMUP_MIN_BARS
 from infrastructure.redis_url import get_redis_url
 
@@ -116,6 +117,43 @@ def context_read_source_ok() -> bool:
 def context_read_failure_count() -> int:
     """How many context read failures this process has recorded."""
     return _REDIS_FAILURE_COUNT
+
+
+def _warmup_counts(pairs: list[tuple[str, str]]) -> tuple[list[int], bool]:
+    """Count the first nonempty List prefix, without combining histories.
+
+    Wrong-type keys are skipped like RedisConsumer. Other response errors or
+    transport failures invalidate the whole batch; no sequential retry is used.
+    """
+    empty = [0] * len(pairs)
+    if _redis_temporarily_unavailable():
+        return empty, False
+    if not pairs:
+        return empty, True
+    prefixes = get_candle_prefixes()
+    try:
+        with _context_redis_client().pipeline(transaction=False) as pipe:
+            for symbol, tf in pairs:
+                for prefix in prefixes:
+                    pipe.llen(f"{prefix}:{symbol}:{tf}")
+            raw = pipe.execute(raise_on_error=False)
+        if len(raw) != len(pairs) * len(prefixes):
+            raise ValueError("Invalid warmup count batch")
+        normalized: list[int] = []
+        for value in raw:
+            if isinstance(value, redis.ResponseError) and str(value).startswith("WRONGTYPE"):
+                normalized.append(0)
+            elif type(value) is int and value >= 0:
+                normalized.append(value)
+            else:
+                raise ValueError("Invalid warmup count response")
+        return [
+            next((count for count in normalized[offset : offset + len(prefixes)] if count > 0), 0)
+            for offset in range(0, len(normalized), len(prefixes))
+        ], True
+    except Exception:
+        _mark_redis_unavailable()
+        return empty, False
 
 
 def _redis_lrange(key: str, start: int, end: int) -> list[str]:
@@ -394,14 +432,8 @@ class RedisContextReader:
         timeframe: str,
     ) -> int:
         """Return bar count for symbol/timeframe from Redis."""
-        key = f"{_CANDLE_HISTORY}:{symbol}:{timeframe}"
-        if _redis_temporarily_unavailable():
-            return 0
-        try:
-            return cast(int, _context_redis_client().llen(key)) or 0
-        except Exception:
-            _mark_redis_unavailable()
-            return 0
+        counts, _ = _warmup_counts([(symbol, timeframe)])
+        return counts[0]
 
     def check_warmup(
         self,
@@ -458,20 +490,7 @@ class RedisContextReader:
             return {}
         requirements = dict(_WARMUP_MIN_BARS if min_bars is None else min_bars)
         pairs = [(symbol, tf) for symbol in unique_symbols for tf in requirements]
-        counts: list[int] = [0] * len(pairs)
-        source_ok = not _redis_temporarily_unavailable()
-        if pairs and source_ok:
-            try:
-                with _context_redis_client().pipeline(transaction=False) as pipe:
-                    for symbol, tf in pairs:
-                        pipe.llen(f"{_CANDLE_HISTORY}:{symbol}:{tf}")
-                    raw = pipe.execute()
-                if len(raw) != len(pairs) or any(type(value) is not int or value < 0 for value in raw):
-                    raise ValueError("Invalid warmup count batch")
-                counts = cast(list[int], raw)
-            except Exception:
-                _mark_redis_unavailable()
-                source_ok = False
+        counts, source_ok = _warmup_counts(pairs)
 
         result: dict[str, dict[str, Any]] = {}
         offset = 0

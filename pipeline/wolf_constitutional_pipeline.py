@@ -3039,6 +3039,9 @@ class WolfConstitutionalPipeline:
             )
 
             result_dict = result.to_dict()
+            # Preserve the admission actually assessed before analysis for cache
+            # consumers; synthesis governance describes the separate rollout hook.
+            result_dict["governance"] = _governance.to_dict()
 
             # ── Export per-layer constitutional diagnostics (non-invasive) ──
             # L2/L1/L7/L8/L9 already compute diagnostics internally for constitutional
