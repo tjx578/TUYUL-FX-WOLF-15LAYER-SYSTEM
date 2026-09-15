@@ -98,18 +98,18 @@ def test_ea_uses_a_pipe_path_input_and_no_direct_secret_inputs() -> None:
     assert 'reason = "CREDENTIAL_PIPE_UNAVAILABLE"' in source
 
 
-def test_loader_rejects_malformed_truncated_oversize_trailing_and_extra_fields() -> None:
+def test_loader_rejects_malformed_truncated_oversize_and_extra_fields() -> None:
     loader = _function(_source(EA), "LoadRuntimeCredentials")
     assert "W15_CREDENTIAL_MAX_BYTES" in loader
     assert "header_read != W15_CREDENTIAL_HEADER_BYTES" in loader
     assert "payload_read != (uint)payload_length" in loader
-    assert "trailing_read != 0" in loader
+    assert "trailing_read" not in loader
+    assert loader.index("FileClose(handle);", loader.index("uint payload_read")) < loader.index("string payload_json")
     assert "canonical != payload_json" in loader
     for reason in (
         "CREDENTIAL_SCHEMA_INVALID",
         "CREDENTIAL_PAYLOAD_OVERSIZE",
         "CREDENTIAL_PAYLOAD_TRUNCATED",
-        "CREDENTIAL_TRAILING_BYTES",
     ):
         assert f'reason = "{reason}"' in loader
 
@@ -268,3 +268,11 @@ def test_credential_port_preserves_the_monotonic_scheduler() -> None:
         assert "const ulong now_ms = GetTickCount64();" in timer
         assert "TimeCurrent(" not in timer
     assert "HistorySelect(issued - 300, TimeTradeServer() + 60)" in _source(DEMO)
+
+
+def test_length_delimited_contract_does_not_require_eof() -> None:
+    frame = json.loads(CONTRACT.read_text(encoding="utf-8"))["frame"]
+    assert frame["completion"] == "EXACT_HEADER_AND_DECLARED_PAYLOAD_LENGTH"
+    assert frame["client_after_payload"] == "CLOSE_HANDLE_WITHOUT_EOF_PROBE"
+    assert frame["bytes_after_payload"] == "OUTSIDE_FRAME_NOT_READ_OR_PARSED"
+    assert frame["server_frames_per_connection"] == 1

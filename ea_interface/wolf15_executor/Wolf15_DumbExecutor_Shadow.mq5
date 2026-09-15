@@ -28,6 +28,8 @@ input bool   InpRestartDrillHoldAfterDurableSave = false;
 #define W15_CREDENTIAL_SCHEMA "wolf15.runtime_credentials.v1"
 #define W15_CREDENTIAL_HEADER_BYTES 8
 #define W15_CREDENTIAL_MAX_BYTES 4096
+#define W15_CREDENTIAL_READ_TIMEOUT_MS 5000
+#define W15_CREDENTIAL_READ_RETRY_MS 10
 #define W15_PROTOCOL "wolf15.mt5.exec.v1"
 #define W15_VERSION  "0.22-shadow-acceptance-v1"
 #define W15_SIGNED_WIRE "wolf15.mt5.exec.signed-bytes.v2"
@@ -498,8 +500,40 @@ void ClearRuntimeCredentials()
 }
 
 //+------------------------------------------------------------------+
+// Accumulate short reads on the existing connection; never reopen the pipe.
+// Header and payload share one monotonic budget. The deadline is checked
+// between synchronous FileReadArray calls; it cannot preempt a blocked OS call.
+uint ReadCredentialBytes(const int handle, uchar &buffer[], const uint expected,
+                         const ulong deadline)
+{
+   uint total = 0;
+   while(total < expected && GetTickCount64() < deadline && !IsStopped())
+   {
+      ResetLastError();
+      uint count = FileReadArray(handle, buffer, total, expected - total);
+      // A synchronous read may return only after the budget or stop request.
+      // Do not promote those bytes into a successfully completed frame.
+      if(GetTickCount64() >= deadline || IsStopped())
+         return total;
+      if(count > expected - total)
+         return total;
+      total += count;
+      if(count == 0)
+      {
+         int error = GetLastError();
+         // MQL5 can report EOF before the connected writer publishes bytes.
+         // Other file errors are not transient and must remain fail-closed.
+         if(error != 0 && error != ERR_FILE_ENDOFFILE)
+            return total;
+         Sleep(W15_CREDENTIAL_READ_RETRY_MS);
+      }
+   }
+   return total;
+}
+
+//+------------------------------------------------------------------+
 // Reads one bounded, canonical credential envelope from the local named pipe.
-// The server is a single-use, same-user-ACL broker; this side re-validates the
+// Each connection receives one frame from the same-user-ACL broker; re-validate the
 // frame and every binding before any credential reaches runtime memory.
 bool LoadRuntimeCredentials(string &reason)
 {
@@ -526,9 +560,10 @@ bool LoadRuntimeCredentials(string &reason)
       return false;
    }
 
+   const ulong deadline = GetTickCount64() + W15_CREDENTIAL_READ_TIMEOUT_MS;
    uchar header[];
    ArrayResize(header, W15_CREDENTIAL_HEADER_BYTES);
-   uint header_read = FileReadArray(handle, header, 0, W15_CREDENTIAL_HEADER_BYTES);
+   uint header_read = ReadCredentialBytes(handle, header, W15_CREDENTIAL_HEADER_BYTES, deadline);
    if(header_read != W15_CREDENTIAL_HEADER_BYTES)
    {
       FileClose(handle);
@@ -556,23 +591,16 @@ bool LoadRuntimeCredentials(string &reason)
 
    uchar payload[];
    ArrayResize(payload, payload_length);
-   uint payload_read = FileReadArray(handle, payload, 0, payload_length);
+   uint payload_read = ReadCredentialBytes(handle, payload, (uint)payload_length, deadline);
    if(payload_read != (uint)payload_length)
    {
       FileClose(handle);
       reason = "CREDENTIAL_PAYLOAD_TRUNCATED";
       return false;
    }
-   uchar trailing[];
-   ArrayResize(trailing, 1);
-   uint trailing_read = FileReadArray(handle, trailing, 0, 1);
+   // The length prefix is authoritative: only these N bytes form the envelope.
+   // Close without an EOF probe; subsequent bytes are never read or parsed.
    FileClose(handle);
-   if(trailing_read != 0)
-   {
-      reason = "CREDENTIAL_TRAILING_BYTES";
-      return false;
-   }
-
    string payload_json = CharArrayToString(payload, 0, payload_length, CP_UTF8);
    if(StringLen(payload_json) != payload_length)
    {
