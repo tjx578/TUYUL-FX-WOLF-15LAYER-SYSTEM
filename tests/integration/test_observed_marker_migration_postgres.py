@@ -23,7 +23,7 @@ from tests.test_mt5_engineering_demo_canary import EXECUTOR_ID, SECRET, _command
 pytestmark = [pytest.mark.integration]
 ROOT = Path(__file__).resolve().parents[2]
 OBSERVED_MARKER = "20260823_01"
-TARGET_HEAD = "20260908_01"
+TARGET_HEAD = "20260915_01"
 HISTORICAL_TIME = datetime(2026, 9, 1, 12, tzinfo=UTC)
 TERMINAL_STATES = ("REJECTED", "FILLED", "CANCELLED", "COMPLETED", "EXPIRED", "SHADOW_COMPLETED", "SHADOW_REJECTED")
 NEW_TABLES = (
@@ -167,15 +167,51 @@ def _snapshot(connection) -> dict:
 
 def _persist(name: str, evidence: dict) -> None:
     root = Path(os.environ["WOLF15_MIGRATION_TEST_EVIDENCE_DIR"]).resolve(strict=True)
-    if root.drive.upper() != "D:":
+    if os.environ.get("WOLF15_RUN_OBSERVED_MARKER_CI") == "1":
+        expected = (ROOT / "artifacts/observed-marker").resolve(strict=True)
+        if root != expected:
+            raise ValueError("CI migration evidence must remain in its artifact directory")
+    elif root.drive.upper() != "D:":
         raise ValueError("campaign evidence must remain on D")
     with (root / (name + ".json")).open("x", encoding="utf-8") as stream:
         json.dump(evidence, stream, sort_keys=True, indent=2, default=str)
         stream.write("\n")
 
 
+def _ci_historical_database(monkeypatch):
+    from scripts.ci.run_strategy_persistence_acceptance import isolated_domain_database
+
+    evidence = ROOT / "artifacts/observed-marker"
+    evidence.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("WOLF15_MIGRATION_TEST_EVIDENCE_DIR", str(evidence))
+    # The existing helper checks the source database, server address and both
+    # disposable markers before creating this case's empty database.
+    with isolated_domain_database(empty=True):
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        monkeypatch.setenv("DATABASE_URL", dsn)
+        monkeypatch.setenv("WOLF15_LOAD_DOTENV", "false")
+        config = Config(str(ROOT / "alembic.ini"))
+        config.set_main_option("script_location", str(ROOT / "storage/migrations"))
+        with psycopg.Connection[DictRow].connect(dsn, autocommit=True, row_factory=dict_row) as connection:
+            assert (
+                connection.execute(
+                    "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+                ).fetchall()
+                == []
+            )
+            command.upgrade(config, OBSERVED_MARKER)
+            initial = _snapshot(connection)
+            assert initial["versions"] == [OBSERVED_MARKER]
+            assert not initial["new_tables"] and not NEW_COLUMNS.intersection(initial["columns"])
+            yield connection, config
+    # Retain the child and its immutable audit until CI destroys its service.
+
+
 @pytest.fixture
 def historical_database(monkeypatch):
+    if os.environ.get("WOLF15_RUN_OBSERVED_MARKER_CI") == "1":
+        yield from _ci_historical_database(monkeypatch)
+        return
     if os.environ.get("WOLF15_RUN_OBSERVED_MARKER_MIGRATION") != "1":
         pytest.skip("requires the separately authorized disposable PostgreSQL campaign")
     locator = Path(os.environ["WOLF15_MIGRATION_TEST_CONFIG"]).resolve(strict=True)

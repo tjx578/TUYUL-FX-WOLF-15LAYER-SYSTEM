@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -9,26 +10,37 @@ import pytest
 
 def test_orchestrator_late_fatal_clears_readiness_and_exits(monkeypatch):
     from services.orchestrator import state_manager as mod
-    from services.shared import diagnostics
+    from services.orchestrator.ownership import RedisFencedOwnership
+    from storage.redis_client import RedisClient
+    from tests.test_orchestrator_state_manager import _AlwaysOwner, _FakeRedis
 
-    observed = []
-    probe = SimpleNamespace(set_alive=lambda alive: observed.append(("alive", alive)))
+    probe_callbacks = {}
+    original_manager = mod.StateManager
 
-    def run_forever(on_started):
-        on_started()
-        assert mod._ORCHESTRATOR_READY.is_set()
-        raise RuntimeError("fixture_fatal")
+    def build_manager(*, supervisor):
+        redis = _FakeRedis()
+        manager = original_manager(
+            redis_client=cast(RedisClient, redis),
+            ownership=cast(RedisFencedOwnership, _AlwaysOwner(redis)),
+            supervisor=supervisor,
+        )
 
-    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: probe)
-    monkeypatch.setattr(mod, "StateManager", lambda: SimpleNamespace(run_forever=run_forever))
-    monkeypatch.setattr(
-        diagnostics,
-        "hold_alive_sync",
-        lambda **kwargs: observed.append((mod._ORCHESTRATOR_READY.is_set(), kwargs["timeout_sec"])),
-    )
+        def fail_after_start():
+            assert mod._ORCHESTRATOR_READY.is_set()
+            assert supervisor.is_ready() is True
+            raise RuntimeError("fixture_fatal")
+
+        monkeypatch.setattr(manager, "process_once", fail_after_start)
+        return manager
+
+    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: probe_callbacks.update(kwargs))
+    monkeypatch.setattr(mod, "StateManager", build_manager)
     with pytest.raises(RuntimeError, match="fixture_fatal"):
         mod.run()
-    assert observed == [("alive", False), (False, 30)]
+    assert mod._ORCHESTRATOR_READY.is_set() is False
+    assert probe_callbacks["readiness_check"]() is False
+    assert probe_callbacks["liveness_check"]() is False
+    assert probe_callbacks["details_provider"]() == {"runtime_state": "FATAL", "fatal_error": "RuntimeError"}
 
 
 @pytest.mark.asyncio

@@ -131,13 +131,15 @@ class TestNoInlineCopyPaste:
             f"{rel_path} still reads DEGRADED_HOLD_TIMEOUT_SEC inline — should delegate to services.shared.diagnostics"
         )
 
-    @pytest.mark.parametrize(
-        "rel_path,expected_import",
-        [
-            ("services/orchestrator/state_manager.py", "hold_alive_sync"),
-        ],
-    )
-    def test_imports_shared_diagnostics(self, rel_path, expected_import):
-        """Each call site must import the correct hold_alive variant from shared."""
-        src = (Path(__file__).resolve().parent.parent / rel_path).read_text(encoding="utf-8")
-        assert expected_import in src, f"{rel_path} does not import {expected_import} from services.shared.diagnostics"
+    def test_orchestrator_fatal_path_uses_supervisor_without_diagnostic_hold(self):
+        """The fenced owner fails immediately; a hold must not keep it advertised alive."""
+        import inspect
+
+        from services.orchestrator import state_manager
+
+        entrypoint = inspect.getsource(state_manager.run)
+        owner_loop = inspect.getsource(state_manager.StateManager.run_forever)
+        assert "hold_alive_sync" not in entrypoint
+        assert "liveness_check=supervisor.is_alive" in entrypoint
+        assert "readiness_check=supervisor.is_ready" in entrypoint
+        assert "self._supervisor.mark_fatal(exc)" in owner_loop

@@ -248,10 +248,12 @@ class TestOrchestratorShutdownState:
             sm.run_forever()
 
         # Verify SHUTDOWN was published (last pipeline call before close)
-        publish_calls = [c for c in mock_redis.eval.call_args_list]
+        publish_calls = list(mock_pipe.publish.call_args_list)
         # At least one publish should contain "SHUTDOWN"
         shutdown_published = any("SHUTDOWN" in str(args) for args in publish_calls)
         assert shutdown_published, f"Expected SHUTDOWN publish, got: {publish_calls}"
+        assert "SHUTDOWN" in str(publish_calls[-1])
+        mock_pubsub.close.assert_called_once()
 
     def test_run_forever_closes_pubsub_after_shutdown(self) -> None:
         """Pubsub should be closed even if SHUTDOWN publish fails."""
@@ -280,7 +282,7 @@ class TestOrchestratorShutdownState:
             call_count += 1
             if call_count >= 1:
                 # NOW make pipeline fail — after BOOT publish succeeded
-                mock_redis.eval.side_effect = ConnectionError("redis down")
+                mock_pipe.execute.side_effect = ConnectionError("redis down")
                 raise KeyboardInterrupt("test exit")
 
         sm.process_once = limited_process
@@ -288,5 +290,7 @@ class TestOrchestratorShutdownState:
         with pytest.raises(KeyboardInterrupt):
             sm.run_forever()
 
-        # Pubsub must be closed even when publish_state("SHUTDOWN") fails
+        # The injected failure must actually run after BOOT, then pubsub closes.
+        assert mock_pipe.execute.call_count == 2
+        assert "SHUTDOWN" in str(mock_pipe.publish.call_args_list[-1])
         mock_pubsub.close.assert_called_once()

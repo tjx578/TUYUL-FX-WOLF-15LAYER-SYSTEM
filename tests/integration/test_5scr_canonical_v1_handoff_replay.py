@@ -259,6 +259,11 @@ async def _seed_shadow_executor(pg: _PoolBackedPostgres) -> None:
 async def test_canonical_raw_to_durable_shadow_command_one_lineage(postgres: _PoolBackedPostgres) -> None:
     from tests.integration.postgres_test_guard import verify_operational_tables_empty
 
+    receipt_path = os.getenv("WOLF15_P5_REPLAY_RECEIPT")
+    assert receipt_path, "isolated runner must supply a persistent replay receipt path"
+    receipt = Path(receipt_path)
+    assert receipt.parent.is_dir() and not receipt.exists(), "replay requires a new receipt in an existing directory"
+
     async with postgres._pool.acquire() as connection:
         await verify_operational_tables_empty(connection)
     audit, qualifying, lineage = _fixture()
@@ -424,7 +429,5 @@ async def test_canonical_raw_to_durable_shadow_command_one_lineage(postgres: _Po
         "demo_authority": "NOT_GRANTED",
         "v2_handoff": "NOT_IN_SELECTED_RELEASE_HISTORICAL_ADAPTER_REVIEW_PENDING",
     }
-    receipt_path = os.getenv("WOLF15_P5_REPLAY_RECEIPT")
-    assert receipt_path, "isolated runner must supply a persistent replay receipt path"
-    with Path(receipt_path).open("x", encoding="utf-8") as output:
+    with receipt.open("x", encoding="utf-8") as output:
         output.write(json.dumps(result, indent=2, default=str) + "\n")

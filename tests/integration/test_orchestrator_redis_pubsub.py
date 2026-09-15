@@ -196,7 +196,9 @@ def test_orchestrator_receives_set_mode_command_via_redis(
 @pytest.fixture(autouse=True)
 def isolated_governance_keys(redis_client: Any, monkeypatch: pytest.MonkeyPatch):
     fixed_now = 1_800_000_000.0
-    monkeypatch.setattr(state_manager, "time", SimpleNamespace(time=lambda: fixed_now, sleep=time.sleep))
+    monkeypatch.setattr(
+        state_manager, "time", SimpleNamespace(time=lambda: fixed_now, sleep=time.sleep, monotonic=time.monotonic)
+    )
     monkeypatch.setattr(state_manager, "is_forex_market_open", lambda: True)
     monkeypatch.delenv("ORCHESTRATOR_COMMAND_SECRET", raising=False)
     keys = []
@@ -221,11 +223,14 @@ def test_missing_account_kill_switch_cannot_be_cleared_by_redis_command(
             "ORCHESTRATOR_STATE_KEY",
             "ORCHESTRATOR_ACCOUNT_STATE_KEY",
             "ORCHESTRATOR_TRADE_RISK_KEY",
+            "ORCHESTRATOR_LEASE_KEY",
+            "ORCHESTRATOR_FENCE_COUNTER_KEY",
         )
     }
     for name, key in keys.items():
         monkeypatch.setenv(name, key)
     manager = StateManager(redis_client=cast(RedisClient, _RedisAdapter(redis_client)))
+    assert manager._ownership.acquire()  # noqa: SLF001
     manager.start_listener()
     try:
         manager.process_once(now=10.0)
@@ -247,6 +252,7 @@ def test_missing_account_kill_switch_cannot_be_cleared_by_redis_command(
         assert manager.snapshot().compliance_code == "ACCOUNT_STATE_MISSING"
     finally:
         manager.close()
+        manager._ownership.release()  # noqa: SLF001
         redis_client.delete(*keys.values())
 
 
