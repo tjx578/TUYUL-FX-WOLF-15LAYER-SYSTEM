@@ -73,6 +73,8 @@ async def get_orchestrator_state() -> dict[str, Any]:
         "compliance_code": payload.get("compliance_code", ""),
         "updated_at": payload.get("updated_at", ""),
         "event": payload.get("event", ""),
+        "owner_id": payload.get("owner_id", ""),
+        "fence_generation": payload.get("fence_generation"),
         "orchestrator_heartbeat_age_seconds": heartbeat_age_seconds,
         "orchestrator_ready": orchestrator_ready,
     }

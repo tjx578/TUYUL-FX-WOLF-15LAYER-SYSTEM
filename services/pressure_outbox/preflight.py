@@ -8,6 +8,9 @@ import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 
+from services.pressure_outbox.analysis_admission_v1_worker import (
+    StrategyAnalysisAdmissionRuntimeConfig,
+)
 from services.pressure_outbox.evidence_worker import EvidenceRuntimeConfig
 from services.pressure_outbox.lifecycle_shadow_worker import LifecycleV2RuntimeConfig
 from services.pressure_outbox.outcome_worker import (
@@ -19,6 +22,9 @@ from storage.pair_admission_evaluations import PairAdmissionEvaluationRepository
 from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_radar_manifest import PressureRadarManifestRepository
+from storage.strategy_5scr_analysis_admission_v1_repository import (
+    StrategyAnalysisAdmissionV1Repository,
+)
 from storage.strategy_5scr_candle_store import PostgresClosedCandleStore
 from storage.strategy_5scr_lifecycle_v2_repository import StrategyLifecycleV2Repository
 from storage.strategy_5scr_shadow_evidence_v2_repository import StrategyShadowEvidenceV2Repository
@@ -133,6 +139,7 @@ async def run_preflight() -> dict[str, object]:
         raise RuntimeError("STRATEGY_5SCR_EVIDENCE_REQUIRES_PRESSURE_CONSUMER")
     lifecycle_v2_config = LifecycleV2RuntimeConfig.from_env()
     shadow_evidence_v2_config = ShadowEvidenceV2RuntimeConfig.from_env()
+    analysis_admission_config = StrategyAnalysisAdmissionRuntimeConfig.from_env()
     validate_lifecycle_evidence_owner_phase(
         lifecycle_config=lifecycle_v2_config,
         evidence_config=shadow_evidence_v2_config,
@@ -205,6 +212,20 @@ async def run_preflight() -> dict[str, object]:
             )
         if shadow_evidence_v2_config.enabled and not candle_schema.ready:
             raise RuntimeError("STRATEGY_5SCR_SHADOW_EVIDENCE_V2_CANDLE_SCHEMA_NOT_READY")
+        analysis_admission_schema = await StrategyAnalysisAdmissionV1Repository(pg=pg_client).schema_status()
+        analysis_admission_schema_ready = not any(analysis_admission_schema.values())
+        if analysis_admission_config.enabled and not analysis_admission_schema_ready:
+            raise RuntimeError(
+                "STRATEGY_5SCR_ANALYSIS_ADMISSION_V1_SCHEMA_NOT_READY:"
+                f"tables={','.join(analysis_admission_schema['missing_tables']) or 'none'}:"
+                f"indexes={','.join(analysis_admission_schema['missing_indexes']) or 'none'}:"
+                f"constraints={','.join(analysis_admission_schema['missing_constraints']) or 'none'}:"
+                f"invalid_constraints={','.join(analysis_admission_schema['invalid_constraints']) or 'none'}:"
+                f"triggers={','.join(analysis_admission_schema['missing_triggers']) or 'none'}:"
+                f"invalid_triggers={','.join(analysis_admission_schema['invalid_triggers']) or 'none'}"
+            )
+        if analysis_admission_config.enabled and not candle_schema.ready:
+            raise RuntimeError("STRATEGY_5SCR_ANALYSIS_ADMISSION_V1_CANDLE_SCHEMA_NOT_READY")
         return {
             "event": "pressure_outbox_preflight",
             "ready": True,
@@ -235,6 +256,8 @@ async def run_preflight() -> dict[str, object]:
             "lifecycle_v2_schema_ready": lifecycle_v2_ready,
             "shadow_evidence_v2": asdict(shadow_evidence_v2_config),
             "shadow_evidence_v2_schema_ready": owner_schema_ready,
+            "strategy_analysis_admission_v1": asdict(analysis_admission_config),
+            "strategy_analysis_admission_v1_schema_ready": analysis_admission_schema_ready,
         }
     finally:
         await pg_client.close()

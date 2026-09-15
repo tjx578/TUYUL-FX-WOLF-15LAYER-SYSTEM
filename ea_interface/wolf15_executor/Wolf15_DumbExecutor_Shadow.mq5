@@ -1997,6 +1997,7 @@ int OnInit()
    {
       PrintFormat("[W15] 30-symbol universe rejected reason=%s",
                   symbol_universe_reason);
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
    FolderCreate("Wolf15Executor", 0);
@@ -2006,6 +2007,7 @@ int OnInit()
    if(!LoadPendingReport(pending, pending_error))
    {
       PrintFormat("[W15] Durable pending state rejected reason=%s", pending_error);
+      ClearRuntimeCredentials();
       return INIT_FAILED;
    }
    if(StringLen(pending.command_id) > 0)

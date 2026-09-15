@@ -14,6 +14,7 @@ import redis
 from services.orchestrator import state_manager as sm
 from services.orchestrator.execution_mode import ExecutionMode
 from services.orchestrator.mode_owner import ModeOwnerLease, ModeOwnerUnavailableError
+from services.orchestrator.ownership import OwnershipLostError
 
 
 @pytest.fixture
@@ -31,6 +32,10 @@ def store(monkeypatch):
     monkeypatch.setenv("ORCHESTRATOR_STATE_KEY", prefix + "state")
     monkeypatch.setenv("ORCHESTRATOR_CHANNEL", prefix + "channel")
     monkeypatch.setenv("ORCHESTRATOR_OWNER_LEASE_MS", "500")
+    monkeypatch.setenv("ORCHESTRATOR_LEASE_KEY", prefix + "runtime-lease")
+    monkeypatch.setenv("ORCHESTRATOR_FENCE_COUNTER_KEY", prefix + "runtime-generation")
+    monkeypatch.setenv("ORCHESTRATOR_LEASE_TTL_SEC", "3")
+    monkeypatch.setenv("ORCHESTRATOR_LEASE_RENEW_INTERVAL_SEC", "1")
     monkeypatch.setattr(sm, "KILL_SWITCH", prefix + "kill")
     monkeypatch.setattr(sm, "HEARTBEAT_ORCHESTRATOR", prefix + "heartbeat")
     try:
@@ -64,40 +69,60 @@ def test_atomic_duplicate_owner_race_has_one_winner(store):
     assert client.get(prefix + "state") is None
 
 
-def test_actual_mode_writer_expiry_takeover_rejects_stale_all_state_writes(store):
+@pytest.mark.parametrize("stale_operation", ["kill", "state", "renew", "release"])
+def test_actual_mode_writer_expiry_takeover_rejects_stale_all_state_writes(store, monkeypatch, stale_operation):
     client, prefix = store
+    lease_key = prefix + "runtime-lease"
     first = sm.StateManager(redis_client=client)
+    assert first._ownership.acquire()
+    first_identity = first._ownership.identity
+    assert first_identity is not None
     first.set_mode(ExecutionMode.KILL_SWITCH, "disposable-first")
     first._sync_kill_switch(ExecutionMode.KILL_SWITCH)
     first.publish_state("TEST_ONLY")
-    assert first._mode_owner.is_current()
+    assert client.get(lease_key) == first_identity.wire_value
     contender = sm.StateManager(redis_client=client)
-    with pytest.raises(ModeOwnerUnavailableError):
+    assert contender._ownership.acquire() is False
+    with pytest.raises(OwnershipLostError):
         contender.publish_state("TEST_ONLY_DUPLICATE")
-    deadline = time.monotonic() + 3
-    while client.exists(first._mode_owner.key) and time.monotonic() < deadline:
+    deadline = time.monotonic() + 5
+    while client.exists(lease_key) and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert not client.exists(first._mode_owner.key)
-    assert first._mode_owner.is_current() is False
+    assert not client.exists(lease_key)
+    monkeypatch.setenv("ORCHESTRATOR_LEASE_TTL_SEC", "15")
     successor = sm.StateManager(redis_client=client)
-    successor._mode_owner.ttl_ms = 5000
+    assert successor._ownership.acquire()
+    successor_identity = successor._ownership.identity
+    assert successor_identity is not None and successor_identity.generation > first_identity.generation
     successor.set_mode(ExecutionMode.KILL_SWITCH, "disposable-successor")
     successor._sync_kill_switch(ExecutionMode.KILL_SWITCH)
     successor.publish_state("TEST_ONLY_SUCCESSOR")
-    keys = [prefix + "state", prefix + "heartbeat", prefix + "kill", successor._mode_owner.key]
+    keys = [prefix + "state", prefix + "heartbeat", prefix + "kill", lease_key, prefix + "runtime-generation"]
     before = client.mget(keys)
-    assert successor._mode_owner.is_current()
-    assert first._mode_owner.is_current() is False
-    with pytest.raises(ModeOwnerUnavailableError):
+    assert client.get(lease_key) == successor_identity.wire_value
+    # Exercise each Lua stale-token gate first, before local invalidation of
+    # the obsolete identity can short-circuit subsequent calls.
+    if stale_operation == "kill":
+        with pytest.raises(OwnershipLostError):
+            first._sync_kill_switch(ExecutionMode.NORMAL)
+    elif stale_operation == "state":
+        with pytest.raises(OwnershipLostError):
+            first.publish_state("STALE_SHUTDOWN")
+    elif stale_operation == "renew":
+        assert first._ownership.renew() is False
+    else:
+        assert first._ownership.release() is False
+    with pytest.raises(OwnershipLostError):
         first._sync_kill_switch(ExecutionMode.NORMAL)
-    with pytest.raises(ModeOwnerUnavailableError):
+    with pytest.raises(OwnershipLostError):
         first.publish_state("STALE_SHUTDOWN")
-    with pytest.raises(ModeOwnerUnavailableError):
-        first._mode_owner.renew()
+    assert first._ownership.renew() is False
+    assert first._ownership.release() is False
     first.close()
     assert client.mget(keys) == before
     successor.close()
-    assert not client.exists(successor._mode_owner.key)
+    assert successor._ownership.release() is True
+    assert not client.exists(lease_key)
 
 
 def test_backend_unavailable_does_not_fall_back_or_acquire_authority(store):

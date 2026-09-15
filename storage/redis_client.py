@@ -168,6 +168,10 @@ class RedisClient:
         """Return a Redis pipeline for batching commands."""
         return self.client.pipeline()
 
+    def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
+        """Execute one atomic Lua script on the configured Redis server."""
+        return self.client.eval(script, numkeys, *keys_and_args)
+
     @retry(
         retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
