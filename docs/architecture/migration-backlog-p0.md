@@ -90,7 +90,7 @@ That means:
 
 ### 4.2 P0 Rollout Guidance
 
-Deploy P0 incrementally on existing services. Do not delete current Railway/Vercel services first.
+Deploy P0 incrementally on existing Railway services. The selected frontend is [WOLF15-DASHBOARD-FRONTEND](https://wolf15-dashboard-frontend-production.up.railway.app/). Preserve this service during staged rollout; retired frontend hosting is not a rollback target.
 
 Use config flags or staged rollout when possible for:
 

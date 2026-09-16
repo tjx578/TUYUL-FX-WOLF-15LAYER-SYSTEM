@@ -299,7 +299,7 @@ Finnhub WebSocket
 ║  CONTEXT_MODE: local | redis                                                 ║
 ║                                                                              ║
 ║  Railway: 10+ toml configs (API, engine, ingest, orchestrator, workers...)   ║
-║  Vercel: dashboard/nextjs/                                                   ║
+║  Former frontend hosting: retired; see current Railway topology              ║
 ║                                                                              ║
 ║  ⚠ This section is a snapshot. See docker-compose.yml and                    ║
 ║    docs/architecture/deployment-classification.md for current truth.          ║
@@ -349,7 +349,7 @@ Finnhub WebSocket
 | G | TuyulFX_Bridge_EA | `ea_interface/TuyulFX_Bridge_EA.mq5` | MQL5 dumb executor, magic 151515 | ✅ |
 | H | Docker Compose | `docker-compose.yml` | 13 services (hybrid transitional: monolith + per-service + infra) | ✅ |
 | H | Railway config | `railway.toml` + 9 `railway-*.toml` | multi-service deploy (API, engine, ingest, orchestrator, workers) | ✅ |
-| H | Vercel | `dashboard/nextjs/` | dashboard frontend deployment | ✅ |
+| H | Retired hosting target | `dashboard/nextjs/` | Historical frontend deployment; use the [current Railway frontend](https://wolf15-dashboard-frontend-production.up.railway.app/) | Archived |
 
 ---
 
