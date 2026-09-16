@@ -16,6 +16,7 @@ from execution.mt5_executor_governance import (
     ExecutorGovernanceError,
     GovernanceConflictError,
     GovernanceNotReadyError,
+    GovernanceSnapshot,
     ModeTransitionError,
     MT5ExecutorGovernanceRepository,
     get_mt5_executor_governance_repository,
@@ -126,7 +127,7 @@ async def update_execution_mode(
         raise _translate_error(exc) from exc
 
 
-def repository_snapshot(snapshot: Any) -> dict[str, Any]:
+def repository_snapshot(snapshot: GovernanceSnapshot) -> dict[str, Any]:
     return snapshot.to_dict()
 
 
