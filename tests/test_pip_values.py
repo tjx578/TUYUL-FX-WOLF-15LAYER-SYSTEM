@@ -5,9 +5,10 @@ import pytest
 from config.pip_values import (
     _JPY_MULTIPLIER,
     _STANDARD_MULTIPLIER,
-    DEFAULT_PIP_VALUE,
     PIP_MULTIPLIERS,
     PIP_VALUES_PER_STANDARD_LOT,
+    QUOTE_CURRENCY_PIP_VALUES_USD,
+    WOLF15_XM_30_V1_PAIRS,
     PipLookupError,
     get_pip_info,
     get_pip_multiplier,
@@ -40,8 +41,63 @@ class TestTableIntegrity:
         upper_keys = [k.upper() for k in keys]
         assert len(upper_keys) == len(set(upper_keys))
 
-    def test_default_pip_value_positive(self):
-        assert DEFAULT_PIP_VALUE > 0
+    def test_no_default_pip_value_is_exported(self):
+        import config.pip_values as module
+
+        assert not hasattr(module, "DEFAULT_PIP_VALUE")
+
+
+# ── WOLF15_XM_30_V1 coverage and quote-currency contract ─────────────
+
+
+class TestUniverseCoverage:
+    def test_universe_is_the_30_ea_symbols(self):
+        import csv
+        from pathlib import Path
+
+        rows = csv.DictReader(
+            (Path(__file__).resolve().parents[1] / "ea_interface/wolf15_executor/broker_maps/xmglobal-mt5-10.csv").open(
+                encoding="utf-8"
+            )
+        )
+        assert tuple(row["canonical_symbol"] for row in rows) == WOLF15_XM_30_V1_PAIRS
+        assert len(WOLF15_XM_30_V1_PAIRS) == 30
+
+    def test_explicit_pip_value_for_all_30_pairs(self):
+        missing = [pair for pair in WOLF15_XM_30_V1_PAIRS if pair not in PIP_VALUES_PER_STANDARD_LOT]
+        assert missing == []
+
+    def test_every_enabled_pair_in_config_is_covered(self):
+        import re
+        from pathlib import Path
+
+        text = (Path(__file__).resolve().parents[1] / "config/pairs.yaml").read_text(encoding="utf-8")
+        enabled = re.findall(r'symbol:\s*"(\w+)"[^}]*enabled:\s*true', text)
+        assert enabled and all(is_pair_supported(pair) for pair in enabled)
+
+    @pytest.mark.parametrize("pair", [p for p in WOLF15_XM_30_V1_PAIRS if not p.startswith("XA")])
+    def test_fx_pip_value_matches_quote_currency(self, pair):
+        assert PIP_VALUES_PER_STANDARD_LOT[pair] == QUOTE_CURRENCY_PIP_VALUES_USD[pair[3:]]
+
+    @pytest.mark.parametrize(
+        ("pair", "value", "multiplier"),
+        [
+            ("EURNZD", 6.50, 10_000.0),
+            ("AUDCHF", 10.00, 10_000.0),
+            ("NZDCHF", 10.00, 10_000.0),
+            ("NZDCAD", 7.50, 10_000.0),
+            ("CADJPY", 6.67, 100.0),
+            ("CADCHF", 10.00, 10_000.0),
+            ("CHFJPY", 6.67, 100.0),
+        ],
+    )
+    def test_previously_defaulted_pairs_are_explicit(self, pair, value, multiplier):
+        assert get_pip_info(pair) == (value, multiplier)
+
+    @pytest.mark.parametrize("pair", ["USDSEK", "EURTRY", "BTCUSD", ""])
+    def test_unknown_pair_fails_closed(self, pair):
+        with pytest.raises(PipLookupError):
+            get_pip_value(pair)
 
 
 # ── P0 Bug Fix: XAUUSD ──────────────────────────────────────────────
