@@ -247,6 +247,22 @@ git show HEAD:pyproject.toml
 
 Pertahankan perubahan lokal yang sudah ada dan gunakan branch/worktree sesuai scope pekerjaan. Kebutuhan konfigurasi mengikuti `.env.example` serta manifest layanan. Pekerjaan native MT5 dan storage integration menggunakan environment yang sesuai dengan kontraknya, terpisah dari asumsi unit test biasa.
 
+### Environment Python lokal
+
+Dari root repository, gunakan Python 3.11 sesuai workflow CI untuk membuat
+virtualenv core terpisah:
+
+```bash
+python -m venv .venv-api
+```
+
+Aktifkan dengan `source .venv-api/bin/activate` pada Linux/macOS atau
+`.\.venv-api\Scripts\Activate.ps1` pada Windows PowerShell. Setelah aktif,
+pasang dependency core menggunakan `python -m pip install -r requirements.txt`.
+Jalankan tes sebagai `python -m pytest` dari root repository sesuai scope
+fixture yang dipilih. Native MT5 MCP menggunakan environment terpisah dan
+manifest `ops/mt5_mcp/requirements.txt`.
+
 ### Lapisan pengujian
 
 | Jenis pengujian | Fokus |
