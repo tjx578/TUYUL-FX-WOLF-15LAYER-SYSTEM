@@ -30,7 +30,7 @@ from allocation.allocation_models import (
     AllocationStatus,
 )
 from allocation.signal_registry import SignalRegistry
-from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
+from config.pip_values import PipLookupError, get_pip_info
 from contracts.execution_queue_contract import ExecutionQueuePayload
 from infrastructure.tracing import inject_trace_context
 
@@ -326,9 +326,16 @@ class AllocationService:
         symbol = str(signal.get("pair") or signal.get("symbol") or "UNKNOWN").upper()
 
         try:
-            _pip_value, pip_mult = get_pip_info(symbol)
+            pip_value, pip_mult = get_pip_info(symbol)
         except PipLookupError:
-            pip_mult = 10_000.0
+            return AccountAllocationResult(
+                account_id=account_state.account_id,
+                approved=False,
+                allowed=False,
+                status="REJECT",
+                reason="pip_value_not_configured",
+                severity="CRITICAL",
+            )
 
         entry = float(signal.get("entry_price") or signal.get("entry") or 0.0)
         sl = float(signal.get("stop_loss") or 0.0)
@@ -361,7 +368,7 @@ class AllocationService:
             account_state=account_state,
             requested_risk_percent=requested_clamped,
             stop_loss_pips=stop_loss_pips,
-            pip_value_per_lot=DEFAULT_PIP_VALUE,
+            pip_value_per_lot=pip_value,
         )
 
         approved = bool(scoped.trade_allowed)

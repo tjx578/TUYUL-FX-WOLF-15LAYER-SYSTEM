@@ -10,10 +10,11 @@ All modules that need pip values MUST import from here.
 from __future__ import annotations
 
 __all__ = [
-    "DEFAULT_PIP_VALUE",
     "PIP_MULTIPLIERS",
     "PIP_VALUES_PER_STANDARD_LOT",
     "PipLookupError",
+    "QUOTE_CURRENCY_PIP_VALUES_USD",
+    "WOLF15_XM_30_V1_PAIRS",
     "get_pip_info",
     "get_pip_multiplier",
     "get_pip_value",
@@ -29,7 +30,31 @@ class PipLookupError(LookupError):
         super().__init__(f"Pair '{pair}' not found in {table_name}. Use is_pair_supported() to check availability.")
 
 
-DEFAULT_PIP_VALUE: float = 10.0
+# There is deliberately no default pip value. A pair without an explicit entry fails closed
+# (PipLookupError) so lot sizing can never silently use a USD pip value for a non-USD quote.
+
+# USD value of one pip per standard lot, by quote currency (USD-denominated account).
+# Every FX entry below must equal the value for its quote currency (enforced by tests).
+QUOTE_CURRENCY_PIP_VALUES_USD: dict[str, float] = {
+    "USD": 10.00,
+    "JPY": 6.67,
+    "CAD": 7.50,
+    "CHF": 10.00,
+    "AUD": 7.50,
+    "NZD": 6.50,
+    "GBP": 12.50,
+}
+
+# Canonical symbols of the EA universe WOLF15_XM_30_V1 (ea_interface/.../broker_maps/xmglobal-mt5-10.csv).
+WOLF15_XM_30_V1_PAIRS: tuple[str, ...] = (
+    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD",
+    "EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD",
+    "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD", "GBPNZD",
+    "AUDJPY", "AUDNZD", "AUDCAD", "AUDCHF",
+    "NZDJPY", "NZDCHF", "NZDCAD",
+    "CADJPY", "CADCHF", "CHFJPY",
+    "XAUUSD", "XAGUSD",
+)  # fmt: skip
 
 PIP_VALUES_PER_STANDARD_LOT: dict[str, float] = {
     "EURUSD": 10.00,
@@ -53,6 +78,13 @@ PIP_VALUES_PER_STANDARD_LOT: dict[str, float] = {
     "EURCAD": 7.50,
     "AUDCAD": 7.50,
     "AUDNZD": 6.50,
+    "EURNZD": 6.50,
+    "AUDCHF": 10.00,
+    "NZDCHF": 10.00,
+    "NZDCAD": 7.50,
+    "CADJPY": 6.67,
+    "CADCHF": 10.00,
+    "CHFJPY": 6.67,
     "XAUUSD": 10.00,
     "XAGUSD": 50.00,
     "US30": 10.00,
