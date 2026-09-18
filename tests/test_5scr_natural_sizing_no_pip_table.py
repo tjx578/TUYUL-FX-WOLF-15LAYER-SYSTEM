@@ -37,7 +37,7 @@ def _imports(path: Path) -> set[str]:
 
 def test_natural_sizing_graph_never_imports_pip_value_table():
     seen: set[str] = set()
-    stack = list(NATURAL_ROOTS)
+    stack: list[str] = list(NATURAL_ROOTS)
     offenders: list[tuple[str, str]] = []
     while stack:
         module = stack.pop()
