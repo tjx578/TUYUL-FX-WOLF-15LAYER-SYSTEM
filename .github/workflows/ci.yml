@@ -10,10 +10,10 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  # Cancel superseded runs on feature branches to save minutes, but NEVER cancel on
-  # main -- a cancelled CI ends with conclusion 'cancelled', which fails the deploy
-  # gate (Railway Deploy requires CI conclusion == 'success' on main). Rapid auto-commit
-  # pushes were cancelling main CI before it finished, so deploys never fired.
+  # Cancel superseded feature-branch runs, but let an active main run finish.
+  # With the default single pending slot, a newer run can still replace a queued run.
+  # Railway deployment is dispatched separately and requires successful CI for
+  # the exact selected main commit; a green CI run does not itself deploy.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
@@ -24,12 +24,15 @@ jobs:
   ruff:
     name: Ruff lint & format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -51,6 +54,7 @@ jobs:
   tests:
     name: Python tests (pytest)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     services:
       redis:
         image: redis:7-alpine
@@ -92,10 +96,12 @@ jobs:
       JWT_SECRET: ci-test-secret-do-not-use-in-prod
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -249,7 +255,7 @@ jobs:
 
       - name: Upload effective Railway API role evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: c06-effective-api
           path: artifacts/c06-effective-api/
@@ -273,7 +279,7 @@ jobs:
 
       - name: Upload S03 source-bound PostgreSQL receipt
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pair-activity-runtime-acceptance
           path: artifacts/pair-activity-runtime/
@@ -329,7 +335,7 @@ jobs:
 
       - name: Upload complete Python test outcomes
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: python-suite-junit
           path: |
@@ -342,7 +348,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-report
           path: |
@@ -353,6 +359,7 @@ jobs:
   dashboard:
     name: Dashboard build (Next.js)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: dashboard/nextjs
@@ -363,17 +370,19 @@ jobs:
       INTERNAL_API_URL: https://api.example.invalid
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: dashboard/nextjs/package-lock.json
 
       - name: Set up disposable owner-login Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -402,9 +411,11 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Build candidate runtime image
@@ -442,7 +453,7 @@ jobs:
         run: python scripts/ci/pressure_outbox_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/pressure-outbox-process.json
       - name: Upload built runtime receipt
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: p1-runtime-acceptance
           path: |
@@ -462,12 +473,15 @@ jobs:
   native-mcp-tests:
     name: Native MCP fixture tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -477,7 +491,19 @@ jobs:
         run: pip install mcp==2.0.0 psutil==7.2.2 pytest==9.0.3 pytest-asyncio==1.3.0 pytest-timeout
 
       - name: Run native MCP fixture suite
-        run: python -m pytest tests/test_native_mt5_readonly_mcp.py -v --tb=short --timeout=60
+        run: |
+          python -m pytest tests/test_native_mt5_readonly_mcp.py -v --tb=short --timeout=60 \
+            --junitxml=artifacts/native-mcp/junit.xml
+          python scripts/ci/validate_suite_junit.py artifacts/native-mcp/junit.xml
+
+      - name: Upload native MCP test outcomes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-mcp-junit
+          path: artifacts/native-mcp/junit.xml
+          if-no-files-found: error
+          retention-days: 14
 
   # -------------------------------------------------------------------
   # Deprecated shim guard — block resurrection of retired modules
@@ -485,9 +511,12 @@ jobs:
   shim-guard:
     name: Deprecated shim guard
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: "Block resurrected shim files"
         run: |
@@ -509,38 +538,13 @@ jobs:
           fi
           echo "No retired shims found."
 
-      - name: "Block deprecated imports in production code"
-        shell: python
-        run: |
-          import ast
-          import pathlib
-          import subprocess
-          import sys
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
-          retired = {"dashboard.price_feed", "dashboard.trade_ledger"}
-          failed = False
-          paths = subprocess.check_output(["git", "ls-files", "-z", "*.py"]).decode().split("\0")
-          for name in filter(None, paths):
-              path = pathlib.Path(name)
-              if any(part in {"tests", "__pycache__", ".venv", "node_modules"} for part in path.parts):
-                  continue
-              try:
-                  tree = ast.parse(path.read_bytes(), filename=name)
-              except SyntaxError:
-                  print(f"::error file={name}::Python syntax error prevents import inspection")
-                  failed = True
-                  continue
-              for node in ast.walk(tree):
-                  imports = []
-                  if isinstance(node, ast.Import):
-                      imports = [alias.name for alias in node.names]
-                  elif isinstance(node, ast.ImportFrom):
-                      module = node.module or ""
-                      imports = [module, *(f"{module}.{alias.name}" for alias in node.names)]
-                  if any(module == old or module.startswith(old + ".") for module in imports for old in retired):
-                      print(f"::error file={name},line={node.lineno}::Deprecated dashboard import; use storage instead")
-                      failed = True
-          sys.exit(1 if failed else 0)
+      - name: "Block deprecated imports in production code"
+        run: python scripts/ci/check_deprecated_imports.py
 
   # -------------------------------------------------------------------
   # Architecture drift guard — constitutional boundary spot-checks
@@ -548,12 +552,15 @@ jobs:
   drift-guard:
     name: Architecture drift guard
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -620,9 +627,12 @@ jobs:
   built-api:
     name: Built API bootstrap
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Build exact-source API image
         run: |
@@ -642,7 +652,7 @@ jobs:
 
       - name: Upload built API evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: built-api-bootstrap
           path: artifacts/built-api/
@@ -656,6 +666,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, runtime-acceptance, built-api, typecheck]
     if: always()
     steps:
