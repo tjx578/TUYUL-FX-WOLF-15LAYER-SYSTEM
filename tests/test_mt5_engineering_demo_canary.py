@@ -527,6 +527,10 @@ class _FakeRepository:
         assert executor_id == EXECUTOR_ID
         return self.snapshot
 
+    async def snapshot_by_id(self, executor_id: UUID, snapshot_id: str) -> AccountSnapshotV1 | None:
+        assert executor_id == EXECUTOR_ID
+        return self.snapshot if self.snapshot.snapshot_id == snapshot_id else None
+
     async def load_engineering_reconciliation(self, snapshot):
         identity = fixture_identity(snapshot)
         return identity, fixture_attestation(identity)

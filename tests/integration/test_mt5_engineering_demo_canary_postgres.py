@@ -1575,3 +1575,51 @@ async def test_unchanged_receipt_expiring_after_enqueue_cannot_arm(client, postg
         await _commands(postgres).arm_engineering_demo_canary(
             request.canary_id, actor="test", reason="unchanged receipt expired"
         )
+
+
+@pytest.mark.asyncio
+async def test_frozen_issuance_uses_reconciled_snapshot_after_newer_heartbeat(
+    client, postgres, registered, monkeypatch
+):
+    """Follow-up to #482: evidence bound to S stays usable after heartbeat S+1 becomes latest."""
+    snapshot_id = f"snapshot-d0-{uuid4().hex[:12]}"
+    await _prepare_demo_executor(client, postgres, registered, snapshot_id=snapshot_id)
+    newer_id = f"snapshot-d0-{uuid4().hex[:12]}"
+    response = await client.post(
+        f"/api/v1/executors/{registered}/heartbeat",
+        json={
+            "executor_id": str(registered),
+            "sent_at_utc": datetime.now(UTC).isoformat(),
+            "terminal_connected": True,
+            "trade_allowed": True,
+            "autotrading_enabled": True,
+            "account_snapshot": _snapshot(registered, newer_id),
+        },
+        headers=_auth_headers(registered),
+    )
+    assert response.status_code == 200, response.text
+    repository = _commands(postgres)
+    latest = await repository.latest_snapshot(registered)
+    assert latest is not None and latest.snapshot_id == newer_id
+    monkeypatch.setenv("WOLF15_ENABLE_ENGINEERING_DEMO_CANARY_ISSUANCE", "true")
+    monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_SECRET", SIGNING_SECRET)
+    monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", SIGNING_KEY_ID)
+    request = _request(registered, snapshot_id)
+    packet = _canary_packet(request)
+    digest = packet_sha256(packet)
+    capability = ProcessLocalIssuanceCapability(packet_sha256_value=digest, command_id=packet.command_id)
+    await EngineeringDemoCanaryAuthorityV1(repository).issue_frozen(
+        packet, expected_packet_sha256=digest, capability=capability
+    )
+    row = await postgres.fetchrow(
+        "SELECT payload FROM execution_commands WHERE engineering_canary_id=$1",
+        request.canary_id,
+    )
+    assert row is not None
+    payload = row["payload"]
+    command = (
+        ExecutionCommandV1.model_validate_json(payload)
+        if isinstance(payload, str)
+        else ExecutionCommandV1.model_validate(payload)
+    )
+    assert command.guards.account_snapshot_id == snapshot_id

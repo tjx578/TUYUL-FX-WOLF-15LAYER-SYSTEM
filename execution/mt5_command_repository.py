@@ -762,6 +762,28 @@ class MT5CommandRepository:
         except ReconciliationEvidenceError as exc:
             raise CommandConflictError(str(exc)) from exc
 
+    async def snapshot_by_id(self, executor_id: UUID | str, snapshot_id: str) -> AccountSnapshotV1 | None:
+        """Exact stored snapshot S for this executor; never substitutes a newer heartbeat snapshot."""
+        self._require_database()
+        row = await self._pg.fetchrow(
+            """
+            SELECT payload
+            FROM executor_account_snapshots
+            WHERE executor_id = $1::uuid AND snapshot_id = $2
+            """,
+            str(executor_id),
+            snapshot_id,
+        )
+        if not row:
+            return None
+        payload = row["payload"]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        snapshot = cast(AccountSnapshotV1, AccountSnapshotV1.model_validate(payload))
+        if snapshot.snapshot_id != snapshot_id or str(snapshot.executor_id) != str(executor_id):
+            return None
+        return snapshot
+
     async def latest_snapshot(self, executor_id: UUID | str) -> AccountSnapshotV1 | None:
         self._require_database()
         row = await self._pg.fetchrow(

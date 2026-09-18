@@ -343,7 +343,10 @@ class EngineeringDemoCanaryAuthorityV1:
         heartbeat_age = _age_seconds(heartbeat, now=now) if isinstance(heartbeat, datetime) else None
         if heartbeat_age is None or not -5 <= heartbeat_age <= MAX_RUNTIME_AGE_SECONDS:
             raise EngineeringDemoCanaryError("executor heartbeat is missing or stale")
-        snapshot = await self._repository.latest_snapshot(request.executor_id)
+        # The operator-frozen snapshot S (packet.expected_account_snapshot_id) is the one the
+        # reconciliation evidence is bound to. A newer heartbeat snapshot S+1 must not replace S;
+        # S itself must still be fresh, and its ACTIVE evidence is re-verified exactly below.
+        snapshot = await self._repository.snapshot_by_id(request.executor_id, request.expected_account_snapshot_id)
         if snapshot is None or not -5 <= _age_seconds(snapshot.captured_at_utc, now=now) <= MAX_RUNTIME_AGE_SECONDS:
             raise EngineeringDemoCanaryError("executor account snapshot is missing or stale")
         secret = os.getenv("EXECUTOR_COMMAND_SIGNING_SECRET", "").strip()
