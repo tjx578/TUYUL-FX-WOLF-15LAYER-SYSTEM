@@ -14,6 +14,7 @@ CI_PATH = ".github/workflows/ci.yml"
 REQUIRED_STEPS = {
     "Ruff lint & format": {"Ruff check (lint — hard fail)", "Ruff format check (hard fail)"},
     "Python tests (pytest)": {
+        "Validate repository contracts",
         "Apply database migrations",
         "Mark PostgreSQL as a disposable test environment",
         "Qualify disposable Linux PostgreSQL and Redis runner",
