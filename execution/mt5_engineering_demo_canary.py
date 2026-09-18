@@ -29,7 +29,11 @@ from contracts.mt5_execution_protocol import (
     sign_execution_command,
 )
 from execution.broker_reconciliation_evidence import ReconciliationEvidenceError, digest, verify_attestation
-from execution.mt5_command_repository import CommandConflictError, MT5CommandRepository
+from execution.mt5_command_repository import (
+    CommandConflictError,
+    MT5CommandRepository,
+    engineering_canary_latest_state_veto,
+)
 from execution.mt5_demo_canary_authority_packet import (
     DemoCanaryAuthorityPacketV1,
     IssuanceDisposition,
@@ -349,6 +353,14 @@ class EngineeringDemoCanaryAuthorityV1:
         snapshot = await self._repository.snapshot_by_id(request.executor_id, request.expected_account_snapshot_id)
         if snapshot is None or not -5 <= _age_seconds(snapshot.captured_at_utc, now=now) <= MAX_RUNTIME_AGE_SECONDS:
             raise EngineeringDemoCanaryError("executor account snapshot is missing or stale")
+        veto = engineering_canary_latest_state_veto(
+            await self._repository.latest_snapshot(request.executor_id),
+            snapshot,
+            canonical_symbol=request.approved_canonical_symbol,
+            broker_symbol=request.approved_broker_symbol,
+        )
+        if veto is not None:
+            raise EngineeringDemoCanaryError(veto)
         secret = os.getenv("EXECUTOR_COMMAND_SIGNING_SECRET", "").strip()
         key_id = os.getenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", "").strip()
         if len(secret.encode("utf-8")) < 32 or not key_id:

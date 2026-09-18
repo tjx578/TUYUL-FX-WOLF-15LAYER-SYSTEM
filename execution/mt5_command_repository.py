@@ -9,7 +9,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any, Final, cast
 from uuid import UUID
 
 from contracts.mt5_execution_protocol import (
@@ -60,6 +60,63 @@ class ExecutorNotFoundError(ExecutorRepositoryError):
 
 class ExecutorBindingMismatchError(ExecutorRepositoryError):
     pass
+
+
+_CANARY_SYMBOL_SAFETY_FIELDS: Final = (
+    "digits",
+    "point",
+    "tick_size",
+    "volume_min",
+    "volume_max",
+    "volume_step",
+    "stops_level_points",
+    "freeze_level_points",
+)
+
+
+def engineering_canary_latest_state_veto(
+    latest: AccountSnapshotV1 | None,
+    pinned: AccountSnapshotV1,
+    *,
+    canonical_symbol: str,
+    broker_symbol: str,
+) -> str | None:
+    """Newer account state may veto a canary pinned to reconciled snapshot S; it never replaces S.
+
+    S stays the reconciliation lineage. A later heartbeat snapshot that disables trading, is not
+    flat, changes binding/margin mode, or changes the approved symbol's trading capability wins.
+    """
+    if latest is None:
+        return "latest account snapshot is missing"
+    if latest.snapshot_id == pinned.snapshot_id:
+        return None
+    if latest.executor_id != pinned.executor_id or latest.account_id != pinned.account_id:
+        return "latest account snapshot binding differs from pinned snapshot"
+    if latest.margin_mode != pinned.margin_mode:
+        return "latest account margin mode differs from pinned snapshot"
+    if not latest.trade_allowed or not latest.autotrading_enabled:
+        return "latest account state disables trading"
+    if latest.open_positions or latest.pending_orders:
+        return "latest account state is not flat"
+
+    def capability(snapshot: AccountSnapshotV1) -> list[Any]:
+        return [
+            item
+            for item in snapshot.symbols
+            if item.canonical_symbol == canonical_symbol and item.broker_symbol == broker_symbol
+        ]
+
+    latest_capability, pinned_capability = capability(latest), capability(pinned)
+    if (
+        len(latest_capability) != 1
+        or len(pinned_capability) != 1
+        or any(
+            getattr(latest_capability[0], name) != getattr(pinned_capability[0], name)
+            for name in _CANARY_SYMBOL_SAFETY_FIELDS
+        )
+    ):
+        return "latest approved symbol capability differs from pinned snapshot"
+    return None
 
 
 class CommandConflictError(ExecutorRepositoryError):
@@ -762,6 +819,41 @@ class MT5CommandRepository:
         except ReconciliationEvidenceError as exc:
             raise CommandConflictError(str(exc)) from exc
 
+    @staticmethod
+    async def _require_latest_state_allows_canary(
+        connection: Any, command: ExecutionCommandV1, pinned: AccountSnapshotV1
+    ) -> None:
+        row = await connection.fetchrow(
+            """
+            SELECT payload
+            FROM executor_account_snapshots
+            WHERE executor_id = $1::uuid
+            ORDER BY captured_at DESC
+            LIMIT 1
+            FOR SHARE
+            """,
+            str(pinned.executor_id),
+        )
+        latest = None
+        if row:
+            payload = row["payload"]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            try:
+                latest = AccountSnapshotV1.model_validate(payload)
+            except ValueError as exc:
+                raise CommandConflictError("engineering canary latest account snapshot is malformed") from exc
+        if command.order is None:
+            raise CommandConflictError("engineering canary order is missing")
+        veto = engineering_canary_latest_state_veto(
+            latest,
+            pinned,
+            canonical_symbol=command.order.canonical_symbol,
+            broker_symbol=command.order.broker_symbol,
+        )
+        if veto is not None:
+            raise CommandConflictError("engineering canary " + veto)
+
     async def snapshot_by_id(self, executor_id: UUID | str, snapshot_id: str) -> AccountSnapshotV1 | None:
         """Exact stored snapshot S for this executor; never substitutes a newer heartbeat snapshot."""
         self._require_database()
@@ -1095,6 +1187,7 @@ class MT5CommandRepository:
                 raise CommandConflictError("engineering canary broker ledger is not reconciled")
 
             await self._require_engineering_reconciliation(connection, command, snapshot)
+            await self._require_latest_state_allows_canary(connection, command, snapshot)
             if snapshot.open_positions or snapshot.pending_orders:
                 raise CommandConflictError("engineering canary requires a flat account")
             symbol_capabilities = [
@@ -1398,6 +1491,7 @@ class MT5CommandRepository:
             ):
                 raise CommandConflictError("engineering canary account is no longer tradeable and flat")
             await self._require_engineering_reconciliation(connection, command, snapshot)
+            await self._require_latest_state_allows_canary(connection, command, snapshot)
             symbol_capabilities = [
                 item
                 for item in snapshot.symbols

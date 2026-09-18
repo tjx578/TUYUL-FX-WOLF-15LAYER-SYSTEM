@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from contracts.mt5_execution_protocol import EngineeringDemoCanaryGuards
 from execution.broker_reconciliation_evidence import ReconciliationEvidenceError
 from execution.mt5_demo_canary_authority_packet import (
     DemoCanaryAuthorityPacketV1,
@@ -35,11 +36,13 @@ def _env(monkeypatch):
 class ExactSnapshotRepository(_FakeRepository):
     """Stores S and a newer S+1; evidence exists only for S."""
 
-    def __init__(self, *, bound_age_seconds: float = 12.0, evidence_for: str | None = "snapshot-S") -> None:
+    def __init__(
+        self, *, bound_age_seconds: float = 12.0, evidence_for: str | None = "snapshot-S", newer: dict | None = None
+    ) -> None:
         super().__init__()
         now = datetime.now(UTC)
         self.bound = _snapshot(snapshot_id="snapshot-S", captured_at_utc=now - timedelta(seconds=bound_age_seconds))
-        self.newer = _snapshot(snapshot_id="snapshot-S1", captured_at_utc=now)
+        self.newer = _snapshot(snapshot_id="snapshot-S1", captured_at_utc=now, **(newer or {}))
         self.snapshot = self.bound
         self.evidence_for = evidence_for
         self.reconciliation_requests: list[str] = []
@@ -92,12 +95,14 @@ def _frozen(expected_snapshot_id: str):
 async def test_issuance_uses_frozen_snapshot_even_after_newer_heartbeat():
     repository = ExactSnapshotRepository()
     packet, digest, capability = _frozen("snapshot-S")
-    manifest = await EngineeringDemoCanaryAuthorityV1(repository).issue_frozen(
+    manifest = await EngineeringDemoCanaryAuthorityV1(repository).issue_frozen(  # type: ignore[arg-type]
         packet, expected_packet_sha256=digest, capability=capability
     )
     assert manifest["disposition"] == "CREATED"
     assert repository.reconciliation_requests == ["snapshot-S"]
-    assert repository.enqueued[0].guards.account_snapshot_id == "snapshot-S"
+    guards = repository.enqueued[0].guards
+    assert isinstance(guards, EngineeringDemoCanaryGuards)
+    assert guards.account_snapshot_id == "snapshot-S"
 
 
 @pytest.mark.asyncio
@@ -115,8 +120,48 @@ async def test_issuance_fails_closed_without_valid_evidence_for_the_frozen_snaps
     repository = ExactSnapshotRepository(**kwargs)
     packet, digest, capability = _frozen(expected)
     with pytest.raises(EngineeringDemoCanaryError, match=match):
-        await EngineeringDemoCanaryAuthorityV1(repository).issue_frozen(
+        await EngineeringDemoCanaryAuthorityV1(repository).issue_frozen(  # type: ignore[arg-type]
             packet, expected_packet_sha256=digest, capability=capability
         )
     assert repository.enqueued == []
     assert not capability.consumed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "newer",
+    [
+        {"trade_allowed": False},
+        {"autotrading_enabled": False},
+        {"account_id": "other-account"},
+    ],
+    ids=["latest_trade_disabled", "latest_autotrading_disabled", "latest_account_differs"],
+)
+async def test_newer_account_state_vetoes_issuance_from_pinned_snapshot(newer):
+    """Codex P1 on #483: S is reconciliation lineage only; a newer snapshot may still veto."""
+    repository = ExactSnapshotRepository(newer=newer)
+    packet, digest, capability = _frozen("snapshot-S")
+    with pytest.raises(EngineeringDemoCanaryError, match="latest"):
+        await EngineeringDemoCanaryAuthorityV1(repository).issue_frozen(  # type: ignore[arg-type]
+            packet, expected_packet_sha256=digest, capability=capability
+        )
+    assert repository.enqueued == []
+    assert not capability.consumed
+
+
+def test_latest_state_veto_covers_positions_orders_and_symbol_capability():
+    from execution.mt5_command_repository import engineering_canary_latest_state_veto
+
+    pinned = _snapshot(snapshot_id="snapshot-S")
+    symbol = pinned.symbols[0]
+    kwargs = {"canonical_symbol": symbol.canonical_symbol, "broker_symbol": symbol.broker_symbol}
+    same = _snapshot(snapshot_id="snapshot-S1")
+    assert engineering_canary_latest_state_veto(same, pinned, **kwargs) is None
+    assert engineering_canary_latest_state_veto(pinned, pinned, **kwargs) is None
+    assert "missing" in (engineering_canary_latest_state_veto(None, pinned, **kwargs) or "")
+    changed = same.model_copy(update={"symbols": [symbol.model_copy(update={"volume_min": symbol.volume_min * 2})]})
+    assert "capability" in (engineering_canary_latest_state_veto(changed, pinned, **kwargs) or "")
+    busy = same.model_copy(update={"pending_orders": [object()]})
+    assert "not flat" in (engineering_canary_latest_state_veto(busy, pinned, **kwargs) or "")
+    open_position = same.model_copy(update={"open_positions": [object()]})
+    assert "not flat" in (engineering_canary_latest_state_veto(open_position, pinned, **kwargs) or "")

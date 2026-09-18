@@ -1622,4 +1622,5 @@ async def test_frozen_issuance_uses_reconciled_snapshot_after_newer_heartbeat(
         if isinstance(payload, str)
         else ExecutionCommandV1.model_validate(payload)
     )
+    assert isinstance(command.guards, EngineeringDemoCanaryGuards)
     assert command.guards.account_snapshot_id == snapshot_id
