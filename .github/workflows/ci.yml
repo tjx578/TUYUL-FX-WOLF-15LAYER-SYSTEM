@@ -4,6 +4,7 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -111,6 +112,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-timeout pytest-asyncio pytest-cov
+
+      - name: Validate repository contracts
+        run: python scripts/ci/check_repository_contracts.py
 
       - name: Bind exact disposable PostgreSQL service address
         env:

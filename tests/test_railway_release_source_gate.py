@@ -66,6 +66,18 @@ def test_complete_exact_source_receipt_passes(receipt):
     gate.validate_receipt(**receipt)
 
 
+@pytest.mark.parametrize("fault", ["wrapper-path", "wrapper-job-names"])
+def test_manual_wrapper_success_cannot_substitute_for_canonical_release_receipt(receipt, fault):
+    if fault == "wrapper-path":
+        receipt["workflow"]["path"] = ".github/workflows/wolf-pipeline-ci.yml"
+        receipt["run"].update(path=".github/workflows/wolf-pipeline-ci.yml", event="workflow_dispatch")
+    else:
+        for job in receipt["jobs"]:
+            job["name"] = "Canonical CI / " + job["name"]
+    with pytest.raises(gate.ReleaseGateError):
+        gate.validate_receipt(**receipt)
+
+
 def for_workflow(receipt, path):
     result = deepcopy(receipt)
     index = list(gate.RELEASE_WORKFLOWS).index(path)

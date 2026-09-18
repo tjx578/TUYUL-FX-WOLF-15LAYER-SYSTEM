@@ -1,8 +1,10 @@
 """Negative C05 receipts use fixtures only, never a live provider or credentials."""
 
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.ci import p1_governance_gate as gate
 
@@ -379,3 +381,39 @@ def test_live_receipts_are_collected_read_only(monkeypatch, receipt, protection,
     else:
         with pytest.raises(gate.GovernanceGateError):
             gate.validate_live_governance(REPO, SHA, "43" if case == "ci_not_latest" else "42")
+
+
+def _docs_receipt_from_current_workflow(receipt):
+    path = ".github/workflows/docs-hygiene.yml"
+    source = Path(__file__).resolve().parents[1] / path
+    workflow = yaml.safe_load(source.read_text(encoding="utf-8"))
+    declared_jobs = {job["name"]: job for job in workflow["jobs"].values()}
+    value = receipt(path)
+    for job in value["jobs"]:
+        job["steps"] = [
+            {"name": step["name"], "status": "completed", "conclusion": "success"}
+            for step in declared_jobs[job["name"]]["steps"]
+            if "name" in step
+        ]
+    return value
+
+
+def test_p1_accepts_executed_steps_from_current_docs_workflow(receipt):
+    gate.validate_workflow_receipt(**_docs_receipt_from_current_workflow(receipt))
+
+
+@pytest.mark.parametrize(
+    "step_name",
+    ["Reject legacy documentation references in production Python", "Verify historical quarantine index exists"],
+)
+@pytest.mark.parametrize("fault", ["missing", "skipped"])
+def test_p1_rejects_missing_or_skipped_current_docs_guard(receipt, step_name, fault):
+    value = _docs_receipt_from_current_workflow(receipt)
+    job = next(job for job in value["jobs"] if job["name"] == "Legacy docs quarantine")
+    if fault == "missing":
+        job["steps"] = [step for step in job["steps"] if step["name"] != step_name]
+    else:
+        step = next(step for step in job["steps"] if step["name"] == step_name)
+        step["conclusion"] = "skipped"
+    with pytest.raises(gate.GovernanceGateError):
+        gate.validate_workflow_receipt(**value)

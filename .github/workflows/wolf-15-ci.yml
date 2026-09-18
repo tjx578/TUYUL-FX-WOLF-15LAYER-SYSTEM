@@ -1,5 +1,6 @@
-# DEPRECATED — superseded by wolf-pipeline-ci.yml
-# This workflow is disabled (manual trigger only).
+# DEPRECATED — historical checks, still manually dispatchable.
+# Use ci.yml for current CI or wolf-pipeline-ci.yml to run CI/security/docs.
+# This historical workflow does not qualify the current release contract.
 name: Wolf-15 CI (Deprecated)
 
 on:
