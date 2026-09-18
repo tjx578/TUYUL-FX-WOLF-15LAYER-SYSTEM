@@ -105,3 +105,28 @@ Report the exact changes, verification, and remaining gaps. Use task artifacts f
 the assessment trail. Global memory writes require an explicit user request and
 the configured memory-update mechanism; generic skill writeback advice does not
 grant that permission.
+
+## Bind commands to the inspected environment
+
+Before running source or tests, record the repository root, working directory,
+branch, HEAD, existing changes, and selected interpreter. Use the repository's
+documented virtualenv and run Python tests as `python -m pytest` from the repo
+root, substituting the verified interpreter path for `python`. Keep native MCP
+dependencies separate from the core environment. Diagnose a failed launcher;
+do not switch runtimes just to bypass an approval or environment failure.
+
+Verify test files and node IDs against the current source and pytest settings.
+Collection imports plugins and conftest code; it is not automatically side-effect
+free. Use identified disposable services for integration tests and avoid implicit
+production credentials. Keep execution proportional to the changed behavior and
+required CI; do not select every historical test from a command allowlist.
+
+For frontend discovery, verify the directory before using relative searches such
+as `rg --files -g "*.ts" -g "*.tsx" dashboard/nextjs/src`. Do not encode a user's
+Windows home or a previous session scratchpad as the repository location.
+
+Continue work already authorized by the user without asking again for the same
+plan. Honor actual runtime approvals. Report commands actually run, exit codes,
+pass/fail/skip totals, exact source identity, and unverified scopes. Policy checks
+treat their target argv as data; they do not prove that a test file exists, that
+tests passed, or that a provider operation was authorized or executed.
