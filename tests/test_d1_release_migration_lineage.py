@@ -11,7 +11,7 @@ def test_admission_and_d0_are_both_required_before_composed_head() -> None:
     config = Config()
     config.set_main_option("script_location", str(root / "storage/migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["20260915_02"]
+    assert scripts.get_heads() == ["20260919_01"]
     merge = scripts.get_revision("20260908_01")
     assert merge is not None
     assert isinstance(merge.down_revision, tuple)
@@ -41,3 +41,4 @@ def test_current_release_upgrade_requires_both_published_histories() -> None:
         assert missing_parent in revisions
         assert "20260915_01" in revisions
         assert "20260915_02" in revisions
+        assert "20260919_01" in revisions

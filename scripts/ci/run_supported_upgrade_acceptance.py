@@ -23,7 +23,7 @@ from tests.integration.test_candidate_revision_v31_postgres import DB  # noqa: E
 from tests.test_strategy_5scr_candidate_handoff_v31 import bundle  # noqa: E402
 
 _PUBLISHED_HEADS = ("20260908_01", "20260911_01")
-_MERGED_HEAD = "20260915_02"
+_MERGED_HEAD = "20260919_01"
 _D1_TABLES = (
     "strategy_5scr_analysis_admissions_v1",
     "strategy_5scr_analysis_admission_evaluations_v1",
