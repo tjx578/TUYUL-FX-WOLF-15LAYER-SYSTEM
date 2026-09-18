@@ -1,9 +1,13 @@
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
 # Project-specific skill fit; installed global packages are unchanged.
 # Reviewed source identities and reasons: skill-assessment.json.
 # AGENTS.md routes relevant skills without modifying global enablement.
 # Project name-disable selectors were not effective in the tested skills/list.
 # Skill discovery does not require command auto-allow grants.
-# Sandbox, approval policy, providers and authentication remain host-controlled.
+# Project defaults remain subject to higher-priority host and managed policy.
+# Providers, authentication and existing MCP configuration are unchanged.
 
 [skills]
 include_instructions = true
