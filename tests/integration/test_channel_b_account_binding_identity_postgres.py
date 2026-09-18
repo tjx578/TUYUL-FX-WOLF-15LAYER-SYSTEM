@@ -783,7 +783,7 @@ async def test_migration_survives_downgrade_and_re_upgrade(pool: Any) -> None:
     # still deny the auditor on the base table.
     async with pool.acquire() as connection:
         heads = await connection.fetch("SELECT version_num FROM alembic_version")
-        assert {row["version_num"] for row in heads} == {"20260915_02"}
+        assert {row["version_num"] for row in heads} == {"20260919_01"}
         checks = await connection.fetch(
             """SELECT conname FROM pg_constraint
                 WHERE conrelid = $1::regclass AND contype = 'c'""",
