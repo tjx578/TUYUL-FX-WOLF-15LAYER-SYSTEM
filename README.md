@@ -508,7 +508,7 @@ Keberadaan test tidak membuktikan test lulus atau seluruh requirement tercakup. 
 
 Setiap release memerlukan binding source commit/tree, workflow/run/attempt, schema/migration, effective config/policy, image digest, EA source/include/binary, target service dan account bila relevan. Source A yang diuji tidak boleh menghasilkan rilis B tanpa evidence yang sesuai.
 
-Workflow historis mencakup `.github/workflows/ci.yml`, `wolf-pipeline-ci.yml`, `lint.yml`, `perf-guard.yml`, `wolf-security-scan.yml`, `docs-hygiene.yml` serta `railway-deploy.yml`. Trigger, required-job list, pin tools dan release permissions mengikuti isi workflow revision yang dipilih, bukan daftar ini.
+Workflow historis mencakup `.github/workflows/ci.yml`, `wolf-pipeline-ci.yml`, `lint.yml`, `perf-guard.yml`, `wolf-security-scan.yml`, `docs-hygiene.yml` serta `railway-deploy.yml`. Trigger, required-job list, pin tools dan release permissions mengikuti isi workflow revision yang dipilih, bukan daftar ini. Lihat [panduan CI](docs/ci-workflow-guide.md) untuk jalur aktif dan fungsi verifikasi manual.
 
 Branch protection/rulesets dan jalur provider deployment perlu evidence enforcement aktual. Main/Railway pada checkpoint terbaru masih HOLD. Laporan tidak menjalankan rerun atau billing action; penyebab job tanpa langkah eksekusi belum ditentukan.
 

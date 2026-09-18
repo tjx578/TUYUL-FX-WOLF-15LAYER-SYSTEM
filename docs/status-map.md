@@ -40,7 +40,7 @@ Each entry is classified by maturity tier so readers know what to trust, what to
 | --------- | ------ | ------------- | ------- |
 | L12 verdict engine | C | `constitution/verdict_engine.py` | Sole decision authority |
 | Pipeline DAG (8-phase) | C | `pipeline/wolf_constitutional_pipeline.py`, `docs/architecture/core/engine-dag-architecture.md` | Semi-parallel halt-safe DAG |
-| Constitutional boundary CI | C | `.github/workflows/wolf-pipeline-ci.yml` Phase 2 | 6 grep rules enforced in CI |
+| Constitutional boundary CI | C | `.github/workflows/ci.yml`, `scripts/ci/check_repository_contracts.py` | Required drift checks and repository contracts; see [CI workflow guide](ci-workflow-guide.md) for limits |
 | Boundary regression tests | C | `tests/test_pr003_boundary.py` | Shim deletion, canonical import, boundary scan |
 
 ## 4. Contracts
@@ -52,8 +52,8 @@ Each entry is classified by maturity tier so readers know what to trust, what to
 | WebSocket events | C | `contracts/websocket_events.py` | MarketEvent, SignalEvent, RiskEvent |
 | Dashboard DTO | C | `contracts/dashboard_dto.py` | SignalView, RiskRecommendation |
 | API response envelope | C | `contracts/api_response_schema.py` | Generic `ApiResponse[T]` |
-| L12 JSON schema | C | `schemas/l12_schema.json` | Validated in CI Phase 3 |
-| Alert JSON schema | C | `schemas/alert_schema.json` | Validated in CI Phase 3 |
+| L12 JSON schema | C | `schemas/l12_schema.json` | Draft 7 meta-schema validation in canonical CI |
+| Alert JSON schema | C | `schemas/alert_schema.json` | Draft 7 meta-schema validation in canonical CI |
 | ACCOUNT_STATE contract | A | — | Redis key; Pydantic model not yet created |
 | TRADE_RISK contract | A | — | Redis key; Pydantic model not yet created |
 | Layer output template | C | `docs/architecture/contracts/wolf-15-layer-output-template-v7.4r∞.md` | Shape each layer must produce |
@@ -118,11 +118,11 @@ Each entry is classified by maturity tier so readers know what to trust, what to
 
 | Surface | Tier | Key file(s) | Notes |
 | --------- | ------ | ------------- | ------- |
-| Wolf pipeline CI (authoritative) | C | `.github/workflows/wolf-pipeline-ci.yml` | 8-phase, governance verdict gate |
-| CI (lightweight) | C | `.github/workflows/ci.yml` | Ruff, tests, dashboard, shim-guard, drift-guard |
+| Manual verification entry point | U | `.github/workflows/wolf-pipeline-ci.yml` | Calls canonical CI, security and docs at the same commit; not a release receipt |
+| CI | C | `.github/workflows/ci.yml`, `.github/workflows/lint.yml` | Required CI Gate: tests, coverage, dashboard, isolated type checks, runtime acceptance and repository guards |
 | Docs hygiene | C | `.github/workflows/docs-hygiene.yml` | Reading-order, legacy quarantine, cross-refs |
 | Perf guard | C | `.github/workflows/perf-guard.yml` | Import budget, slow-test enforcement, module size |
-| Security scan | C | `.github/workflows/wolf-security-scan.yml` | Secret detection |
+| Security scan | C | `.github/workflows/wolf-security-scan.yml` | Required Security Gate: Python/Node audits and redacted secret detection |
 
 ## 11. Migration Backlogs
 
