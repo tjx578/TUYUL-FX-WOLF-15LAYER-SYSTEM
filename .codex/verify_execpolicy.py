@@ -58,10 +58,15 @@ def main() -> int:
     args = parser.parse_args()
     binary = args.codex.resolve(strict=True)
     rules = [p.resolve(strict=True) for p in args.rules]
+    baseline_path = args.baseline.resolve(strict=True) if args.baseline else None
+    output_path = args.output.resolve()
+    protected = [binary, *rules, Path(__file__).resolve()]
+    if baseline_path is not None:
+        protected.append(baseline_path)
+    if output_path in protected or (output_path.exists() and any(output_path.samefile(path) for path in protected)):
+        raise ValueError("Output must not overwrite policy, baseline, executable or verifier")
     candidate = literal_rules(rules[0])
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    if args.output.resolve() in rules or args.output.resolve() == binary:
-        raise ValueError("Output must not overwrite policy or executable")
 
     def invoke(paths: list[Path], argv: list[str], *, resolve: bool = False) -> dict:
         command = [str(binary), "execpolicy", "check"]
@@ -189,8 +194,7 @@ def main() -> int:
         )
 
     baseline = None
-    if args.baseline:
-        baseline_path = args.baseline.resolve(strict=True)
+    if baseline_path is not None:
         old = literal_rules_baseline(baseline_path)
         old_tokens = {t for rule in old for t in rule["pattern"][0]}
         comparisons = []

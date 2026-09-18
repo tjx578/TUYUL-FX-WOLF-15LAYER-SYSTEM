@@ -58,7 +58,7 @@ Merge these root keys with local changes instead of replacing a local config
 that contains MCP or other machine-specific settings. Global configuration is
 not changed. Model, provider, skills and network settings are unchanged.
 
-The rules preserve the original 29 launcher spellings and cover 70 spellings in
+The rules preserve the original 29 launcher spellings and cover 78 spellings in
 eight families. Inline positive and negative examples are checked by the native
 Codex parser. This is not universal executable coverage: absolute paths, aliases,
 case variants, shell expansion and other tool surfaces need separate assessment.
