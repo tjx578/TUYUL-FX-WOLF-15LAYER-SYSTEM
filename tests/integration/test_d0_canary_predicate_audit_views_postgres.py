@@ -33,10 +33,17 @@ async def _seed(connection, executor_id, account_id):
 
     now = datetime.now(UTC)
     await connection.execute(
+        """INSERT INTO ea_agents (
+               id,agent_name,ea_class,ea_subtype,execution_mode,reporter_mode,status,locked
+           ) VALUES ($1::uuid,$2,'PRIMARY','EDUMB','SHADOW','FULL','OFFLINE',false)""",
+        str(executor_id),
+        f"D0 audit view {executor_id}",
+    )
+    await connection.execute(
         """INSERT INTO executor_instances (
                executor_id,account_id,login_hash,broker_server,terminal_build,ea_version,protocol_version,
                execution_mode,status,last_heartbeat_at)
-           VALUES ($1::uuid,$2,$3,'Broker-Demo',5000,'SYNTHETIC','wolf15.mt5.exec.v1','DEMO','ONLINE',$4)""",
+           VALUES ($1::uuid,$2,$3,'Broker-Demo',5000,'SYNTHETIC','wolf15.mt5.exec.v1','SHADOW','ONLINE',$4)""",
         str(executor_id),
         account_id,
         "sha256:" + "a" * 64,
