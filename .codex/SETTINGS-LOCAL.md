@@ -23,7 +23,7 @@ The 53 curated-remote desktop skills are separate from standalone CLI discovery.
 
 ## Command permissions
 
-`rules/settings-local.rules` has six prompt-only command families. The previous
+`rules/settings-local.rules` has eight prompt-only command families. The previous
 19 auto-allow entries were removed, including free-form Python, pytest prefixes,
 Railway, and Git stash. Root `settings.local.json` is now an inert legacy reference
 with an empty allow list; Codex does not read it. The unrelated existing
@@ -48,3 +48,30 @@ against source context definitions, not a built image or deployed container.
 
 No global package repair, global enablement change, production mutation, broker
 operation, deployment, or automatic memory write is implied by this configuration.
+
+## Precision checks and project defaults
+
+The project defaults are `approval_policy = "on-request"` and
+`sandbox_mode = "workspace-write"`. They are scoped to this trusted project;
+host overrides and managed constraints still determine effective permissions.
+Merge these root keys with local changes instead of replacing a local config
+that contains MCP or other machine-specific settings. Global configuration is
+not changed. Model, provider, skills and network settings are unchanged.
+
+The rules preserve the original 29 launcher spellings and cover 70 spellings in
+eight families. Inline positive and negative examples are checked by the native
+Codex parser. This is not universal executable coverage: absolute paths, aliases,
+case variants, shell expansion and other tool surfaces need separate assessment.
+
+From the repository root, using inspected Python and Codex executable paths:
+
+```powershell
+python .codex/verify_execpolicy.py --codex <codex-executable> --rules .codex/rules/settings-local.rules --output native-local.json
+```
+
+The verifier runs only `codex --version` and `codex execpolicy check`. Target
+commands are test data and are never executed. Repeat `--rules` to include
+identified user/team rule files. Explicitly supplied files do not prove the
+same files are loaded in a desktop session; verify origins and trust in a fresh
+session before adoption. No-match is not a deny decision. Native checks do not
+measure prompt frequency, development accuracy or application security.

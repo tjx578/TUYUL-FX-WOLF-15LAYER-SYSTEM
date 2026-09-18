@@ -1,40 +1,249 @@
-# Repository command review; no command is automatically allowed by this file.
-# Skill availability is governed separately by config.toml and AGENTS.md.
-# A prompt is not a universal block: runtime sandbox/approvals and other rules apply.
-# Absolute executables, alternative runtimes and MCP tools need separate controls.
+# Repository command review; this file grants no automatic command permission.
+# Rules are argv-prefix checks outside the sandbox, not a broker firewall.
+# Existing task authorization remains valid; runtime approval handling is separate.
+# Absolute paths and effective host resolution require separate verification.
+# Launcher presence here does not authorize installation or prove it is installed.
 
 prefix_rule(
-    pattern = [["python", "python3", "py", "python.exe", "python3.exe", "py.exe"]],
+    pattern = [[
+        "python",
+        "python3",
+        "py",
+        "python.exe",
+        "python3.exe",
+        "py.exe",
+        ".venv/Scripts/python.exe",
+        "./.venv/Scripts/python.exe",
+        ".venv\\Scripts\\python.exe",
+        ".\\.venv\\Scripts\\python.exe",
+        ".venv/bin/python",
+        "./.venv/bin/python",
+        ".venv/bin/python3",
+        "./.venv/bin/python3",
+        "pytest",
+        "pytest.exe",
+        "pytest-3",
+        "pytest3",
+    ]],
     decision = "prompt",
     justification = "Interpreters can run arbitrary code or subprocesses. Use the existing task authorization and review the exact target.",
+    match = [
+        ["python", "--version"],
+        ["python3", "--version"],
+        ["py", "--version"],
+        ["python.exe", "--version"],
+        ["python3.exe", "--version"],
+        ["py.exe", "--version"],
+        [".venv/Scripts/python.exe", "--version"],
+        ["./.venv/Scripts/python.exe", "--version"],
+        [".venv\\Scripts\\python.exe", "--version"],
+        [".\\.venv\\Scripts\\python.exe", "--version"],
+        [".venv/bin/python", "--version"],
+        ["./.venv/bin/python", "--version"],
+        [".venv/bin/python3", "--version"],
+        ["./.venv/bin/python3", "--version"],
+        ["pytest", "--version"],
+        ["pytest.exe", "--version"],
+        ["pytest-3", "--version"],
+        ["pytest3", "--version"],
+    ],
+    not_match = [
+        ["python-helper", "--version"],
+        ["rg", "--files"],
+    ],
 )
 
 prefix_rule(
-    pattern = [["powershell", "pwsh", "bash", "sh", "zsh", "cmd", "powershell.exe", "pwsh.exe", "bash.exe", "sh.exe", "cmd.exe"]],
+    pattern = [[
+        "powershell",
+        "pwsh",
+        "bash",
+        "sh",
+        "zsh",
+        "cmd",
+        "powershell.exe",
+        "pwsh.exe",
+        "bash.exe",
+        "sh.exe",
+        "cmd.exe",
+        "zsh.exe",
+    ]],
     decision = "prompt",
     justification = "Shell wrappers can contain multiple operations. Use the existing task authorization and review the exact target.",
+    match = [
+        ["powershell", "--version"],
+        ["pwsh", "--version"],
+        ["bash", "--version"],
+        ["sh", "--version"],
+        ["zsh", "--version"],
+        ["cmd", "--version"],
+        ["powershell.exe", "--version"],
+        ["pwsh.exe", "--version"],
+        ["bash.exe", "--version"],
+        ["sh.exe", "--version"],
+        ["cmd.exe", "--version"],
+        ["zsh.exe", "--version"],
+    ],
+    not_match = [
+        ["powershell-helper", "--version"],
+        ["rg", "--files"],
+    ],
 )
 
 prefix_rule(
-    pattern = [["railway", "railway.exe"]],
+    pattern = [[
+        "railway",
+        "railway.exe",
+        "railway.cmd",
+        "railway.ps1",
+    ]],
     decision = "prompt",
-    justification = "Railway commands can access credentials or change provider state. Use the existing task authorization and review the exact target.",
+    justification = "Review the exact Railway action, project, environment and service. Distinguish bounded reads from secrets, local linking, configuration writes and deployments. Honor existing task authorization and runtime approvals.",
+    match = [
+        ["railway", "--version"],
+        ["railway.exe", "--version"],
+        ["railway.cmd", "--version"],
+        ["railway.ps1", "--version"],
+    ],
+    not_match = [
+        ["railway-helper", "--version"],
+        ["rg", "--files"],
+    ],
 )
 
 prefix_rule(
-    pattern = [["git", "git.exe"]],
+    pattern = [[
+        "git",
+        "git.exe",
+    ]],
     decision = "prompt",
     justification = "Git options and aliases can move writes outside a narrow subcommand prefix. Use the existing task authorization and review the exact target.",
+    match = [
+        ["git", "--version"],
+        ["git.exe", "--version"],
+    ],
+    not_match = [
+        ["git-helper", "--version"],
+        ["rg", "--files"],
+    ],
 )
 
 prefix_rule(
-    pattern = [["gh", "gh.exe"]],
+    pattern = [[
+        "gh",
+        "gh.exe",
+    ]],
     decision = "prompt",
     justification = "GitHub CLI can mutate repository or workflow state. Use the existing task authorization and review the exact target.",
+    match = [
+        ["gh", "--version"],
+        ["gh.exe", "--version"],
+    ],
+    not_match = [
+        ["gh-helper", "--version"],
+        ["rg", "--files"],
+    ],
 )
 
 prefix_rule(
-    pattern = [["docker", "docker.exe", "psql", "psql.exe", "redis-cli", "redis-cli.exe"]],
+    pattern = [[
+        "docker",
+        "docker.exe",
+        "psql",
+        "psql.exe",
+        "redis-cli",
+        "redis-cli.exe",
+    ]],
     decision = "prompt",
     justification = "Infrastructure and database clients need target-specific review. Use the existing task authorization and review the exact target.",
+    match = [
+        ["docker", "--version"],
+        ["docker.exe", "--version"],
+        ["psql", "--version"],
+        ["psql.exe", "--version"],
+        ["redis-cli", "--version"],
+        ["redis-cli.exe", "--version"],
+    ],
+    not_match = [
+        ["docker-helper", "--version"],
+        ["rg", "--files"],
+    ],
+)
+
+prefix_rule(
+    pattern = [[
+        "pip",
+        "pip3",
+        "pip.exe",
+        "pip3.exe",
+        "uv",
+        "uv.exe",
+        "poetry",
+        "poetry.exe",
+        "pipx",
+        "pipx.exe",
+    ]],
+    decision = "prompt",
+    justification = "Package and runtime launchers can install dependencies or execute code. Review the target environment and exact action within existing task authorization.",
+    match = [
+        ["pip", "--version"],
+        ["pip3", "--version"],
+        ["pip.exe", "--version"],
+        ["pip3.exe", "--version"],
+        ["uv", "--version"],
+        ["uv.exe", "--version"],
+        ["poetry", "--version"],
+        ["poetry.exe", "--version"],
+        ["pipx", "--version"],
+        ["pipx.exe", "--version"],
+    ],
+    not_match = [
+        ["pip-helper", "--version"],
+        ["rg", "--files"],
+    ],
+)
+
+prefix_rule(
+    pattern = [[
+        "node",
+        "node.exe",
+        "npm",
+        "npm.cmd",
+        "npm.ps1",
+        "npx",
+        "npx.cmd",
+        "npx.ps1",
+        "pnpm",
+        "pnpm.cmd",
+        "pnpm.ps1",
+        "yarn",
+        "yarn.cmd",
+        "yarn.ps1",
+        "bun",
+        "bun.exe",
+    ]],
+    decision = "prompt",
+    justification = "Frontend runtimes and package scripts can execute arbitrary code. Review the package scripts, working directory and external effects within existing task authorization.",
+    match = [
+        ["node", "--version"],
+        ["node.exe", "--version"],
+        ["npm", "--version"],
+        ["npm.cmd", "--version"],
+        ["npm.ps1", "--version"],
+        ["npx", "--version"],
+        ["npx.cmd", "--version"],
+        ["npx.ps1", "--version"],
+        ["pnpm", "--version"],
+        ["pnpm.cmd", "--version"],
+        ["pnpm.ps1", "--version"],
+        ["yarn", "--version"],
+        ["yarn.cmd", "--version"],
+        ["yarn.ps1", "--version"],
+        ["bun", "--version"],
+        ["bun.exe", "--version"],
+    ],
+    not_match = [
+        ["node-helper", "--version"],
+        ["rg", "--files"],
+    ],
 )
