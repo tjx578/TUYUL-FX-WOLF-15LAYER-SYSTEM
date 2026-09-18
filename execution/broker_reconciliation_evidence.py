@@ -143,12 +143,26 @@ def attest_collected_reconciliation(
     identity = identities[0]
     if identity.get("account_binding_source") != account_binding.DATABASE_SOURCE:
         raise ReconciliationEvidenceError("RECONCILIATION_BACKEND_IDENTITY_UNTRUSTED")
-    freshness = database.get("executor_freshness", [])
-    if not any(
-        str(row.get("executor_id")) == str(identity["executor_id"])
-        and row.get("latest_snapshot_id") == identity["snapshot_id"]
-        for row in freshness
+    # Exact identity-bound snapshot S, not "whatever is latest now". The backend
+    # projection only yields a row when S exists for this executor with a payload
+    # byte-equal to the one the identity bound (DEMO, unrevoked, same account and
+    # server). A newer heartbeat snapshot S+1 must not invalidate S; S's canonical
+    # age (<= MAX_AGE_SECONDS) and digest are re-verified against the stored S by
+    # the importer (verify_attestation via store_evidence), which is authoritative.
+    if (
+        not isinstance(identity.get("snapshot_id"), str)
+        or not identity["snapshot_id"]
+        or not isinstance(identity.get("snapshot_sha256"), str)
+        or len(identity["snapshot_sha256"]) != 64
+        or any(character not in "0123456789abcdef" for character in identity["snapshot_sha256"])
     ):
+        raise ReconciliationEvidenceError("RECONCILIATION_SNAPSHOT_BINDING_MISMATCH")
+    freshness = [
+        row
+        for row in database.get("executor_freshness", [])
+        if str(row.get("executor_id")) == str(identity["executor_id"])
+    ]
+    if len(freshness) != 1 or freshness[0].get("latest_snapshot_id") is None:
         raise ReconciliationEvidenceError("RECONCILIATION_SNAPSHOT_BINDING_MISMATCH")
     session = database.get("audit_session", {})
     if (

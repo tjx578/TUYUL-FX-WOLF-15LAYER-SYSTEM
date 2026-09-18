@@ -109,6 +109,7 @@ async def current_identity(connection: Any, executor_id: UUID | str, snapshot: A
     if (
         any(row[field] != executor[field] for field in ("account_id", "login_hash", "broker_server"))
         or row["account_id"] != snapshot.account_id
+        or row["snapshot_id"] != snapshot.snapshot_id
         or row["snapshot_sha256"] != snapshot_digest(snapshot)
     ):
         raise ReconciliationEvidenceError("RECONCILIATION_BINDING_MISMATCH")
