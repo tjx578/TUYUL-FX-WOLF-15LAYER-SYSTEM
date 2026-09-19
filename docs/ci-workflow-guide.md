@@ -87,3 +87,33 @@ dashboard build success, deployment health or broker behavior. Those claims need
 fresh results for the final pushed commit. No deployment is triggered by the
 manual wrapper. To roll back this consolidation, revert its scoped commit;
 application and database rollback are not required.
+
+## Performance guard
+
+`perf-guard.yml` complements the six required, uninstrumented latency benchmarks
+in `ci.yml`; it does not replace their exact-case JUnit gate. Python, test,
+configuration and dependency changes trigger the guard. `Perf Gate` is not a
+replacement for the protected branch's CI, security or documentation gates.
+
+The guard preserves three checks:
+
+- Imports: the four critical modules must all import successfully in one fresh
+  Python interpreter within an aggregate 10-second wall-time budget, including
+  interpreter startup. Shared dependencies are imported once within that chain.
+  A separate 30-second process timeout rejects hangs; it is not a larger budget.
+- Tests: non-`slow` core tests must pass and each **call phase** must take at most
+  five seconds. Setup and teardown remain subject to pytest's timeout, but are
+  not included in the five-second metric. Integration tests keep their existing
+  separate CI coverage; native MCP tests use the dedicated MCP environment in
+  canonical CI. Empty, failed, skipped, missing or malformed JUnit evidence fails.
+- Size: both tick modules must exist and contain at most 500 lines. This is a
+  maintainability limit, not a measurement of runtime complexity or throughput.
+
+Run `python -m scripts.ci.perf_guard imports`, `tests`, or `size` from the repo
+root in the core test environment. Results and complete subprocess logs are
+written under `artifacts/perf-guard/` and uploaded per matrix job even on failure.
+The tests subprocess has a 25-minute bound; jobs have a 30-minute bound. Every
+matrix leg must succeed for Perf Gate to pass. Do not add `slow` markers or change
+budgets just to hide a regression. Local Windows timings do not establish the
+Linux GitHub runner's performance. None of these checks deploys Railway or grants
+SignalThrottle, risk, or broker authority.
