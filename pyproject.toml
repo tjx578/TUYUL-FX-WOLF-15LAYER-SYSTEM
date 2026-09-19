@@ -113,6 +113,7 @@ exclude_lines = [
 # ruff (linter/formatter)
 # -----------------------------------------------------------------
 [tool.ruff]
+required-version = "==0.15.7"
 target-version = "py311"
 line-length = 120
 # Immutable user document package, including its original validator. Preserve

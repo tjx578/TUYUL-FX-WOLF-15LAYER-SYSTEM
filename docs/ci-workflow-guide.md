@@ -24,6 +24,20 @@ cannot produce a successful summary. Each canonical gate continues to require
 all its upstream jobs. The manual run consumes the runners used by a full CI,
 security and docs run; use it deliberately when combined verification is needed.
 
+## Ruff version for local development
+
+Use Ruff **0.15.7**, the version pinned by the canonical CI workflow and
+`requirements.txt`. Inside the activated core virtualenv, run
+`python -m pip install ruff==0.15.7` to update an existing installation, then run
+`python -m ruff check . --config pyproject.toml` and
+`python -m ruff format --check --diff . --config pyproject.toml` from the repo root.
+
+`pyproject.toml` requires that exact version and rejects other Ruff versions
+before checking or formatting files. When intentionally upgrading Ruff, update
+that requirement, `requirements.txt`, `.github/workflows/ci.yml`, the manually
+dispatchable `.github/workflows/wolf-ci.yml`, and this guide together. Review
+lint and formatting differences before adopting a new version.
+
 ## Checks retained from the old manual pipeline
 
 `scripts/ci/check_repository_contracts.py` runs in the canonical Python tests job
