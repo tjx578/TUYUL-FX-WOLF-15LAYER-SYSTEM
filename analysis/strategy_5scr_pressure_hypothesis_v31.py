@@ -1,4 +1,7 @@
-"""Pure producer for PressureDirectionalHypothesisV31 (CANONICAL_RAW only) plus an in-memory reference ledger.
+"""Pure producer for PressureDirectionalHypothesisV31 (both admission classes) plus an in-memory reference ledger.
+
+Requalified on #504 (2026-09-20): the admission source is the S1B ``StrategyAnalysisAdmissionReceiptV31`` bound to its
+admission record and ``AnalysisLifecycleV31``. The lifecycle id is taken from that lineage, never derived here.
 
 No database, no worker, no wall clock: every time comes from an injected decision clock. Global safety is not
 an input, so a global veto can never change a hypothesis record (it stays an overlay, as in #492).
@@ -11,11 +14,15 @@ from datetime import datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
 
-from contracts.strategy_5scr_admission_identity_v31 import (
-    AdmissionReceiptV31,
+from contracts.strategy_5scr_admission_receipt_v31 import (
+    StrategyAnalysisAdmissionReceiptV31,
     admission_receipt_hash_v31,
-    lifecycle_id_v31,
 )
+from contracts.strategy_5scr_analysis_admission_v31 import (
+    StrategyAnalysisAdmissionV31,
+    strategy_analysis_admission_hash_v31,
+)
+from contracts.strategy_5scr_analysis_lifecycle_v31 import AnalysisLifecycleV31
 from contracts.strategy_5scr_per_symbol_admission import SymbolAdmissionLineageV3
 from contracts.strategy_5scr_pressure_authority_v31 import PressureAuthorityV31
 from contracts.strategy_5scr_pressure_hypothesis_v31 import (
@@ -73,34 +80,54 @@ def classify_pressure_maturity_v31(
     return max(met, key=MATURITY_ORDER.__getitem__) if met else None
 
 
+_TERMINAL_LIFECYCLE_STATES = frozenset({"TERMINAL_NO_TRADE", "INVALIDATED", "SUPERSEDED"})
+
+
 def build_pressure_hypothesis_v31(
     *,
-    admission_receipt: AdmissionReceiptV31,
-    admission_receipt_hash: str,
-    lifecycle_anchor: str,
+    receipt: StrategyAnalysisAdmissionReceiptV31,
+    admission: StrategyAnalysisAdmissionV31,
+    lifecycle: AnalysisLifecycleV31,
     pressure_authority: PressureAuthorityV31,
-    maturity_evidence: PressureMaturityEvidenceV31,
+    maturity_evidence: PressureMaturityEvidenceV31 | None,
     maturity_policy: PressureMaturityPolicyV31 | None,
     clock_policy: PressureHypothesisClockPolicyV31 | None,
     decision_at: datetime,
 ) -> HypothesisDecisionV31:
-    """Every SSOT §10.2 clause is an explicit, independently reasoned gate. Fail closed."""
+    """Every SSOT §10.2 clause is an explicit, independently reasoned gate. Fail closed.
+
+    CANONICAL_RAW: pressure maturity from the hashed PressureMaturityPolicyV31 (QUALIFIED or above).
+    MATURE_ADVISORY: maturity is the admission's advisory maturity (MATURE/EXTREME); no PairAdmission is involved and
+    the canonical maturity inputs must be absent. Either way the hypothesis is ANALYSIS_PRIORITY_ONLY.
+    """
 
     if decision_at.tzinfo is None or decision_at.utcoffset() is None:
         raise ValueError("decision_at must be timezone-aware")
-    if maturity_policy is None:
-        return HypothesisDecisionV31("NOT_CREATED", "PRESSURE_MATURITY_POLICY_MISSING")
     if clock_policy is None:
         return HypothesisDecisionV31("NOT_CREATED", "HYPOTHESIS_CLOCK_POLICY_MISSING")
-    # Gate 1 (H3): admission, independent of maturity.
-    if admission_receipt.decision != "GRANTED":
-        return HypothesisDecisionV31("NOT_CREATED", "ADMISSION_NOT_GRANTED")
-    if admission_receipt_hash != admission_receipt_hash_v31(admission_receipt):
-        return HypothesisDecisionV31("NOT_CREATED", "ADMISSION_RECEIPT_HASH_MISMATCH")
+    # Gate 1 (H3): the S1B admission lineage, independent of maturity. Revalidated, never trusted as constructed.
+    receipt = StrategyAnalysisAdmissionReceiptV31.model_validate(receipt.model_dump())
+    admission = StrategyAnalysisAdmissionV31.model_validate(admission.model_dump())
+    lifecycle = AnalysisLifecycleV31.model_validate(lifecycle.model_dump())
+    if (receipt.strategy_analysis_admission_id, receipt.admission_record_hash) != (
+        admission.strategy_analysis_admission_id,
+        strategy_analysis_admission_hash_v31(admission),
+    ):
+        return HypothesisDecisionV31("NOT_CREATED", "ADMISSION_RECEIPT_MISMATCH")
+    lineage = dict(zip(lifecycle.admission_lineage_ids, lifecycle.admission_lineage_classes, strict=True))
+    if (
+        receipt.strategy_lifecycle_id != lifecycle.strategy_lifecycle_id
+        or lineage.get(receipt.strategy_analysis_admission_id) != receipt.admission_class
+    ):
+        return HypothesisDecisionV31("NOT_CREATED", "LIFECYCLE_BINDING_MISMATCH")
+    if lifecycle.state in _TERMINAL_LIFECYCLE_STATES:
+        return HypothesisDecisionV31("NOT_CREATED", "LIFECYCLE_TERMINAL")
+    if not receipt.granted_at_utc <= decision_at < receipt.expires_at_utc:
+        return HypothesisDecisionV31("NOT_CREATED", "ADMISSION_NOT_ACTIVE")
     # Pressure observation (§10.2, §10.5, §10.6): revalidated, never trusted as constructed.
     authority = PressureAuthorityV31.model_validate(pressure_authority.model_dump(mode="json"))
-    symbol = admission_receipt.canonical_symbol
-    if authority.symbol != symbol or maturity_evidence.canonical_symbol != symbol:
+    symbol = receipt.symbol
+    if authority.symbol != symbol:
         return HypothesisDecisionV31("NOT_CREATED", "SYMBOL_SCOPE_MISMATCH")
     if authority.direction_lineage_alignment != "ALIGNED":
         return HypothesisDecisionV31("NOT_CREATED", "DIRECTION_LINEAGE_NOT_ALIGNED")
@@ -113,17 +140,32 @@ def build_pressure_hypothesis_v31(
         return HypothesisDecisionV31("NOT_CREATED", "PRESSURE_CONTRACT_NOT_USABLE")
     if authority.pressure_contract_status == "LOCKED" and authority.contract_direction != direction:
         return HypothesisDecisionV31("NOT_CREATED", "LOCKED_CONTRACT_DIRECTION_MISMATCH")
-    if maturity_evidence.direction != direction:
+    if receipt.pressure_direction != direction:
         return HypothesisDecisionV31("NOT_CREATED", "DIRECTION_LINEAGE_CONFLICT")
-    # Gate 2 (H2/H3): maturity against an explicit policy, independent of admission.
-    status = classify_pressure_maturity_v31(maturity_evidence, maturity_policy)
-    if status is None or MATURITY_ORDER[status] < MATURITY_ORDER[maturity_policy.minimum_hypothesis_maturity]:
-        return HypothesisDecisionV31("NOT_CREATED", "PRESSURE_MATURITY_INSUFFICIENT")
+    # Gate 2 (H2/H3): maturity, independent of admission, per the admission class (§10.2).
+    if receipt.admission_class == "CANONICAL_RAW":
+        if maturity_policy is None:
+            return HypothesisDecisionV31("NOT_CREATED", "PRESSURE_MATURITY_POLICY_MISSING")
+        if maturity_evidence is None:
+            return HypothesisDecisionV31("NOT_CREATED", "PRESSURE_MATURITY_EVIDENCE_MISSING")
+        if maturity_evidence.canonical_symbol != symbol:
+            return HypothesisDecisionV31("NOT_CREATED", "SYMBOL_SCOPE_MISMATCH")
+        if maturity_evidence.direction != direction:
+            return HypothesisDecisionV31("NOT_CREATED", "DIRECTION_LINEAGE_CONFLICT")
+        status = classify_pressure_maturity_v31(maturity_evidence, maturity_policy)
+        if status is None or MATURITY_ORDER[status] < MATURITY_ORDER[maturity_policy.minimum_hypothesis_maturity]:
+            return HypothesisDecisionV31("NOT_CREATED", "PRESSURE_MATURITY_INSUFFICIENT")
+        policy_version, policy_hash = maturity_policy.policy_version, maturity_policy.policy_hash
+    else:
+        if maturity_policy is not None or maturity_evidence is not None:
+            return HypothesisDecisionV31("NOT_CREATED", "CANONICAL_MATURITY_INPUT_NOT_APPLICABLE")
+        status = admission.advisory_maturity
+        assert admission.advisory_maturity_policy_version is not None
+        assert admission.advisory_maturity_policy_hash is not None
+        policy_version = admission.advisory_maturity_policy_version
+        policy_hash = admission.advisory_maturity_policy_hash
 
-    lifecycle_id = lifecycle_id_v31(
-        strategy_analysis_admission_id=admission_receipt.strategy_analysis_admission_id,
-        lifecycle_anchor=lifecycle_anchor,
-    )
+    lifecycle_id = receipt.strategy_lifecycle_id  # bound from the S1B lineage, never derived here
     opening_hash = opening_pressure_evidence_hash_v31(
         canonical_symbol=symbol, direction=direction, source_event_ids=authority.source_event_ids
     )
@@ -133,16 +175,19 @@ def build_pressure_hypothesis_v31(
         ),
         canonical_symbol=symbol,
         strategy_lifecycle_id=lifecycle_id,
-        strategy_analysis_admission_id=admission_receipt.strategy_analysis_admission_id,
-        admission_receipt_hash=admission_receipt_hash,
-        analysis_admission_class="CANONICAL_RAW",
+        strategy_analysis_admission_id=receipt.strategy_analysis_admission_id,
+        admission_receipt_hash=admission_receipt_hash_v31(receipt),
+        analysis_admission_class=receipt.admission_class,
+        analysis_authority=receipt.analysis_authority,
+        promotion_eligibility=receipt.promotion_eligibility,
+        risk_handoff_allowed=receipt.admission_class == "CANONICAL_RAW",
         direction=direction,
         pressure_authority_mode=authority.pressure_authority_mode,
         pressure_contract_status_at_creation=authority.pressure_contract_status,  # type: ignore[arg-type]
         pressure_authority_snapshot_hash=canonical_sha256_v31(authority.model_dump(mode="json")),
         pressure_maturity_status=status,  # type: ignore[arg-type]
-        pressure_maturity_policy_version=maturity_policy.policy_version,
-        pressure_maturity_policy_hash=maturity_policy.policy_hash,
+        pressure_maturity_policy_version=policy_version,
+        pressure_maturity_policy_hash=policy_hash,
         opening_pressure_evidence_hash=opening_hash,
         source_evidence_ids=tuple(sorted(set(authority.source_event_ids))),
         valid_from=decision_at,

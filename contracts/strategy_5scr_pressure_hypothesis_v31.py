@@ -1,7 +1,11 @@
-"""PressureDirectionalHypothesisV31 (SSOT §10), first increment: CANONICAL_RAW only.
+"""PressureDirectionalHypothesisV31 (SSOT §10), from BOTH admission classes (requalified on #504, 2026-09-20).
 
-Authority decisions 2026-09-19:
-- H1: MATURE_ADVISORY is NOT_IMPLEMENTED_BY_DESIGN until it has its own receipt authority.
+Authority decisions 2026-09-19, updated 2026-09-20:
+- H1 (updated): the admission source is the S1B ``StrategyAnalysisAdmissionReceiptV31`` (#504), CANONICAL_RAW or
+  MATURE_ADVISORY (§10.2). The superseded #493 PairAdmission receipt is no longer accepted. The admission fields on
+  the record (§10.3 names) are PROVENANCE of the originating admission at creation: never identity, never
+  direction or execution authority, never mutated on a later authority upgrade. The current effective analysis
+  authority is read from ``AnalysisLifecycleV31``.
 - H2: maturity comes only from an explicit, hashed ``PressureMaturityPolicyV31``; no defaults.
 - H3: admission GRANTED and maturity are two independent gates.
 - H4: ``valid_until`` is fixed at creation from ``PressureHypothesisClockPolicyV31`` and never reset; EXPIRED
@@ -14,17 +18,20 @@ authority. Final direction comes only from the structural proof chain (SSOT §12
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime
 from typing import Literal, Protocol
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from contracts.strategy_5scr_admission_identity_v31 import IDENTITY_ENCODING_VERSION, SELECTED_SSOT_HASH
+from contracts.strategy_5scr_identity_v31 import (
+    IDENTITY_ENCODING_VERSION,
+    SELECTED_SSOT_HASH,
+    canonical_sha256_v31,
+    identity_uuid_v31,
+)
 
-PRESSURE_HYPOTHESIS_RULE_VERSION = "5scr.pressure-hypothesis.v31.v1"
+PRESSURE_HYPOTHESIS_RULE_VERSION = "5scr.pressure-hypothesis.v31.v2"
 WOLF15_V31_HYPOTHESIS_NAMESPACE = UUID("1b613f3b-a78d-4a88-9c44-cceab188ea48")
 
 Direction = Literal["BUY", "SELL"]
@@ -44,13 +51,6 @@ TERMINAL_STATES = frozenset({"INVALIDATED", "EXPIRED"})
 ContextAlignment = Literal["ALIGNED", "CONFLICT", "UNRESOLVED", "EMPTY"]  # SSOT §28.14
 LocationAlignment = Literal["FAVORABLE", "NEUTRAL", "UNFAVORABLE", "UNKNOWN"]
 _DIGEST = r"^sha256:[0-9a-f]{64}$"
-
-
-def canonical_sha256_v31(value: object) -> str:
-    """Same canonical JSON as the rest of the V31 family."""
-
-    body = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 class _Strict(BaseModel):
@@ -129,11 +129,11 @@ class PressureMaturityEvidenceV31(_Strict):
 
 
 def hypothesis_id_v31(*, strategy_lifecycle_id: UUID, direction: str, opening_pressure_evidence_hash: str) -> UUID:
-    name = json.dumps(
-        [IDENTITY_ENCODING_VERSION, str(strategy_lifecycle_id), direction, opening_pressure_evidence_hash],
-        separators=(",", ":"),
+    """Unchanged by the requalification: no admission id or class, so an authority upgrade never forks it."""
+
+    return identity_uuid_v31(
+        WOLF15_V31_HYPOTHESIS_NAMESPACE, [str(strategy_lifecycle_id), direction, opening_pressure_evidence_hash]
     )
-    return uuid5(WOLF15_V31_HYPOTHESIS_NAMESPACE, name)
 
 
 def opening_pressure_evidence_hash_v31(
@@ -147,7 +147,7 @@ def opening_pressure_evidence_hash_v31(
 class PressureDirectionalHypothesisV31(_Strict):
     """Immutable record. State lives in the append-only transition log."""
 
-    rule_version: Literal["5scr.pressure-hypothesis.v31.v1"] = PRESSURE_HYPOTHESIS_RULE_VERSION
+    rule_version: Literal["5scr.pressure-hypothesis.v31.v2"] = PRESSURE_HYPOTHESIS_RULE_VERSION
     identity_encoding_version: Literal["v31.native-identity.v1"] = IDENTITY_ENCODING_VERSION
     selected_ssot_hash: Literal["sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"] = (
         SELECTED_SSOT_HASH
@@ -155,12 +155,13 @@ class PressureDirectionalHypothesisV31(_Strict):
     pressure_hypothesis_id: UUID
     canonical_symbol: str = Field(pattern=r"^[A-Z0-9._-]{3,32}$")
     strategy_lifecycle_id: UUID
+    # §10.3 admission fields = provenance of the ORIGINATING admission at creation (never identity/authority).
     strategy_analysis_admission_id: UUID
-    admission_receipt_hash: str = Field(pattern=_DIGEST)
-    analysis_admission_class: Literal["CANONICAL_RAW"]  # MATURE_ADVISORY: NOT_IMPLEMENTED_BY_DESIGN (H1)
-    analysis_authority: Literal["FULL_CANONICAL_ANALYSIS"] = "FULL_CANONICAL_ANALYSIS"
-    promotion_eligibility: Literal["CANONICAL_RISK_PATH"] = "CANONICAL_RISK_PATH"
-    risk_handoff_allowed: bool = True  # eligibility cap only; never an authorization
+    admission_receipt_hash: str = Field(pattern=_DIGEST)  # StrategyAnalysisAdmissionReceiptV31 (#504)
+    analysis_admission_class: Literal["CANONICAL_RAW", "MATURE_ADVISORY"]
+    analysis_authority: Literal["FULL_CANONICAL_ANALYSIS", "FULL_SHADOW_ANALYSIS"]
+    promotion_eligibility: Literal["CANONICAL_RISK_PATH", "SHADOW_ONLY"]
+    risk_handoff_allowed: bool  # §10.3 eligibility cap only; never an authorization
     direction: Direction
     pressure_authority_mode: Literal["RADAR_ONLY", "CONSOLIDATED_DIRECTION_CONTRACT"]
     pressure_contract_status_at_creation: Literal["OPEN", "LOCKED", "TRANSITION_PENDING"]
@@ -191,6 +192,16 @@ class PressureDirectionalHypothesisV31(_Strict):
         )
         if self.pressure_hypothesis_id != expected:
             raise ValueError("HYPOTHESIS_ID_NOT_DERIVED")
+        scope = (self.analysis_authority, self.promotion_eligibility, self.risk_handoff_allowed)
+        if self.analysis_admission_class == "MATURE_ADVISORY":
+            if scope != ("FULL_SHADOW_ANALYSIS", "SHADOW_ONLY", False):  # §10.3 invariant
+                raise ValueError(
+                    "MATURE_ADVISORY hypothesis must be FULL_SHADOW_ANALYSIS / SHADOW_ONLY / no risk handoff"
+                )
+            if self.pressure_maturity_status not in {"MATURE", "EXTREME"}:  # §10.2 advisory path
+                raise ValueError("MATURE_ADVISORY hypothesis requires MATURE or EXTREME advisory maturity")
+        elif scope[:2] != ("FULL_CANONICAL_ANALYSIS", "CANONICAL_RISK_PATH"):
+            raise ValueError("CANONICAL_RAW hypothesis scope mismatch")
         return self
 
 
