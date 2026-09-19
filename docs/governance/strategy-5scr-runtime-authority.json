@@ -1,0 +1,54 @@
+{
+  "record_id": "WOLF15-5SCR-RUNTIME-AUTHORITY-PROMOTION-V3.1",
+  "decision": "PROMOTE_SSOT_V3_1_TO_RUNTIME_AUTHORITY",
+  "activation_event": "MERGE_OF_THIS_RECORD_INTO_MAIN",
+  "activation_sha": "RECORDED_AT_MERGE_BY_THE_MERGE_COMMIT",
+  "final_approver": "OWNER",
+  "new_runtime_authority": {
+    "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
+    "path": "docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md",
+    "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "status": "APPROVED_RUNTIME_AUTHORITY",
+    "document_bytes_modified": false
+  },
+  "previous_runtime_authority": {
+    "path": "docs/strategy/strategy-5scr-final.md",
+    "rule_version": "5scr.final.2026-07-19",
+    "status": "SUPERSEDED_LEGACY",
+    "document_bytes_modified": false
+  },
+  "dual_authority": false,
+  "runtime_family": {
+    "authoritative": "V31",
+    "legacy_non_authoritative": ["V2"],
+    "v2_to_v31_adapter": "PROHIBITED_UNLESS_A_FUTURE_AUTHORITY_DECISION_CHANGES_THE_CONTRACT"
+  },
+  "promotion_does_not_enable": [
+    "deploy",
+    "execution",
+    "enqueue",
+    "arm",
+    "order_submission",
+    "algo_trading",
+    "feature_flags",
+    "broker_effect"
+  ],
+  "runtime_execution_enablement": false,
+  "broker_effect": 0,
+  "known_implementation_gaps": [
+    {"id": "G1", "summary": "Raw admission is one global ordered stream; a cross-symbol event finalizes another symbol's block"},
+    {"id": "G1b", "summary": "A direction change finalizes the block; direction coupling (remediation 2026-09-09 P2)"},
+    {"id": "V31_UPSTREAM_PRODUCER", "summary": "No native producer creates TradePlanCandidateV31 / CandidateHandoffV31 from admission, hypothesis and proof receipts"},
+    {"id": "V31_ONE_LINEAGE_E2E", "summary": "No single TEST_ONLY lineage from canonical qualification to transaction_a_v31"},
+    {"id": "LIVE_30_PAIR_READINESS", "summary": "NOT_MEASURED"},
+    {"id": "DIRECT_BROKER_RECEIPT_PRODUCER", "summary": "direct_broker_reconciliation_receipts has 0 production rows; canonical producer not yet located"}
+  ],
+  "merge_prerequisites": [
+    "R9 exact-S runtime verification PASS",
+    "G1/G1b versioned per-symbol admission contract REVIEWED",
+    "V31 implementation gap register COMPLETE",
+    "Rollback and supersession semantics DOCUMENTED",
+    "Required CI ALL PASS",
+    "Unresolved P0/P1 review threads = 0"
+  ]
+}
