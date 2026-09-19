@@ -200,7 +200,7 @@ class AnalysisLifecycleV31(_Strict):
             raise ValueError("HIGHEST_ANALYSIS_AUTHORITY_NOT_DERIVED")
         active = next(
             i
-            for i, c in reversed(tuple(zip(self.admission_lineage_ids, self.admission_lineage_classes)))
+            for i, c in reversed(tuple(zip(self.admission_lineage_ids, self.admission_lineage_classes, strict=True)))
             if c == highest
         )
         if self.active_strategy_analysis_admission_id != active:

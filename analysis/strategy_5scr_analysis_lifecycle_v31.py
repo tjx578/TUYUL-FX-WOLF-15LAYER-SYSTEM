@@ -173,7 +173,7 @@ def lifecycle_view_v31(
     ids = tuple(a.strategy_analysis_admission_id for a in chain)
     classes = tuple(a.admission_class for a in chain)
     highest = derive_highest_authority_v31(classes)
-    active = next(i for i, c in reversed(tuple(zip(ids, classes))) if c == highest)
+    active = next(i for i, c in reversed(tuple(zip(ids, classes, strict=True))) if c == highest)
     return _hashed(
         AnalysisLifecycleV31,
         "material_state_hash",
@@ -281,7 +281,7 @@ def require_canonical_lineage_v31(view: AnalysisLifecycleV31, admission_id: UUID
     """
 
     view = AnalysisLifecycleV31.model_validate(view.model_dump())
-    lineage = dict(zip(view.admission_lineage_ids, view.admission_lineage_classes))
+    lineage = dict(zip(view.admission_lineage_ids, view.admission_lineage_classes, strict=True))
     if admission_id not in lineage:
         return "ADMISSION_NOT_IN_LIFECYCLE"
     if lineage[admission_id] != "CANONICAL_RAW":
