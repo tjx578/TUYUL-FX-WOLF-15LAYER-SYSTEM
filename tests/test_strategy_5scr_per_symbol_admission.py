@@ -92,7 +92,8 @@ def test_a_interleaved_symbol_does_not_close_another_symbols_lineage():
     assert eurusd.state == "ACTIVE" and eurusd.event_count == 2 and eurusd.closed_at is None
     assert (eurusd.decision, eurusd.reason_code) == ("GRANTED", "PER_SYMBOL_THRESHOLD_REACHED")
     assert eurusd.granted_at == START + timedelta(seconds=300)
-    assert gbpusd.direction == "SELL" and gbpusd.state == "ACTIVE" and gbpusd.decision is None
+    assert gbpusd.direction == "SELL" and gbpusd.state == "ACTIVE"
+    assert (gbpusd.decision, gbpusd.reason_code) == (None, "PENDING_THRESHOLD")  # reason, not an authority status
 
 
 def test_b_direction_flip_supersedes_only_the_same_symbol():
@@ -164,14 +165,25 @@ def test_d_pair_local_fault_stays_pair_local():
         {"market_data_authority_ok": False},
     ],
 )
-def test_e_global_veto_stops_every_symbol(override):
-    events = [_raw(0), _raw(300), _raw(0, "GBPUSD", "SELL"), _raw(320, "GBPUSD", "SELL")]
-    result = _evaluate(events, safety=_safety(**override))
-    assert result.global_vetoes
-    decided = [item for items in result.lineages.values() for item in items]
-    assert decided and all(item.decision == "SUSPENDED" for item in decided)
-    assert all(item.reason_code.startswith("GLOBAL_SAFETY_VETO:") for item in decided)
-    assert not any(item.granted_at for item in decided)
+def test_e_global_veto_is_an_overlay_that_blocks_progression_without_rewriting_lineages(override):
+    events = [_raw(0), _raw(300), _raw(0, "GBPUSD", "SELL"), _raw(100, "GBPUSD", "SELL"), _raw(0, "CHFJPY")]
+    healthy = _evaluate(events)
+    vetoed = _evaluate(events, safety=_safety(**override))
+    assert vetoed.global_vetoes and healthy.global_vetoes == ()
+    assert (vetoed.effective_state, vetoed.progression_allowed, vetoed.effective_grants) == (
+        "GLOBAL_SAFETY_VETO",
+        False,
+        (),
+    )
+    assert (healthy.effective_state, healthy.progression_allowed) == ("PROGRESSION_ALLOWED", True)
+    assert healthy.effective_grants == (healthy.lineages["EURUSD"][0].lineage_id,)
+    assert vetoed.lineages == healthy.lineages  # underlying per-symbol lineage UNCHANGED
+    assert vetoed.lineages["EURUSD"][0].decision == "GRANTED"
+    assert (vetoed.lineages["GBPUSD"][0].decision, vetoed.lineages["GBPUSD"][0].reason_code) == (
+        None,
+        "PENDING_THRESHOLD",
+    )
+    assert vetoed.lineages["CHFJPY"][0].decision == "SUSPENDED"
 
 
 def test_f_legacy_rule_version_replays_global_stream_semantics_unchanged():

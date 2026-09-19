@@ -87,7 +87,6 @@ def _build_symbol_lineages(
     policy: PerSymbolAdmissionPolicyV3,
     as_of: datetime,
     fault: str | None,
-    global_vetoes: tuple[str, ...],
 ) -> tuple[SymbolAdmissionLineageV3, ...]:
     segments = _segments(events, policy.max_gap_seconds)
     ids = [
@@ -116,9 +115,7 @@ def _build_symbol_lineages(
             None,
         )
         granted_at = None
-        if global_vetoes:
-            decision, reason = "SUSPENDED", "GLOBAL_SAFETY_VETO:" + ",".join(global_vetoes)
-        elif fault is not None:
+        if fault is not None:
             decision, reason = "SUSPENDED", fault
         elif crossing is not None and direction is not None:
             decision, reason, granted_at = "GRANTED", "PER_SYMBOL_THRESHOLD_REACHED", crossing
@@ -146,7 +143,6 @@ def _build_symbol_lineages(
                 effective_ticks=sum(_effective_ticks(event) for event in segment),
                 max_gap_seconds=max(gaps, default=0.0),
                 source_event_ids=tuple(raw_signal_throttle_event_id(event) for event in segment),
-                evaluation_state="PENDING_THRESHOLD" if decision is None else decision,
                 decision=decision,
                 reason_code=reason,
                 granted_at=granted_at,
@@ -209,17 +205,21 @@ def evaluate_per_symbol_admission(
             policy=policy,
             as_of=as_of_utc,
             fault=faults.get(symbol),
-            global_vetoes=vetoes,
         )
         if by_symbol.get(symbol)
         else ()
         for symbol in symbols
     }
+    # Global safety is an overlay: lineages above are computed without it and are never rewritten.
+    granted = tuple(item.lineage_id for items in lineages.values() for item in items if item.decision == "GRANTED")
     return PerSymbolAdmissionEvaluationV3(
         policy=policy,
         evaluated_at_utc=as_of_utc,
         universe=symbols,
         global_vetoes=vetoes,
+        effective_state="GLOBAL_SAFETY_VETO" if vetoes else "PROGRESSION_ALLOWED",
+        progression_allowed=not vetoes,
+        effective_grants=() if vetoes else granted,
         lineages=lineages,
         symbol_faults=faults,
         ignored_out_of_universe_events=out_of_universe,

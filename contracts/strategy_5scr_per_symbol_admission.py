@@ -2,8 +2,8 @@
 
 State is keyed by ``canonical_symbol``. An event for one symbol can open, extend, close, supersede or
 suspend only that symbol's lineage. A cross-symbol event never finalizes another symbol's block (G1), and
-a direction change supersedes only the same symbol's lineage (G1b). One global safety state can suspend
-every symbol for systemic faults only.
+a direction change supersedes only the same symbol's lineage (G1b). One global safety state is an OVERLAY:
+a systemic fault blocks effective progression for every symbol but never rewrites any symbol's lineage.
 
 The legacy global-stream semantics (``5scr.pair-admission.raw-ledger.v2``) are unchanged and remain the
 replay semantics for episodes decided under that rule version. Nothing here carries execution, risk or
@@ -24,7 +24,7 @@ LEGACY_GLOBAL_STREAM_RULE_VERSION = PAIR_ADMISSION_RULE_VERSION
 
 LineageState = Literal["ACTIVE", "CLOSED", "SUPERSEDED", "SUSPENDED"]
 AdmissionDecision = Literal["GRANTED", "REJECTED", "SUSPENDED"]
-EvaluationState = Literal["PENDING_THRESHOLD", "GRANTED", "REJECTED", "SUSPENDED"]
+EffectiveState = Literal["PROGRESSION_ALLOWED", "GLOBAL_SAFETY_VETO"]
 GlobalVeto = Literal[
     "KILL_SWITCH_ACTIVE",
     "ACCOUNT_OR_EXECUTOR_IDENTITY_MISMATCH",
@@ -88,8 +88,7 @@ class SymbolAdmissionLineageV3(_Strict):
     effective_ticks: int = Field(ge=1)
     max_gap_seconds: float = Field(ge=0)
     source_event_ids: tuple[str, ...]
-    evaluation_state: EvaluationState
-    decision: AdmissionDecision | None
+    decision: AdmissionDecision | None  # None = no decision yet; reason_code says why (e.g. PENDING_THRESHOLD)
     reason_code: str
     granted_at: datetime | None
     execution_authority: Literal[False] = False
@@ -103,9 +102,6 @@ class SymbolAdmissionLineageV3(_Strict):
             raise ValueError("superseded_by is required exactly for SUPERSEDED lineages")
         if (self.decision == "GRANTED") != (self.granted_at is not None):
             raise ValueError("granted_at is required exactly for GRANTED lineages")
-        expected_state = "PENDING_THRESHOLD" if self.decision is None else self.decision
-        if self.evaluation_state != expected_state:
-            raise ValueError("evaluation_state must mirror the decision")
         if len(self.source_event_ids) != self.event_count:
             raise ValueError("every lineage event must be identified")
         return self
@@ -117,6 +113,9 @@ class PerSymbolAdmissionEvaluationV3(_Strict):
     evaluated_at_utc: datetime
     universe: tuple[str, ...]
     global_vetoes: tuple[GlobalVeto, ...]
+    effective_state: EffectiveState
+    progression_allowed: bool
+    effective_grants: tuple[str, ...]
     lineages: dict[str, tuple[SymbolAdmissionLineageV3, ...]]
     symbol_faults: dict[str, str]
     ignored_out_of_universe_events: int = Field(ge=0)
@@ -134,6 +133,16 @@ class PerSymbolAdmissionEvaluationV3(_Strict):
         for symbol, items in self.lineages.items():
             if any(item.canonical_symbol != symbol for item in items):
                 raise ValueError("a lineage is stored under a different symbol")
+        vetoed = bool(self.global_vetoes)
+        if self.progression_allowed == vetoed or self.effective_state != (
+            "GLOBAL_SAFETY_VETO" if vetoed else "PROGRESSION_ALLOWED"
+        ):
+            raise ValueError("effective state must follow the global safety overlay")
+        granted = tuple(
+            item.lineage_id for items in self.lineages.values() for item in items if item.decision == "GRANTED"
+        )
+        if self.effective_grants != (() if vetoed else granted):
+            raise ValueError("grants are effective only while no global veto is active")
         return self
 
 
