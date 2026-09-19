@@ -47,7 +47,7 @@ Merging this record does **not** perform or enable any of the following:
 | V31_UPSTREAM_PRODUCER | No native producer creates `TradePlanCandidateV31` / `CandidateHandoffV31` from admission, hypothesis and proof receipts. |
 | V31_ONE_LINEAGE_E2E | No single TEST_ONLY lineage runs from canonical qualification to `transaction_a_v31`. |
 | LIVE_30_PAIR_READINESS | NOT_MEASURED. |
-| DIRECT_BROKER_RECEIPT_PRODUCER | `direct_broker_reconciliation_receipts` has 0 production rows (post-migration 20260919_01 check). The canonical producer has not been located yet. |
+| DIRECT_BROKER_RECEIPT_PRODUCER | `direct_broker_reconciliation_receipts` has 0 production rows (post-migration 20260919_01 check). The recorder exists (`scripts/record_direct_broker_reconciliation.py`: manual one-shot, confirm phrase, 30 s freshness), but no code produces its `DirectBrokerSourceSnapshotV1` input from MT5. Receipts are consumed only at canary enqueue/arm with an authority packet (age −5..30 s), so 0 rows is expected while no canary has been armed. |
 
 What is approved is the canonical target and runtime contract. Implementation closure happens in later PRs.
 

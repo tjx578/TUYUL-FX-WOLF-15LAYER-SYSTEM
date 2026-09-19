@@ -20,7 +20,9 @@
   "dual_authority": false,
   "runtime_family": {
     "authoritative": "V31",
-    "legacy_non_authoritative": ["V2"],
+    "legacy_non_authoritative": [
+      "V2"
+    ],
     "v2_to_v31_adapter": "PROHIBITED_UNLESS_A_FUTURE_AUTHORITY_DECISION_CHANGES_THE_CONTRACT"
   },
   "promotion_does_not_enable": [
@@ -36,12 +38,30 @@
   "runtime_execution_enablement": false,
   "broker_effect": 0,
   "known_implementation_gaps": [
-    {"id": "G1", "summary": "Raw admission is one global ordered stream; a cross-symbol event finalizes another symbol's block"},
-    {"id": "G1b", "summary": "A direction change finalizes the block; direction coupling (remediation 2026-09-09 P2)"},
-    {"id": "V31_UPSTREAM_PRODUCER", "summary": "No native producer creates TradePlanCandidateV31 / CandidateHandoffV31 from admission, hypothesis and proof receipts"},
-    {"id": "V31_ONE_LINEAGE_E2E", "summary": "No single TEST_ONLY lineage from canonical qualification to transaction_a_v31"},
-    {"id": "LIVE_30_PAIR_READINESS", "summary": "NOT_MEASURED"},
-    {"id": "DIRECT_BROKER_RECEIPT_PRODUCER", "summary": "direct_broker_reconciliation_receipts has 0 production rows; canonical producer not yet located"}
+    {
+      "id": "G1",
+      "summary": "Raw admission is one global ordered stream; a cross-symbol event finalizes another symbol's block"
+    },
+    {
+      "id": "G1b",
+      "summary": "A direction change finalizes the block; direction coupling (remediation 2026-09-09 P2)"
+    },
+    {
+      "id": "V31_UPSTREAM_PRODUCER",
+      "summary": "No native producer creates TradePlanCandidateV31 / CandidateHandoffV31 from admission, hypothesis and proof receipts"
+    },
+    {
+      "id": "V31_ONE_LINEAGE_E2E",
+      "summary": "No single TEST_ONLY lineage from canonical qualification to transaction_a_v31"
+    },
+    {
+      "id": "LIVE_30_PAIR_READINESS",
+      "summary": "NOT_MEASURED"
+    },
+    {
+      "id": "DIRECT_BROKER_RECEIPT_PRODUCER",
+      "summary": "0 production rows. Recorder exists (scripts/record_direct_broker_reconciliation.py, manual one-shot, confirm phrase, 30 s freshness) but no code produces its DirectBrokerSourceSnapshotV1 input from MT5; receipts are consumed only at canary enqueue/arm with an authority packet (age -5..30 s)"
+    }
   ],
   "merge_prerequisites": [
     "R9 exact-S runtime verification PASS",
