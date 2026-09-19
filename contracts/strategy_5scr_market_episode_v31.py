@@ -15,16 +15,14 @@ split) without its hidden 900 s default: every threshold is policy data.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime
 from typing import Literal
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-# Same encoding/hash as the rest of the native V31 family; consolidated with #493 in its rework.
-IDENTITY_ENCODING_VERSION = "v31.native-identity.v1"
+from contracts.strategy_5scr_identity_v31 import IDENTITY_ENCODING_VERSION, canonical_sha256_v31, identity_uuid_v31
+
 MARKET_EPISODE_RULE_VERSION = "5scr.market-episode.v31.v1"
 V31_MARKET_EPISODE_NAMESPACE = UUID("cbb3a046-9efb-48a1-a507-e2a07ff30b6c")
 V31_LIFECYCLE_FROM_EPISODE_NAMESPACE = UUID("0c71acaa-17bb-41de-8cba-095d51fbe2bf")
@@ -50,11 +48,6 @@ LinkReason = Literal[
 ]
 _DIGEST = r"^sha256:[0-9a-f]{64}$"
 _SYMBOL = r"^[A-Z0-9._-]{3,32}$"
-
-
-def canonical_sha256_v31(value: object) -> str:
-    body = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 def _aware(*moments: datetime | None) -> None:
@@ -137,18 +130,13 @@ def market_episode_id_v31(*, canonical_symbol: str, opened_at: datetime, merge_p
     """Symbol + opening time + merge policy. No transport, deployment or admission input."""
 
     _aware(opened_at)
-    name = json.dumps(
-        [IDENTITY_ENCODING_VERSION, canonical_symbol, opened_at.isoformat(), merge_policy_hash],
-        separators=(",", ":"),
-    )
-    return uuid5(V31_MARKET_EPISODE_NAMESPACE, name)
+    return identity_uuid_v31(V31_MARKET_EPISODE_NAMESPACE, [canonical_symbol, opened_at.isoformat(), merge_policy_hash])
 
 
 def strategy_lifecycle_id_from_episode_v31(market_episode_id: UUID) -> UUID:
     """1:1 with the market episode (§8.1); admissions attach to it and never derive it."""
 
-    name = json.dumps([IDENTITY_ENCODING_VERSION, str(market_episode_id)], separators=(",", ":"))
-    return uuid5(V31_LIFECYCLE_FROM_EPISODE_NAMESPACE, name)
+    return identity_uuid_v31(V31_LIFECYCLE_FROM_EPISODE_NAMESPACE, [str(market_episode_id)])
 
 
 class MarketEpisodeV31(_Strict):

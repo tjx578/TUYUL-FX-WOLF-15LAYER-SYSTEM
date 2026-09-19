@@ -16,21 +16,15 @@ imported or adapted here.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Literal
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from contracts.strategy_5scr_market_episode_v31 import (
-    IDENTITY_ENCODING_VERSION,
-    canonical_sha256_v31,
-    strategy_lifecycle_id_from_episode_v31,
-)
+from contracts.strategy_5scr_identity_v31 import canonical_sha256_v31, identity_uuid_v31
 
 STRATEGY_ANALYSIS_ADMISSION_V31_CONTRACT_VERSION = "strategy-analysis-admission.v31.v1"
-ADMISSION_RECEIPT_V31_RULE_VERSION = "5scr.strategy-analysis-admission-receipt.v31.v1"
 V31_STRATEGY_ANALYSIS_ADMISSION_NAMESPACE = UUID("1f8e3117-7d3b-4957-96a1-68b4832f8699")
 
 AdmissionClass = Literal["CANONICAL_RAW", "MATURE_ADVISORY"]
@@ -139,10 +133,9 @@ class StrategyAnalysisAdmissionPolicyV31(_Strict):
 
 
 def strategy_analysis_admission_id_v31(*, market_episode_id: UUID, admission_class: str, source_anchor: str) -> UUID:
-    name = json.dumps(
-        [IDENTITY_ENCODING_VERSION, str(market_episode_id), admission_class, source_anchor], separators=(",", ":")
+    return identity_uuid_v31(
+        V31_STRATEGY_ANALYSIS_ADMISSION_NAMESPACE, [str(market_episode_id), admission_class, source_anchor]
     )
-    return uuid5(V31_STRATEGY_ANALYSIS_ADMISSION_NAMESPACE, name)
 
 
 class StrategyAnalysisAdmissionV31(_Strict):
@@ -245,64 +238,14 @@ def strategy_analysis_admission_hash_v31(admission: StrategyAnalysisAdmissionV31
     return canonical_sha256_v31(admission.model_dump(mode="json"))
 
 
-class StrategyAnalysisAdmissionReceiptV31(_Strict):
-    """Analysis-authority receipt consumed downstream (hypothesis, #494 rework). Replaces the #493 pair receipt."""
-
-    rule_version: Literal["5scr.strategy-analysis-admission-receipt.v31.v1"] = ADMISSION_RECEIPT_V31_RULE_VERSION
-    strategy_analysis_admission_id: UUID
-    admission_record_hash: str = Field(pattern=_DIGEST)
-    market_episode_id: UUID
-    strategy_lifecycle_id: UUID
-    symbol: str = Field(pattern=_SYMBOL)
-    admission_class: AdmissionClass
-    admission_status: AdmissionStatus
-    analysis_authority: AnalysisAuthority
-    promotion_eligibility: PromotionEligibility
-    pressure_direction: PressureDirection
-    pair_admission_coverage_id: UUID
-    coverage_record_hash: str = Field(pattern=_DIGEST)
-    pair_admission_evaluation_id: UUID | None
-    pair_admission_evaluation_hash: str | None = Field(pattern=_DIGEST)
-    advisory_evidence_hash: str | None = Field(pattern=_DIGEST)
-    advisory_maturity_policy_hash: str | None = Field(pattern=_DIGEST)
-    granted_at_utc: datetime | None
-    expires_at_utc: datetime | None
-    risk_authority: Literal[False] = False
-    execution_authority: Literal[False] = False
-
-    @model_validator(mode="after")
-    def _bound(self) -> StrategyAnalysisAdmissionReceiptV31:
-        if self.strategy_lifecycle_id != strategy_lifecycle_id_from_episode_v31(self.market_episode_id):
-            raise ValueError("RECEIPT_LIFECYCLE_NOT_DERIVED_FROM_EPISODE")
-        canonical = self.admission_class == "CANONICAL_RAW"
-        if canonical != (self.pair_admission_evaluation_id is not None) or canonical != (
-            self.pair_admission_evaluation_hash is not None
-        ):
-            raise ValueError("only CANONICAL_RAW receipts bind a PairAdmission evaluation")
-        if canonical == (self.advisory_evidence_hash is not None) or canonical == (
-            self.advisory_maturity_policy_hash is not None
-        ):
-            raise ValueError("only MATURE_ADVISORY receipts bind advisory evidence and maturity policy")
-        if not canonical and self.promotion_eligibility != "SHADOW_ONLY":
-            raise ValueError("MATURE_ADVISORY receipts are SHADOW_ONLY")
-        return self
-
-
-def admission_receipt_hash_v31(receipt: StrategyAnalysisAdmissionReceiptV31) -> str:
-    return canonical_sha256_v31(receipt.model_dump(mode="json"))
-
-
 __all__ = [
-    "ADMISSION_RECEIPT_V31_RULE_VERSION",
     "STRATEGY_ANALYSIS_ADMISSION_V31_CONTRACT_VERSION",
     "V31_STRATEGY_ANALYSIS_ADMISSION_NAMESPACE",
     "AdvisoryMaturityTierV31",
     "AdvisoryPressureEvidenceV31",
     "AdvisoryPressureMaturityPolicyV31",
     "StrategyAnalysisAdmissionPolicyV31",
-    "StrategyAnalysisAdmissionReceiptV31",
     "StrategyAnalysisAdmissionV31",
-    "admission_receipt_hash_v31",
     "strategy_analysis_admission_hash_v31",
     "strategy_analysis_admission_id_v31",
 ]

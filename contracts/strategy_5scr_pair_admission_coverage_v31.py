@@ -10,14 +10,13 @@ Invariant (§7.12): advisory pressure maturity never implies raw-authority eligi
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Literal
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from contracts.strategy_5scr_market_episode_v31 import IDENTITY_ENCODING_VERSION, canonical_sha256_v31
+from contracts.strategy_5scr_identity_v31 import canonical_sha256_v31, identity_uuid_v31
 
 PAIR_ADMISSION_COVERAGE_RULE_VERSION = "pair-admission-coverage.v1"  # SSOT §7.12, verbatim
 V31_PAIR_ADMISSION_COVERAGE_NAMESPACE = UUID("23ddba85-d0ea-41cd-b935-b6a9ff4ee5f4")
@@ -132,18 +131,16 @@ def pair_admission_coverage_id_v31(
 ) -> UUID:
     """§4.2: exactly one coverage classification per symbol / window / rule version."""
 
-    name = json.dumps(
+    return identity_uuid_v31(
+        V31_PAIR_ADMISSION_COVERAGE_NAMESPACE,
         [
-            IDENTITY_ENCODING_VERSION,
             PAIR_ADMISSION_COVERAGE_RULE_VERSION,
             canonical_symbol,
             window_start.isoformat(),
             window_end.isoformat(),
             coverage_policy_hash,
         ],
-        separators=(",", ":"),
     )
-    return uuid5(V31_PAIR_ADMISSION_COVERAGE_NAMESPACE, name)
 
 
 class PairAdmissionCoverageV1(_Strict):
