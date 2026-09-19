@@ -25,10 +25,10 @@ from contracts.strategy_5scr_analysis_lifecycle_v31 import (
     admission_revision_id_v31,
     derive_highest_authority_v31,
 )
+from contracts.strategy_5scr_identity_v31 import canonical_sha256_v31
 from contracts.strategy_5scr_market_episode_v31 import (
     MarketEpisodeStateV31,
     MarketEpisodeV31,
-    canonical_sha256_v31,
     strategy_lifecycle_id_from_episode_v31,
 )
 from contracts.strategy_5scr_per_symbol_admission import GlobalSafetyStateV1

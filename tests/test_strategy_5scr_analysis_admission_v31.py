@@ -12,7 +12,6 @@ import pytest
 from pydantic import ValidationError
 
 from analysis.strategy_5scr_analysis_admission_v31 import (
-    build_admission_receipt_v31,
     classify_advisory_maturity_v31,
     evaluate_canonical_raw_admission_v31,
     evaluate_mature_advisory_admission_v31,
@@ -22,10 +21,9 @@ from contracts.strategy_5scr_analysis_admission_v31 import (
     AdvisoryPressureEvidenceV31,
     AdvisoryPressureMaturityPolicyV31,
     StrategyAnalysisAdmissionPolicyV31,
-    StrategyAnalysisAdmissionReceiptV31,
     StrategyAnalysisAdmissionV31,
 )
-from contracts.strategy_5scr_market_episode_v31 import canonical_sha256_v31, strategy_lifecycle_id_from_episode_v31
+from contracts.strategy_5scr_market_episode_v31 import canonical_sha256_v31
 from tests.test_strategy_5scr_market_episode_v31 import _event, _reduce
 from tests.test_strategy_5scr_pair_admission_coverage_v31 import W1, _classify, _evaluation, _observation
 
@@ -261,18 +259,7 @@ def test_two_classes_in_one_episode_are_distinct_admissions_on_the_same_lifecycl
     assert advisory is not None and canonical is not None
     assert advisory.market_episode_id == canonical.market_episode_id == episode.market_episode_id
     assert advisory.strategy_analysis_admission_id != canonical.strategy_analysis_admission_id
-    coverage_a = _classify(_observation(block=None), maturity="MATURE").coverage
-    coverage_c = _classify(evaluation=_evaluation()).coverage
-    assert coverage_a is not None and coverage_c is not None
-    receipt_a = build_admission_receipt_v31(
-        admission=advisory, episode=episode, coverage=coverage_a, evaluation=None, evidence=_evidence(episode)
-    )
-    receipt_c = build_admission_receipt_v31(
-        admission=canonical, episode=episode, coverage=coverage_c, evaluation=_evaluation(), evidence=None
-    )
-    assert receipt_a.strategy_lifecycle_id == receipt_c.strategy_lifecycle_id == episode.strategy_lifecycle_id
-    assert receipt_a.strategy_lifecycle_id == strategy_lifecycle_id_from_episode_v31(episode.market_episode_id)
-    assert (receipt_a.promotion_eligibility, receipt_c.promotion_eligibility) == ("SHADOW_ONLY", "CANONICAL_RISK_PATH")
+    # Receipts (lifecycle-bound) are covered by tests/test_strategy_5scr_admission_receipt_v31.py.
 
 
 def test_admission_identity_is_stable_under_telemetry_and_moves_only_with_the_maturity_policy():
@@ -309,41 +296,6 @@ def test_contract_forbids_fabricated_pair_admission_and_authority_leaks():
     with pytest.raises(ValidationError, match="STRATEGY_ANALYSIS_ADMISSION_ID_NOT_DERIVED"):
         StrategyAnalysisAdmissionV31.model_validate(
             {**canonical.model_dump(), "symbol": "GBPUSD", "market_episode_id": advisory.strategy_analysis_admission_id}
-        )
-
-
-def test_receipt_binds_exactly_the_named_inputs():
-    episode, state = _episode()
-    advisory = _advisory(episode, state).admission
-    assert advisory is not None
-    coverage = _classify(_observation(block=None), maturity="MATURE").coverage
-    assert coverage is not None
-    with pytest.raises(ValueError, match="binds its evidence and no PairAdmission evaluation"):
-        build_admission_receipt_v31(
-            admission=advisory,
-            episode=episode,
-            coverage=coverage,
-            evaluation=_evaluation(),
-            evidence=_evidence(episode),
-        )
-    with pytest.raises(ValueError, match="RECEIPT_EVIDENCE_MISMATCH"):
-        build_admission_receipt_v31(
-            admission=advisory,
-            episode=episode,
-            coverage=coverage,
-            evaluation=None,
-            evidence=_evidence(episode, pulse_count=3),
-        )
-    receipt = build_admission_receipt_v31(
-        admission=advisory, episode=episode, coverage=coverage, evaluation=None, evidence=_evidence(episode)
-    )
-    with pytest.raises(ValidationError, match="RECEIPT_LIFECYCLE_NOT_DERIVED_FROM_EPISODE"):
-        StrategyAnalysisAdmissionReceiptV31.model_validate(
-            {**receipt.model_dump(), "strategy_lifecycle_id": episode.market_episode_id}
-        )
-    with pytest.raises(ValidationError, match="MATURE_ADVISORY receipts are SHADOW_ONLY"):
-        StrategyAnalysisAdmissionReceiptV31.model_validate(
-            {**receipt.model_dump(), "promotion_eligibility": "CANONICAL_RISK_PATH"}
         )
 
 

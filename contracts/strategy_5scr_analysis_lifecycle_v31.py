@@ -12,20 +12,15 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Literal
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from contracts.strategy_5scr_analysis_admission_v31 import AdmissionClass, AdmissionStatus
-from contracts.strategy_5scr_market_episode_v31 import (
-    IDENTITY_ENCODING_VERSION,
-    DirectionState,
-    canonical_sha256_v31,
-    strategy_lifecycle_id_from_episode_v31,
-)
+from contracts.strategy_5scr_identity_v31 import canonical_sha256_v31, identity_uuid_v31
+from contracts.strategy_5scr_market_episode_v31 import DirectionState, strategy_lifecycle_id_from_episode_v31
 
 ANALYSIS_LIFECYCLE_V31_RULE_VERSION = "5scr.analysis-lifecycle.v31.v1"
 V31_ADMISSION_REVISION_NAMESPACE = UUID("7761d6fe-ae9a-42b2-8a5d-9db44c7a130a")
@@ -70,10 +65,7 @@ def derive_highest_authority_v31(classes: tuple[str, ...]) -> AdmissionClass:
 
 
 def admission_revision_id_v31(*, strategy_analysis_admission_id: UUID, revision_number: int) -> UUID:
-    name = json.dumps(
-        [IDENTITY_ENCODING_VERSION, str(strategy_analysis_admission_id), revision_number], separators=(",", ":")
-    )
-    return uuid5(V31_ADMISSION_REVISION_NAMESPACE, name)
+    return identity_uuid_v31(V31_ADMISSION_REVISION_NAMESPACE, [str(strategy_analysis_admission_id), revision_number])
 
 
 class AdmissionRevisionV31(_Strict):

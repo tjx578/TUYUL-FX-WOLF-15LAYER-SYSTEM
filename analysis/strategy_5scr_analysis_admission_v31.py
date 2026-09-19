@@ -15,16 +15,13 @@ from contracts.strategy_5scr_analysis_admission_v31 import (
     AdvisoryPressureEvidenceV31,
     AdvisoryPressureMaturityPolicyV31,
     StrategyAnalysisAdmissionPolicyV31,
-    StrategyAnalysisAdmissionReceiptV31,
     StrategyAnalysisAdmissionV31,
-    strategy_analysis_admission_hash_v31,
     strategy_analysis_admission_id_v31,
 )
+from contracts.strategy_5scr_identity_v31 import canonical_sha256_v31
 from contracts.strategy_5scr_market_episode_v31 import (
     MarketEpisodeStateV31,
     MarketEpisodeV31,
-    canonical_sha256_v31,
-    strategy_lifecycle_id_from_episode_v31,
 )
 from contracts.strategy_5scr_pair_admission_coverage_v31 import (
     PairAdmissionCoverageV1,
@@ -247,60 +244,8 @@ def evaluate_mature_advisory_admission_v31(
     return AdmissionDecisionV31("DECIDED", reason, admission)
 
 
-def build_admission_receipt_v31(
-    *,
-    admission: StrategyAnalysisAdmissionV31,
-    episode: MarketEpisodeV31,
-    coverage: PairAdmissionCoverageV1,
-    evaluation: PairAdmissionEvaluationRefV31 | None,
-    evidence: AdvisoryPressureEvidenceV31 | None,
-) -> StrategyAnalysisAdmissionReceiptV31:
-    """Bind the admission to exactly the inputs it names. Raises on any mismatch (never a partial receipt)."""
-
-    admission = StrategyAnalysisAdmissionV31.model_validate(admission.model_dump())
-    episode = MarketEpisodeV31.model_validate(episode.model_dump())
-    coverage = PairAdmissionCoverageV1.model_validate(coverage.model_dump())
-    if (admission.market_episode_id, admission.pair_admission_coverage_id) != (
-        episode.market_episode_id,
-        coverage.pair_admission_coverage_id,
-    ):
-        raise ValueError("RECEIPT_EPISODE_OR_COVERAGE_MISMATCH")
-    canonical = admission.admission_class == "CANONICAL_RAW"
-    if canonical:
-        if evaluation is None or evidence is not None:
-            raise ValueError("CANONICAL_RAW receipt binds its evaluation and no advisory evidence")
-        if evaluation.admission_evaluation_id != admission.pair_admission_evaluation_id:
-            raise ValueError("RECEIPT_EVALUATION_MISMATCH")
-    else:
-        if evidence is None or evaluation is not None:
-            raise ValueError("MATURE_ADVISORY receipt binds its evidence and no PairAdmission evaluation")
-        if evidence.evidence_hash != admission.evidence_hash:
-            raise ValueError("RECEIPT_EVIDENCE_MISMATCH")
-    return StrategyAnalysisAdmissionReceiptV31(
-        strategy_analysis_admission_id=admission.strategy_analysis_admission_id,
-        admission_record_hash=strategy_analysis_admission_hash_v31(admission),
-        market_episode_id=episode.market_episode_id,
-        strategy_lifecycle_id=strategy_lifecycle_id_from_episode_v31(episode.market_episode_id),
-        symbol=admission.symbol,
-        admission_class=admission.admission_class,
-        admission_status=admission.admission_status,
-        analysis_authority=admission.analysis_authority,
-        promotion_eligibility=admission.promotion_eligibility,
-        pressure_direction=admission.pressure_direction,
-        pair_admission_coverage_id=coverage.pair_admission_coverage_id,
-        coverage_record_hash=canonical_sha256_v31(coverage.model_dump(mode="json")),
-        pair_admission_evaluation_id=None if evaluation is None else evaluation.admission_evaluation_id,
-        pair_admission_evaluation_hash=None if evaluation is None else evaluation.evaluation_hash,
-        advisory_evidence_hash=None if evidence is None else evidence.evidence_hash,
-        advisory_maturity_policy_hash=admission.advisory_maturity_policy_hash,
-        granted_at_utc=admission.granted_at_utc,
-        expires_at_utc=admission.expires_at_utc,
-    )
-
-
 __all__ = [
     "AdmissionDecisionV31",
-    "build_admission_receipt_v31",
     "classify_advisory_maturity_v31",
     "evaluate_canonical_raw_admission_v31",
     "evaluate_mature_advisory_admission_v31",
