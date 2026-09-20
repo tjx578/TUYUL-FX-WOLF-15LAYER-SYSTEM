@@ -1,10 +1,10 @@
 {
   "amendment_id": "WOLF15-5SCR-SSOT-V3.1-A1",
-  "status": "DRAFT_NOT_APPROVED",
+  "status": "APPROVED_PER_ENTRY",
   "final_approver": "OWNER",
   "document": {
     "path": "docs/governance/strategy-5scr-v3.1-amendment-A1.md",
-    "sha256": "5b23d8bb60ad03c6dbe00e55f393dbcae2758cfc99a516624b2809f22b1b26d4"
+    "sha256": "1fed7f7b2eb79152ba8f825faca4af3eed131f69222860c6793a42eabd152d40"
   },
   "base_ssot": {
     "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
@@ -180,7 +180,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A1-10",
@@ -198,7 +198,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A1-11",
@@ -216,7 +216,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A1-12",
@@ -234,7 +234,20 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     }
-  ]
+  ],
+  "ratification": {
+    "ratified_draft_sha256": "5b23d8bb60ad03c6dbe00e55f393dbcae2758cfc99a516624b2809f22b1b26d4",
+    "ratified_draft_blob_id": "5c28c414a03f40070c1058cb6feb08fc50bbb0be",
+    "ratified_on": "2026-09-21",
+    "ratified_by": "OWNER",
+    "method": "independent byte verification by the owner (Get-FileHash + git rev-parse)",
+    "approved_entries": [
+      "A1-09",
+      "A1-10",
+      "A1-11",
+      "A1-12"
+    ]
+  }
 }

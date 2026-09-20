@@ -2,7 +2,18 @@
 
 ```yaml
 amendment_id: WOLF15-5SCR-SSOT-V3.1-A1
-status: DRAFT_NOT_APPROVED
+status: APPROVED_PER_ENTRY
+ratification:
+  ratified_draft_sha256: 5b23d8bb60ad03c6dbe00e55f393dbcae2758cfc99a516624b2809f22b1b26d4
+  ratified_draft_blob_id: 5c28c414a03f40070c1058cb6feb08fc50bbb0be
+  ratified_on: 2026-09-21
+  ratified_by: OWNER
+  method: independent byte verification by the owner (Get-FileHash + git rev-parse)
+  approved_entries: [A1-09, A1-10, A1-11, A1-12]
+  pending_entries: [A1-01, A1-02, A1-03, A1-04, A1-05, A1-06, A1-07, A1-08]
+  pending_reason: >-
+    Their own shadow / replay / OOS evidence has not been produced. Approving them now would grant
+    governance status to the #492 conflict override without the evidence the entries themselves require.
 base_ssot:
   document_id: WOLF15-5SCR-SSOT-V3.1-CANDIDATE
   path: docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md
@@ -331,5 +342,20 @@ These are recorded for traceability. They are **not** amendments and grant nothi
   - PairAdmissionCoverage (§7.12).
 
 ## 6. Approval
+
+**Ratified 2026-09-21 (partial).** The owner independently verified the exact bytes of the draft
+(`sha256 5b23d8bb…b1b26d4`, git blob `5c28c414…bb0be`) and approved the PressureRange sections
+**A1-09 … A1-12** on that content. This document is the approved successor of those exact bytes; the
+`ratification` block above pins the predecessor so the chain stays provable.
+
+**A1-01 … A1-08 remain `PENDING`.** Each of them declares `shadow_required` / `replay_required` /
+`oos_required`, and that evidence does not exist yet. A1-01 in particular is a `CONFLICT_OVERRIDE` of the
+v3.1 global block FSM; it must not acquire governance status on the strength of a PressureRange ratification.
+
+**Approval still grants no runtime activation.** `grants_runtime_activation` stays `false` and every entry keeps
+`runtime_activation: EXPLICIT_ONLY`. Implementation of `PressureRangeV1` requires a separate, explicit owner
+authorization; ratification of the authority is not that authorization.
+
+
 
 This record is a DRAFT. Approval needs the owner's explicit decision per entry, together with the shadow, replay and OOS evidence each entry requires. The authority-promotion record must then reference `base_ssot_hash` together with `active_amendments = [A1 sha256]`. Promoting bare v3.1 alone is not permitted.

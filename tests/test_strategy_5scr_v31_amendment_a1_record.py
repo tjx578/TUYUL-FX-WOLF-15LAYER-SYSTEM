@@ -46,12 +46,14 @@ def test_base_ssot_is_unmodified_and_named_explicitly():
 
 
 def test_record_grants_no_runtime_activation_and_no_dual_authority():
+    """Ratification of the authority is never runtime activation, and never dual authority."""
+
     record = _record()
-    assert record["status"] == "DRAFT_NOT_APPROVED"
+    assert record["status"] == "APPROVED_PER_ENTRY"
     assert (record["grants_runtime_activation"], record["dual_authority"]) == (False, False)
     assert record["effective_authority_model"] == "BASE_SSOT_PLUS_EXPLICIT_AMENDMENTS"
     assert all(entry["runtime_activation"] == "EXPLICIT_ONLY" for entry in record["entries"])
-    assert all(entry["approval"] == "PENDING" for entry in record["entries"])
+    assert all(entry["approval"] in {"APPROVED", "PENDING"} for entry in record["entries"])
 
 
 def test_every_entry_is_complete_typed_and_cites_base_clauses():
@@ -154,3 +156,26 @@ def test_evidence_cardinality_is_period_aligned_so_coverage_stays_computable():
         "**undecidable** coverage status and is rejected, never defaulted",
     ):
         assert fragment in document, fragment
+
+
+def test_only_the_pressure_range_entries_are_approved_and_the_chain_is_provable():
+    """The owner ratified the PressureRange sections on exact bytes. A1-01..A1-08 each declare shadow/replay/OOS
+    evidence that does not exist, so they must not inherit approval - A1-01 is a CONFLICT_OVERRIDE of the v3.1
+    global block FSM."""
+
+    record = _record()
+    approval = {e["entry_id"]: e["approval"] for e in record["entries"]}
+    assert {k for k, v in approval.items() if v == "APPROVED"} == {"A1-09", "A1-10", "A1-11", "A1-12"}
+    assert all(approval[f"A1-0{n}"] == "PENDING" for n in range(1, 9))
+    for entry in record["entries"]:
+        if entry["approval"] == "PENDING":
+            assert entry["shadow_required"] or entry["replay_required"] or entry["oos_required"]
+
+    # The approved document is the successor of the exact ratified bytes, and says so.
+    ratification = record["ratification"]
+    assert ratification["ratified_draft_sha256"] == ("5b23d8bb60ad03c6dbe00e55f393dbcae2758cfc99a516624b2809f22b1b26d4")
+    assert ratification["ratified_draft_blob_id"] == "5c28c414a03f40070c1058cb6feb08fc50bbb0be"
+    assert ratification["ratified_by"] == "OWNER"
+    document = _document()
+    assert ratification["ratified_draft_sha256"] in document
+    assert "Implementation of `PressureRangeV1` requires a separate, explicit owner" in document
