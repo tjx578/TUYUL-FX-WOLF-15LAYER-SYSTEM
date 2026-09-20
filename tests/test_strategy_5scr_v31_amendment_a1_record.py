@@ -72,3 +72,53 @@ def test_per_symbol_admission_is_recorded_as_a_conflict_override_of_the_global_b
     assert entry["amendment_type"] == "CONFLICT_OVERRIDE"
     assert {"§7.2", "§7.3", "§24.3", "§27"} <= set(entry["base_clause"])
     assert (entry["shadow_required"], entry["replay_required"], entry["oos_required"]) == (True, True, True)
+
+
+# --- PressureRange normative sections A1.1-A1.4 (entries A1-09..A1-12, 2026-09-21) -------------------------------
+
+
+def _document() -> str:
+    return (ROOT / _record()["document"]["path"]).read_text(encoding="utf-8")
+
+
+def test_the_four_pressure_range_sections_are_registered_and_titled():
+    """The owner asked for four normative sections. They are registered as entries so the machine record
+    covers them, and each entry heading also carries its A1.x section title."""
+
+    entries = {e["entry_id"]: e for e in _record()["entries"]}
+    expected = {
+        "A1-09": "A1.1 PressureRange material observation window",
+        "A1-10": "A1.2 Material range derivation",
+        "A1-11": "A1.3 Price coverage semantics",
+        "A1-12": "A1.4 Change classification and downstream re-evaluation",
+    }
+    document = _document()
+    for entry_id, title in expected.items():
+        assert entry_id in entries, entry_id
+        assert entries[entry_id]["amendment_type"] == "GAP_FILL"
+        assert f"### {entry_id} · GAP_FILL · {title}" in document
+
+
+def test_the_coverage_vocabulary_stays_closed_at_the_four_canonical_values():
+    """Section 16.2 fixes four values. DEGRADED and UNAVAILABLE must appear only where the document forbids
+    them, and STALE must stay on the observation and feed axes."""
+
+    document = _document()
+    for value in ("COMPLETE", "PARTIAL", "MISSING", "QUARANTINED"):
+        assert value in document
+    assert "`DEGRADED` and `UNAVAILABLE` must not be introduced" in document
+    assert "must not be promoted into `price_coverage_status`" in document
+    assert "No percentage threshold is introduced." in document
+
+
+def test_change_classification_has_three_classes_and_grants_nothing_downstream_yet():
+    """The two-class model misses the case where coverage moves while low/high are identical, so all three
+    classes must be named; and the ExecutionBox consequence stays deferred to G7/12C."""
+
+    document = _document()
+    for klass in ("MATERIAL_RANGE_CHANGE", "COVERAGE_CHANGE", "EVIDENCE_REFRESH"):
+        assert klass in document
+    assert "Coverage may change while `low` and `high` are identical." in document
+    assert "deferred to G7/12C" in document
+    assert "INTENTIONALLY NOT CREATED" in document  # G8: no material hash is invented
+    assert "The range itself never holds authority in any state." in document

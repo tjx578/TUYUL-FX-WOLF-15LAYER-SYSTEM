@@ -4,7 +4,7 @@
   "final_approver": "OWNER",
   "document": {
     "path": "docs/governance/strategy-5scr-v3.1-amendment-A1.md",
-    "sha256": "b891b9832e9a076752c0ad4d582671c460065dc5be66523f6485c68d93f80ec4"
+    "sha256": "be11b35755916821e137809d40da41cae976d72cfc8fe414d6a59e9db61c67dc"
   },
   "base_ssot": {
     "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
@@ -159,6 +159,80 @@
       "shadow_required": true,
       "replay_required": true,
       "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-09",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§16.1",
+        "§16.2",
+        "§8.5",
+        "§8.3",
+        "§11.5"
+      ],
+      "base_behavior": "Section 8.5 defines the window start per admission class and section 16.2 declares ended_at nullable; nothing defines closure, reopening or late evidence.",
+      "amended_behavior": "Window start restated per class with a coverage_anchor_rule derivation label; as-of bound observed_through_utc forbids future observations; PROPOSED closure at market episode close; reopening forbidden; late evidence appended while open and rejected as a permanent gap after closure. OPEN-1 lifecycle supersession and OPEN-2 raw-block termination are not derivable and await the owner.",
+      "reason": "ended_at determines the evidence window and therefore source_price_ids, the low/high universe, coverage and evidence_hash.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-10",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§16.2",
+        "§11.5",
+        "§11.2"
+      ],
+      "base_behavior": "Audit/Replay v3 section 11 step 5 constrains when an observation may count (no future price) but never how low and high are derived or which prices qualify.",
+      "amended_behavior": "QualifyingPressurePriceObservation defined first: authoritative closed M1 candle of the canonical symbol, not UNKNOWN/INCOMPLETE/QUARANTINED, close_time <= observed_through_utc, inside the window, deduplicated by evidence id with conflicting duplicates becoming a gap. Then low = min(low) and high = max(high) over wicks; zero qualifying observations give null bounds and MISSING coverage; policy inputs are versioned hashed policy with no defaults.",
+      "reason": "Without the qualifying universe, min/max is ambiguous and the geometry is not replayable.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-11",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§16.2",
+        "§8.5",
+        "§11.5"
+      ],
+      "base_behavior": "Section 16.2 fixes four coverage values and section 8.5 fixes the consequence of incomplete coverage; nothing defines what selects a value.",
+      "amended_behavior": "Threshold-free set completeness against the provider calendar: QUARANTINED > MISSING > PARTIAL > COMPLETE. No percentage is introduced. Only COMPLETE permits structural_authority true; the others place the lifecycle in WAITING_PRICE_COVERAGE. Vocabulary is closed: DEGRADED and UNAVAILABLE are not introduced and STALE stays on the observation and feed axes.",
+      "reason": "Coverage decides actionability; an arbitrary ratio would silently move the boundary between analysable and non-analysable lineages.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-12",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§15.1",
+        "§15.2",
+        "§16.2"
+      ],
+      "base_behavior": "Section 15.1 names ExecutionBox material revision and section 15.2 forbids duplicate telemetry from creating a new box version; PressureRange is named in neither, so it has no refresh-versus-material rule.",
+      "amended_behavior": "Three classes over a normative field partition: MATERIAL_RANGE_CHANGE (geometry-material fields), COVERAGE_CHANGE (coverage fields with identical geometry), EVIDENCE_REFRESH (evidence fields only), and no class for non-material-only differences. Coverage may change while low and high are identical and that re-evaluates lifecycle actionability. COVERAGE_CHANGE does not by itself imply an ExecutionBox revision; that is G7 and belongs to 12C.",
+      "reason": "Without the partition every authoritative close would cascade range to target to box supersede to lifecycle churn.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
       "approval": "PENDING"
     }
