@@ -7,6 +7,12 @@ no global safety input (a global veto is an overlay and can never change a thesi
 A thesis never writes a hypothesis transition and never edits a proof. It never re-runs the H1/M15 proof
 predicates either: it binds the #497 proof by reference and only asks whether that proof is still ACTIONABLE for
 binding (D5): no later canonical structural evidence invalidates it, proven over contiguous closed candles.
+
+Requalified on #504 (2026-09-20): the S1B ``AnalysisLifecycleV31`` is an explicit input at BOTH creation and
+confirmation. It is read for containment only - never for identity, and never to widen authority. A
+MATURE_ADVISORY lineage may reach STRUCTURALLY_CONFIRMED (analysis direction authority) while staying
+SHADOW_ONLY; a CANONICAL_RAW thesis additionally requires that its admission is canonical in this lifecycle,
+so an advisory candidate is never reused as canonical after an upgrade (§7A.6).
 """
 
 from __future__ import annotations
@@ -18,8 +24,11 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
+from analysis.strategy_5scr_analysis_lifecycle_v31 import require_canonical_lineage_v31
 from analysis.strategy_5scr_context_epoch_v31 import project_context_route_receipt_v31
+from analysis.strategy_5scr_pressure_hypothesis_v31 import TERMINAL_LIFECYCLE_STATES_V31
 from analysis.strategy_5scr_pressure_hypothesis_v31 import current_state as hypothesis_state
+from contracts.strategy_5scr_analysis_lifecycle_v31 import AUTHORITY_RANK, AnalysisLifecycleV31
 from contracts.strategy_5scr_candle_identity import candle_evidence_hash, candle_material_hash
 from contracts.strategy_5scr_context_epoch_v31 import (
     ContextEpochTerminationV31,
@@ -42,13 +51,13 @@ from contracts.strategy_5scr_directional_thesis_v31 import (
     thesis_id_v31,
     thesis_record_hash_v31,
 )
+from contracts.strategy_5scr_identity_v31 import canonical_sha256_v31
 from contracts.strategy_5scr_pressure_hypothesis_v31 import (
     TERMINAL_STATES as HYPOTHESIS_TERMINAL_STATES,
 )
 from contracts.strategy_5scr_pressure_hypothesis_v31 import (
     PressureDirectionalHypothesisV31,
     PressureHypothesisStoreV31,
-    canonical_sha256_v31,
     hypothesis_record_hash_v31,
 )
 from contracts.strategy_5scr_structural_proof_v31 import StructuralProofEvidenceV31
@@ -79,6 +88,34 @@ def _aware(moment: datetime, name: str) -> None:
         raise ValueError(f"{name} must be timezone-aware")
 
 
+def _lineage_refusal(
+    lifecycle: AnalysisLifecycleV31,
+    *,
+    epoch: ContextEpochV31,
+    admission_id: UUID,
+    admission_class: str,
+) -> str | None:
+    """Containment gate shared by creation and confirmation. Reads the lifecycle; grants nothing.
+
+    The lifecycle's CURRENT authority may never be lower than the class this thesis claims, and a claim of
+    CANONICAL_RAW additionally requires that the originating admission is canonical in this very lifecycle.
+    """
+
+    if (
+        epoch.strategy_lifecycle_id != lifecycle.strategy_lifecycle_id
+        or epoch.market_episode_id != lifecycle.market_episode_id
+        or epoch.canonical_symbol != lifecycle.symbol
+    ):
+        return "EPOCH_LIFECYCLE_MISMATCH"
+    if lifecycle.state in TERMINAL_LIFECYCLE_STATES_V31:
+        return "LIFECYCLE_TERMINAL"
+    if AUTHORITY_RANK[lifecycle.highest_analysis_authority] < AUTHORITY_RANK[admission_class]:
+        return "LIFECYCLE_AUTHORITY_BELOW_THESIS_CLASS"
+    if admission_class == "CANONICAL_RAW":
+        return require_canonical_lineage_v31(lifecycle, admission_id)
+    return None
+
+
 def current_thesis_state(transitions: tuple[DirectionalThesisTransitionV31, ...]) -> str:
     return transitions[-1].to_state if transitions else CREATION_STATE
 
@@ -99,6 +136,9 @@ def thesis_status_v31(store: DirectionalThesisStoreV31, strategy_thesis_id: UUID
         state=state,  # type: ignore[arg-type]
         direction=record.direction,
         direction_authority=direction_authority_v31(state),
+        analysis_admission_class=record.analysis_admission_class,
+        promotion_eligibility=record.promotion_eligibility,
+        risk_handoff_allowed=record.risk_handoff_allowed,
         bound_structural_proof_id=None if bound is None else bound.bound_structural_proof_id,
         bound_structural_proof_hash=None if bound is None else bound.bound_structural_proof_hash,
     )
@@ -195,6 +235,7 @@ def _expire_by_clock(store: DirectionalThesisStoreV31, record: DirectionalThesis
 def open_thesis_v31(
     store: DirectionalThesisStoreV31,
     *,
+    lifecycle: AnalysisLifecycleV31,
     epoch: ContextEpochV31,
     evaluation: ContextRouteEvaluationV31,
     hypothesis: PressureDirectionalHypothesisV31 | None,
@@ -203,7 +244,11 @@ def open_thesis_v31(
     clock_policy: ThesisClockPolicyV31 | None,
     decision_at: datetime,
 ) -> ThesisDecisionV31:
-    """D2: ALIGN + active same-direction hypothesis → thesis PENDING_H1 (no direction authority yet)."""
+    """D2: ALIGN + active same-direction hypothesis → thesis PENDING_H1 (no direction authority yet).
+
+    Either admission class may open a thesis. The class is inherited from the hypothesis as provenance and caps
+    how far this thesis may ever travel; it never changes the identity and never grants anything.
+    """
 
     _aware(decision_at, "decision_at")
     if class_registry is None:
@@ -259,6 +304,15 @@ def open_thesis_v31(
         return ThesisDecisionV31("NOT_CREATED", "THESIS_CLASS_MAPPING_MISSING")
     if thesis_class != "CONTINUATION":
         return ThesisDecisionV31("NOT_CREATED", "THESIS_CLASS_NOT_IMPLEMENTED_BY_DESIGN")
+    lifecycle = AnalysisLifecycleV31.model_validate(lifecycle.model_dump())
+    refusal = _lineage_refusal(
+        lifecycle,
+        epoch=epoch,
+        admission_id=hypothesis.strategy_analysis_admission_id,
+        admission_class=hypothesis.analysis_admission_class,
+    )
+    if refusal is not None:
+        return ThesisDecisionV31("NOT_CREATED", refusal)
 
     thesis_id = thesis_id_v31(
         strategy_lifecycle_id=epoch.strategy_lifecycle_id,
@@ -286,9 +340,11 @@ def open_thesis_v31(
         strategy_thesis_id=thesis_id,
         canonical_symbol=epoch.canonical_symbol,
         strategy_lifecycle_id=epoch.strategy_lifecycle_id,
+        market_episode_id=epoch.market_episode_id,
         strategy_analysis_admission_id=hypothesis.strategy_analysis_admission_id,
         admission_receipt_hash=hypothesis.admission_receipt_hash,
         analysis_admission_class=hypothesis.analysis_admission_class,
+        analysis_authority=hypothesis.analysis_authority,
         promotion_eligibility=hypothesis.promotion_eligibility,
         risk_handoff_allowed=hypothesis.risk_handoff_allowed,
         pressure_hypothesis_id=hypothesis.pressure_hypothesis_id,
@@ -385,6 +441,7 @@ def proof_actionability_failure_v31(
 def confirm_thesis_v31(
     store: DirectionalThesisStoreV31,
     *,
+    lifecycle: AnalysisLifecycleV31,
     strategy_thesis_id: UUID,
     proof: StructuralProofEvidenceV31,
     epoch: ContextEpochV31,
@@ -422,6 +479,16 @@ def confirm_thesis_v31(
         return ThesisDecisionV31("ALREADY_CONFIRMED", reason, record, bound)
     if state != "PENDING_H1":
         return ThesisDecisionV31("NOT_CONFIRMED", "THESIS_NOT_PENDING", record)
+    # Containment is re-checked at confirmation: this is where analysis direction authority is born.
+    lifecycle = AnalysisLifecycleV31.model_validate(lifecycle.model_dump())
+    refusal = _lineage_refusal(
+        lifecycle,
+        epoch=epoch,
+        admission_id=record.strategy_analysis_admission_id,
+        admission_class=record.analysis_admission_class,
+    )
+    if refusal is not None:
+        return ThesisDecisionV31("NOT_CONFIRMED", refusal, record)
     if not record.valid_from <= decision_at < record.valid_until:
         return ThesisDecisionV31("NOT_CONFIRMED", "THESIS_CLOCK_NOT_ACTIVE", record)
     try:

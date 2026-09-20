@@ -14,23 +14,32 @@ authority are separate:
 - D7: own explicit clock; ``valid_until`` is immutable and never later than the context epoch deadline.
 - D9: route → thesis_class only through a hashed registry.
 
+Requalified on #504 (2026-09-20): both admission classes may hold a thesis. Direction authority is ANALYSIS
+authority and is NOT execution authority - that distinction is the core of v3.1. A MATURE_ADVISORY lineage may
+therefore reach STRUCTURALLY_CONFIRMED with direction_authority=true while staying SHADOW_ONLY with no risk
+handoff and no execution authority. The admission class is containment only: it never enters the identity.
+
 The thesis binds evidence by reference and never re-runs H1/M15 predicates. It has no entry, SL, TP, RR, volume,
 spread, margin, broker or command field. Projection to ``OrderedProofEvidenceV31`` is deferred (D8).
 """
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta
 from typing import Literal, Protocol
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from contracts.strategy_5scr_admission_identity_v31 import IDENTITY_ENCODING_VERSION, SELECTED_SSOT_HASH
-from contracts.strategy_5scr_pressure_hypothesis_v31 import canonical_sha256_v31
+from contracts.strategy_5scr_identity_v31 import (
+    IDENTITY_ENCODING_VERSION,
+    SELECTED_SSOT_HASH,
+    canonical_sha256_v31,
+    identity_uuid_v31,
+)
+from contracts.strategy_5scr_market_episode_v31 import strategy_lifecycle_id_from_episode_v31
 
-DIRECTIONAL_THESIS_V31_RULE_VERSION = "5scr.directional-thesis.v31.v1"
+DIRECTIONAL_THESIS_V31_RULE_VERSION = "5scr.directional-thesis.v31.v2"
 V31_THESIS_NAMESPACE = UUID("24ba330a-a439-44cb-8bd6-da026633720c")
 
 Direction = Literal["BUY", "SELL"]
@@ -160,11 +169,15 @@ def thesis_id_v31(
     selected_route: str,
     pressure_hypothesis_id: UUID,
 ) -> UUID:
-    """D3: no proof id, no evaluation/validity time, no row id."""
+    """D3: no proof id, no evaluation/validity time, no row id.
 
-    name = json.dumps(
+    Deliberately absent as well: the admission id, the admission class and the lifecycle's current analysis
+    authority. Containment must never move an identity, so an advisory-to-canonical upgrade cannot fork a thesis.
+    """
+
+    return identity_uuid_v31(
+        V31_THESIS_NAMESPACE,
         [
-            IDENTITY_ENCODING_VERSION,
             str(strategy_lifecycle_id),
             str(context_epoch_id),
             direction,
@@ -172,15 +185,13 @@ def thesis_id_v31(
             selected_route,
             str(pressure_hypothesis_id),
         ],
-        separators=(",", ":"),
     )
-    return uuid5(V31_THESIS_NAMESPACE, name)
 
 
 class DirectionalThesisV31(_Strict):
     """Immutable record (SSOT §14.2, §25 "0 mutable DirectionalThesis"). State lives in the transition log."""
 
-    rule_version: Literal["5scr.directional-thesis.v31.v1"] = DIRECTIONAL_THESIS_V31_RULE_VERSION
+    rule_version: Literal["5scr.directional-thesis.v31.v2"] = DIRECTIONAL_THESIS_V31_RULE_VERSION
     identity_encoding_version: Literal["v31.native-identity.v1"] = IDENTITY_ENCODING_VERSION
     selected_ssot_hash: Literal["sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"] = (
         SELECTED_SSOT_HASH
@@ -188,11 +199,14 @@ class DirectionalThesisV31(_Strict):
     strategy_thesis_id: UUID
     canonical_symbol: str = Field(pattern=r"^[A-Z0-9._-]{3,32}$")
     strategy_lifecycle_id: UUID
+    market_episode_id: UUID  # section 8.1 provenance; audit only, never part of the identity tuple
     strategy_analysis_admission_id: UUID
     admission_receipt_hash: str = Field(pattern=_DIGEST)
-    # §14.1 inheritance. MATURE_ADVISORY is NOT_IMPLEMENTED_BY_DESIGN (follows hypothesis decision H1).
-    analysis_admission_class: Literal["CANONICAL_RAW"]
-    promotion_eligibility: Literal["CANONICAL_RISK_PATH"]
+    # §14.1 inheritance from the hypothesis: provenance of the admission this thesis was born under.
+    # It is NOT identity, NOT direction authority and NOT execution authority - only a containment cap.
+    analysis_admission_class: Literal["CANONICAL_RAW", "MATURE_ADVISORY"]
+    analysis_authority: Literal["FULL_CANONICAL_ANALYSIS", "FULL_SHADOW_ANALYSIS"]
+    promotion_eligibility: Literal["CANONICAL_RISK_PATH", "SHADOW_ONLY"]
     risk_handoff_allowed: bool  # §14.2 eligibility cap inherited from the hypothesis; never an authorization
     pressure_hypothesis_id: UUID
     hypothesis_record_hash: str = Field(pattern=_DIGEST)
@@ -244,6 +258,16 @@ class DirectionalThesisV31(_Strict):
             raise ValueError("THESIS_VALID_UNTIL_NOT_DERIVED")
         if not self.valid_from < self.valid_until <= self.context_epoch_valid_until:
             raise ValueError("THESIS_CLOCK_OUTSIDE_CONTEXT_EPOCH")
+        if self.strategy_lifecycle_id != strategy_lifecycle_id_from_episode_v31(self.market_episode_id):
+            raise ValueError("THESIS_LIFECYCLE_NOT_EPISODE_ROOTED")
+        # §14.2 containment, the thesis-level twin of the §10.3 hypothesis invariant. A shadow lineage stays
+        # shadow no matter how strong its structure is; only the canonical path may ever reach risk.
+        scope = (self.analysis_authority, self.promotion_eligibility, self.risk_handoff_allowed)
+        if self.analysis_admission_class == "MATURE_ADVISORY":
+            if scope != ("FULL_SHADOW_ANALYSIS", "SHADOW_ONLY", False):
+                raise ValueError("ADVISORY_THESIS_MUST_STAY_SHADOW_ONLY")
+        elif scope[:2] != ("FULL_CANONICAL_ANALYSIS", "CANONICAL_RISK_PATH"):
+            raise ValueError("CANONICAL_THESIS_SCOPE_MISMATCH")
         return self
 
 
@@ -300,7 +324,10 @@ class DirectionalThesisStatusV31(_Strict):
     strategy_thesis_id: UUID
     state: ThesisState
     direction: Direction
-    direction_authority: bool
+    direction_authority: bool  # ANALYSIS direction authority only; never execution authority
+    analysis_admission_class: Literal["CANONICAL_RAW", "MATURE_ADVISORY"]
+    promotion_eligibility: Literal["CANONICAL_RISK_PATH", "SHADOW_ONLY"]
+    risk_handoff_allowed: bool
     bound_structural_proof_id: UUID | None
     bound_structural_proof_hash: str | None = Field(pattern=_DIGEST)
     execution_authority: Literal[False] = False
@@ -311,6 +338,11 @@ class DirectionalThesisStatusV31(_Strict):
     def _derived(self) -> DirectionalThesisStatusV31:
         if self.direction_authority != direction_authority_v31(self.state):
             raise ValueError("DIRECTION_AUTHORITY_IS_DERIVED_FROM_STATE")
+        # A structurally confirmed SHADOW thesis is legal; a SHADOW thesis with a risk handoff is not.
+        if self.promotion_eligibility == "SHADOW_ONLY" and self.risk_handoff_allowed:
+            raise ValueError("SHADOW_THESIS_MUST_NOT_ALLOW_RISK_HANDOFF")
+        if (self.analysis_admission_class == "MATURE_ADVISORY") != (self.promotion_eligibility == "SHADOW_ONLY"):
+            raise ValueError("PROMOTION_ELIGIBILITY_NOT_DERIVED_FROM_ADMISSION_CLASS")
         if self.direction_authority and self.bound_structural_proof_id is None:
             raise ValueError("AUTHORITATIVE_THESIS_REQUIRES_BOUND_PROOF")
         if (self.bound_structural_proof_id is None) != (self.bound_structural_proof_hash is None):
