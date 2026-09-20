@@ -110,11 +110,11 @@ class S1B:
     lineage: Any
 
 
-def _episode(*moves: tuple[int, str], confirmed_flip_at: int | None = None):
+def _episode(*moves: tuple[int, str], confirmed_flip_at: int | None = None, symbol: str = "EURUSD"):
     """Market episode at START from (seconds, direction) moves; optional confirmed opposite transition."""
 
     events = [
-        _event(i, 0, event_time=START + timedelta(seconds=s), direction=d, deployment_id=f"deploy-{i}")
+        _event(i, 0, symbol=symbol, event_time=START + timedelta(seconds=s), direction=d, deployment_id=f"deploy-{i}")
         for i, (s, d) in enumerate(moves or ((0, "BUY"), (120, "BUY")))
     ]
     if confirmed_flip_at is not None:
@@ -122,6 +122,7 @@ def _episode(*moves: tuple[int, str], confirmed_flip_at: int | None = None):
             _event(
                 99,
                 0,
+                symbol=symbol,
                 event_time=START + timedelta(seconds=confirmed_flip_at),
                 direction="SELL",
                 confirmed_opposite_transition_evidence_id="formal-flip-1",
@@ -140,6 +141,7 @@ def _open_episode(reduction, at: datetime):
 def _canonical_s1b(
     direction: str = "BUY",
     *,
+    symbol: str = "EURUSD",
     events: Any = None,
     safety: Any = None,
     reduction: Any = None,
@@ -149,14 +151,14 @@ def _canonical_s1b(
     """Real #492 lineage → coverage EVALUATED → CANONICAL_RAW admission → lifecycle → receipt (None if not granted)."""
 
     lineage = _pair_admission(
-        events or [_raw(0, direction=direction), _raw(300, direction=direction)], safety=safety
-    ).lineages["EURUSD"][-1]
+        events or [_raw(0, symbol, direction), _raw(300, symbol, direction)], safety=safety
+    ).lineages[symbol][-1]
     if lineage.decision != "GRANTED" or lineage.granted_at is None:
         return None
     evaluation = PairAdmissionEvaluationRefV31(
         admission_evaluation_id=uuid5(_PROJECTION_NS, lineage.lineage_id),
         raw_authority_block_id=lineage.lineage_id,
-        canonical_symbol="EURUSD",
+        canonical_symbol=symbol,
         decision="GRANTED",
         reason_code=lineage.reason_code,
         evaluated_at=lineage.granted_at,
@@ -166,14 +168,14 @@ def _canonical_s1b(
     window_end = lineage.granted_at + timedelta(seconds=60)
     coverage = classify_pair_admission_coverage_v31(
         observation=RawAuthorityCoverageObservationV31(
-            canonical_symbol="EURUSD",
+            canonical_symbol=symbol,
             observed_window_start_utc=START,
             observed_window_end_utc=window_end,
             raw_authority_coverage_status="COMPLETE",
             coverage_evidence_hash=canonical_sha256_v31(["coverage", lineage.lineage_id]),
             block=RawAuthorityBlockRefV31(
                 raw_authority_block_id=lineage.lineage_id,
-                canonical_symbol="EURUSD",
+                canonical_symbol=symbol,
                 block_started_at=lineage.opened_at,
                 eligible=True,
                 eligible_at=lineage.granted_at,
@@ -187,7 +189,7 @@ def _canonical_s1b(
     ).coverage
     assert coverage is not None
     at = decided_at or window_end
-    reduction = reduction or _episode((0, direction), (120, direction))
+    reduction = reduction or _episode((0, direction), (120, direction), symbol=symbol)
     episode, state = _open_episode(reduction, at)
     admission = evaluate_canonical_raw_admission_v31(
         episode=episode,
@@ -248,14 +250,14 @@ def _build(
     )
 
 
-def _advisory_s1b(reduction: Any = None, ledger: Any = None) -> S1B:
+def _advisory_s1b(reduction: Any = None, ledger: Any = None, *, symbol: str = "EURUSD") -> S1B:
     """MATURE_ADVISORY admission at START+360 (no PairAdmission) → lifecycle → receipt."""
 
     at = START + timedelta(seconds=360)
-    reduction = reduction or _episode()
+    reduction = reduction or _episode(symbol=symbol)
     episode, state = _open_episode(reduction, at)
     window = RawAuthorityCoverageObservationV31(
-        canonical_symbol="EURUSD",
+        canonical_symbol=symbol,
         observed_window_start_utc=START,
         observed_window_end_utc=at,
         raw_authority_coverage_status="COMPLETE",
