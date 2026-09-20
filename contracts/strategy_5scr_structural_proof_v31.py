@@ -8,21 +8,30 @@ It is STRUCTURAL_EVIDENCE_ONLY: it never creates a thesis, never carries legal d
 Identity is material-only (no observation, evaluation or validity time). The existing ``OrderedProofEvidenceV31``
 is unchanged and will be emitted as a thesis-bound projection by gap #11.
 First increment: CONTINUATION only; counter-pressure proof is NOT_IMPLEMENTED_BY_DESIGN.
+
+Requalified on #504 (2026-09-20): the lifecycle is the MarketEpisode-rooted one of the S1B lineage. The identity
+tuple is unchanged and stays material-only: no admission id, no admission class, no S1B receipt hash and no
+revision ever enters it, so an advisory-to-canonical authority upgrade over the same closed candles reproduces
+exactly the same proof. Lineage and progression context live on the evaluation and the lifecycle, not here.
 """
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Literal
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from contracts.strategy_5scr_admission_identity_v31 import IDENTITY_ENCODING_VERSION
 from contracts.strategy_5scr_directional_thesis_v1 import ClosedCandleAuthorityRefV1
-from contracts.strategy_5scr_pressure_hypothesis_v31 import canonical_sha256_v31
+from contracts.strategy_5scr_identity_v31 import (
+    IDENTITY_ENCODING_VERSION,
+    canonical_sha256_v31,
+    identity_uuid_v31,
+)
+from contracts.strategy_5scr_market_episode_v31 import strategy_lifecycle_id_from_episode_v31
 
+STRUCTURAL_PROOF_V31_RULE_VERSION = "5scr.structural-proof.v31.v2"
 V31_STRUCTURAL_PROOF_NAMESPACE = UUID("ad37bf4a-15d0-4c34-94f8-38fa0aad3e2c")
 Direction = Literal["BUY", "SELL"]
 CompletionKind = Literal["ACCEPTANCE", "FAILED_RECLAIM", "RETEST"]  # SSOT §14.3 wording
@@ -78,11 +87,15 @@ def structural_proof_id_v31(
     m15_completion_kind: str,
     pattern_registry_hash: str,
 ) -> UUID:
-    """Material tuple only: re-observing the same closed candles later yields the same id."""
+    """Material tuple only: re-observing the same closed candles later yields the same id.
 
-    name = json.dumps(
+    Deliberately absent: admission id, admission class, admission revision, S1B receipt hash, observation time and
+    any clock. Structural evidence is what the market did, not who was allowed to look at it.
+    """
+
+    return identity_uuid_v31(
+        V31_STRUCTURAL_PROOF_NAMESPACE,
         [
-            IDENTITY_ENCODING_VERSION,
             str(strategy_lifecycle_id),
             str(context_epoch_id),
             proof_direction,
@@ -94,9 +107,7 @@ def structural_proof_id_v31(
             m15_completion_kind,
             pattern_registry_hash,
         ],
-        separators=(",", ":"),
     )
-    return uuid5(V31_STRUCTURAL_PROOF_NAMESPACE, name)
 
 
 class StructuralLevelEvidenceV31(_Strict):
@@ -108,9 +119,11 @@ class StructuralLevelEvidenceV31(_Strict):
 
 
 class StructuralProofEvidenceV31(_Strict):
+    rule_version: Literal["5scr.structural-proof.v31.v2"] = STRUCTURAL_PROOF_V31_RULE_VERSION
     identity_encoding_version: Literal["v31.native-identity.v1"] = IDENTITY_ENCODING_VERSION
     proof_id: UUID
     strategy_lifecycle_id: UUID
+    market_episode_id: UUID  # section 8.1 provenance; audit only, never part of the identity tuple
     context_epoch_id: UUID
     context_route_evaluation_id: UUID
     context_route_receipt_hash: str = Field(pattern=_DIGEST)
@@ -173,6 +186,8 @@ class StructuralProofEvidenceV31(_Strict):
         )
         if self.proof_id != expected_id:
             raise ValueError("STRUCTURAL_PROOF_ID_NOT_DERIVED")
+        if self.strategy_lifecycle_id != strategy_lifecycle_id_from_episode_v31(self.market_episode_id):
+            raise ValueError("STRUCTURAL_PROOF_LIFECYCLE_NOT_EPISODE_ROOTED")
         if self.material_evidence_hash != structural_material_hash_v31(self):
             raise ValueError("STRUCTURAL_PROOF_MATERIAL_HASH_MISMATCH")
         return self
@@ -185,6 +200,7 @@ def structural_material_hash_v31(proof: StructuralProofEvidenceV31) -> str:
 
 
 __all__ = [
+    "STRUCTURAL_PROOF_V31_RULE_VERSION",
     "V31_STRUCTURAL_PROOF_NAMESPACE",
     "StructuralLevelEvidenceV31",
     "StructuralPatternRegistryV31",
