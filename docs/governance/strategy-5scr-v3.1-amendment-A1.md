@@ -151,19 +151,21 @@ v3 line 55 and §11 steps 3 and 5. Everything these sections define is genuinely
     **derivation label**: never an admission class, never an authority, never a containment flag.
   - **As-of bound:** the record carries `observed_through_utc`. No observation whose close time is after it may
     contribute (§11.5 `FUTURE_LEAKAGE_BLOCK`). This makes the range replay-deterministic.
-  - **Closure (PROPOSED — requires owner ratification):** the window closes when its market episode closes
-    (§8.3), and `ended_at` is that episode close. Derivation basis: §16.1 scopes the range to the *pressure
-    episode*.
-  - **Reopening: forbidden.** A closed window is never reopened and never revived, mirroring the no-resurrection
-    discipline already recorded for context epochs (A1-03) and theses (A1-08).
+  - **Closure authority (NORMATIVE, owner decision 2026-09-21):** the **MarketEpisode close is the sole
+    closure authority**. `ended_at` is that episode close. Derivation basis: §16.1 scopes the range to the
+    *pressure episode*.
+  - **Lifecycle supersession does NOT close the window** (owner decision 2026-09-21). A superseded lifecycle
+    stops progressing; the material price evidence of its episode keeps its own window.
+  - **Raw-block termination alone does NOT close the window** (owner decision 2026-09-21). The block bounds
+    where a canonical window *starts* (§8.5); it does not bound where it ends.
+  - **Reopening a closed canonical range: false** (owner decision 2026-09-21). A closed window is never reopened
+    and never revived, mirroring the no-resurrection discipline already recorded for context epochs (A1-03) and
+    theses (A1-08).
   - **Late evidence:** while the window is open it is appended. After closure it is **rejected** and recorded as a
     permanent gap; it never mutates a closed range.
-  - **OPEN-1 (not derivable):** does lifecycle supersession close the window? (a) yes, at supersession;
-    (b) no, only episode close governs. **Owner must choose.**
-  - **OPEN-2 (not derivable):** does raw-block termination close the window of a canonical lineage? (a) yes;
-    (b) no, the episode governs. **Owner must choose.**
 - **Reason:** `ended_at` determines the evidence window, and therefore `source_price_ids`, the `low`/`high`
-  universe, coverage and `evidence_hash`. It cannot be an implementation detail.
+  universe, coverage and `evidence_hash`. It cannot be an implementation detail. A single closure
+  authority also keeps one episode from producing two differently-bounded ranges.
 - **shadow_required:** true · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A1-10 · GAP_FILL · A1.2 Material range derivation
@@ -185,6 +187,12 @@ v3 line 55 and §11 steps 3 and 5. Everything these sections define is genuinely
   5. **Inside the window:** `started_at <= open_time`, and `close_time <= ended_at` once the window is closed.
   6. **Deduplicated:** unique by candle evidence id. Two distinct evidence ids for the same period are a
      data-quality incident: that period becomes a **gap**, never a silent pick.
+  7. **Period-aligned (NORMATIVE, owner decision 2026-09-21 — G2/G6 cardinality consistency):** every entry of
+     `source_price_ids` resolves to **exactly one** expected canonical period, and
+     `len(source_price_ids) == len(qualified set)`. Because A1.3 evaluates coverage **per canonical period**,
+     a flat list of arbitrary raw tick ids would make coverage uncomputable from the record alone. Tick-level
+     evidence never appears as a free list: it may contribute only through the canonical period it aggregates
+     into, and that aggregation is itself authoritative evidence carrying its own id.
 
   Only then:
   - `low = min(observation.low)` and `high = max(observation.high)` over the qualifying set — **wicks, not
@@ -221,6 +229,10 @@ v3 line 55 and §11 steps 3 and 5. Everything these sections define is genuinely
   ```
 
   Precedence, highest first: `QUARANTINED` > `MISSING` > `PARTIAL` > `COMPLETE`.
+
+  Coverage is computed **per canonical period**, so it is well defined only against the period-aligned
+  evidence cardinality of A1.2 clause 7. A record whose `source_price_ids` cannot be resolved one-to-one
+  to expected periods has an **undecidable** coverage status and is rejected, never defaulted.
 
   - **No percentage threshold is introduced.** Coverage is decided by set completeness against the provider
     calendar, not by an invented ratio.
@@ -293,8 +305,11 @@ These are recorded for traceability. They are **not** amendments and grant nothi
   This is the one place in the V31 lineage where identity legitimately moves on upgrade.
 - **G2 · `source_price_ids` representation — implementation GAP_FILL (Route 2).** The canonical contract keeps
   them as **opaque source price evidence references** to the authoritative price evidence that formed the range.
-  Implementations may namespace them (`candle:<id>`, `tick:<id>`). No new market semantics is attached, and the
-  element type is not narrowed until authority narrows it.
+  Implementations may namespace them (`candle:<id>`). No new market semantics is attached, and the element type
+  is not narrowed further until authority narrows it.
+  **The cardinality is no longer an annex matter:** A1.2 clause 7 makes period alignment normative, so a
+  reference must resolve to exactly one canonical period. `tick:<id>` is therefore not a legal top-level
+  element; tick evidence enters only through the canonical period that aggregates it.
 - **G7 · ExecutionBox consumption — DEFERRED to 12C.** No source states what the box takes from the range.
   `PressureRange` is producer-only. 12C may not begin implementation until G7 is resolved.
 - **G8 · `material_pressure_range_hash` — INTENTIONALLY NOT CREATED.** Authority declares only `evidence_hash`.
