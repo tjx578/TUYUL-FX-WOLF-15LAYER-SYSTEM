@@ -7,6 +7,12 @@ proof, the thesis record and its transition chain, then compares byte-exact. The
 projection time (replayable). A later SUPERSEDED/INVALIDATED/EXPIRED is not visible here; current-status
 revalidation at downstream use is a separate subcontract (P3). Usable downstream =
 schema-valid + native-verifier-valid + thesis-current-status-valid.
+
+Requalified on #504 (2026-09-20): a projection may be built from EITHER admission class, because it is
+evidence, not permission. The containment of the lineage it came from (promotion eligibility, risk handoff,
+admission class) is reported beside the projection and re-reported by the verifier, so no consumer can read
+the transport shape alone and assume canonical risk or execution eligibility. None of it enters
+``ordered_proof_hash``: an authority upgrade must never rewrite a historical projection.
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ from contracts.strategy_5scr_directional_thesis_v31 import (
     DirectionalThesisTransitionV31,
     DirectionalThesisV31,
     direction_authority_v31,
+    thesis_record_hash_v31,
 )
 from contracts.strategy_5scr_ordered_proof_projection_v31 import (
     native_h1_receipt_hash_v31,
@@ -34,10 +41,39 @@ from contracts.strategy_5scr_structural_proof_v31 import StructuralProofEvidence
 
 
 @dataclass(frozen=True)
+class ProjectionContainmentV31:
+    """What the projected evidence is allowed to mean downstream. Derived from the thesis record; grants nothing.
+
+    It deliberately lives outside ``OrderedProofEvidenceV31`` and outside ``ordered_proof_hash``: the transport
+    shape is historical evidence, while containment is read from the lineage the evidence came from.
+    """
+
+    analysis_admission_class: Literal["CANONICAL_RAW", "MATURE_ADVISORY"]
+    promotion_eligibility: Literal["CANONICAL_RISK_PATH", "SHADOW_ONLY"]
+    risk_handoff_allowed: bool
+    thesis_record_hash: str
+    direction_authority: bool  # ANALYSIS direction authority, from the thesis state as of the projection time
+    risk_authorization: Literal[False] = False
+    execution_authority: Literal[False] = False
+    broker_command_authority: Literal[False] = False
+
+
+def _containment(thesis: DirectionalThesisV31, *, direction_authority: bool) -> ProjectionContainmentV31:
+    return ProjectionContainmentV31(
+        analysis_admission_class=thesis.analysis_admission_class,
+        promotion_eligibility=thesis.promotion_eligibility,
+        risk_handoff_allowed=thesis.risk_handoff_allowed,
+        thesis_record_hash=thesis_record_hash_v31(thesis),
+        direction_authority=direction_authority,
+    )
+
+
+@dataclass(frozen=True)
 class NativeOrderedProofProjectionV31:
     outcome: Literal["PROJECTED", "NOT_PROJECTED"]
     reason_code: str
     projection: OrderedProofEvidenceV31 | None = None
+    containment: ProjectionContainmentV31 | None = None
 
 
 def _no(reason: str) -> NativeOrderedProofProjectionV31:
@@ -149,13 +185,16 @@ def project_ordered_proof_v31(
         )
     except ValidationError:
         return _no("PROJECTION_SHAPE_INVALID")
-    return NativeOrderedProofProjectionV31("PROJECTED", "ORDERED_PROOF_PROJECTED", projection)
+    return NativeOrderedProofProjectionV31(
+        "PROJECTED", "ORDERED_PROOF_PROJECTED", projection, _containment(thesis, direction_authority=True)
+    )
 
 
 @dataclass(frozen=True)
 class NativeOrderedProofVerificationV31:
     valid: bool
     reason_code: str
+    containment: ProjectionContainmentV31 | None = None
 
 
 class NativeOrderedProofVerifierV31:
@@ -172,7 +211,15 @@ class NativeOrderedProofVerifierV31:
         proof: StructuralProofEvidenceV31,
         thesis: DirectionalThesisV31,
         transitions: tuple[DirectionalThesisTransitionV31, ...],
+        expected_thesis_record_hash: str | None = None,
     ) -> NativeOrderedProofVerificationV31:
+        """``expected_thesis_record_hash`` pins the EXACT thesis record, not merely its id.
+
+        The containment fields are absent from ``ordered_proof_hash`` by design, so two thesis records with the
+        same id but different promotion eligibility would both re-derive the same projection. A consumer that
+        stored the record hash beside the projection can therefore prove which lineage object it verified against.
+        """
+
         try:
             projection = OrderedProofEvidenceV31.model_validate(projection.model_dump())
         except ValidationError:
@@ -182,13 +229,21 @@ class NativeOrderedProofVerifierV31:
         )
         if derived.projection is None:
             return NativeOrderedProofVerificationV31(False, derived.reason_code)
-        if ordered_proof_hash_v31(derived.projection) != ordered_proof_hash_v31(projection):
+        if derived.projection != projection or ordered_proof_hash_v31(derived.projection) != ordered_proof_hash_v31(
+            projection
+        ):
+            # Field-by-field AND by hash: the record comparison does not depend on what the transport hash covers.
             return NativeOrderedProofVerificationV31(False, "PROJECTION_NOT_NATIVELY_DERIVED")
-        return NativeOrderedProofVerificationV31(True, "NATIVE_PROJECTION_VERIFIED")
+        containment = derived.containment
+        assert containment is not None
+        if expected_thesis_record_hash is not None and expected_thesis_record_hash != containment.thesis_record_hash:
+            return NativeOrderedProofVerificationV31(False, "THESIS_RECORD_HASH_MISMATCH", containment)
+        return NativeOrderedProofVerificationV31(True, "NATIVE_PROJECTION_VERIFIED", containment)
 
 
 __all__ = [
     "NativeOrderedProofProjectionV31",
+    "ProjectionContainmentV31",
     "NativeOrderedProofVerificationV31",
     "NativeOrderedProofVerifierV31",
     "project_ordered_proof_v31",

@@ -11,16 +11,18 @@ evidence authority stays with ``StructuralProofEvidenceV31.proof_id`` and direct
 
 Identity hierarchy: proof_id = evidence identity; thesis_id = direction-authority identity;
 ordered_proof_hash = projection-instance integrity (it includes evaluated_at, so it is never an identity key).
+
+Requalified on #504 (2026-09-20): nothing here reads an admission class. Containment (promotion eligibility,
+risk handoff) is provenance that travels BESIDE the projection, never inside a component id, a receipt hash or
+the ordered proof hash - otherwise an authority upgrade would silently rewrite historical projections.
 """
 
 from __future__ import annotations
 
-import json
 from typing import Literal
-from uuid import UUID, uuid5
+from uuid import UUID
 
-from contracts.strategy_5scr_admission_identity_v31 import IDENTITY_ENCODING_VERSION
-from contracts.strategy_5scr_pressure_hypothesis_v31 import canonical_sha256_v31
+from contracts.strategy_5scr_identity_v31 import canonical_sha256_v31, identity_uuid_v31
 from contracts.strategy_5scr_structural_proof_v31 import StructuralProofEvidenceV31
 
 V31_PROOF_COMPONENT_NAMESPACE = UUID("8a20958f-83aa-4112-a434-7fb9182addd0")
@@ -41,10 +43,12 @@ def native_projection_policy_hash_v31(structural_pattern_registry_hash: str) -> 
 
 
 def proof_component_id_v31(proof_id: UUID, component: ProofComponent) -> UUID:
-    """P4: points into the SAME proof bundle; the authoritative identity remains ``proof_id``."""
+    """P4: points into the SAME proof bundle; the authoritative identity remains ``proof_id``.
 
-    name = json.dumps([IDENTITY_ENCODING_VERSION, str(proof_id), component], separators=(",", ":"))
-    return uuid5(V31_PROOF_COMPONENT_NAMESPACE, name)
+    Material only: the admission class, the lifecycle's current authority and the thesis clock play no part.
+    """
+
+    return identity_uuid_v31(V31_PROOF_COMPONENT_NAMESPACE, [str(proof_id), component])
 
 
 def _material_header(proof: StructuralProofEvidenceV31, component: ProofComponent) -> dict[str, object]:
