@@ -1,14 +1,24 @@
-"""Gap #9 acceptance: ContextEpochV31 + ContextRouteEvaluationV31 + positive receipt projection (Option A)."""
+"""Gap #9 acceptance: ContextEpochV31 + ContextRouteEvaluationV31 + positive receipt projection (Option A).
+
+Requalified on #504: every fixture runs on a real #492 -> S1B (#501-#503) lineage, so the lifecycle under test is
+the MarketEpisode-rooted one and both admission classes are exercised.
+"""
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import inspect
+import json
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
+from uuid import uuid5
 
 import pytest
 
 from analysis.strategy_5scr_context_epoch_v31 import (
+    context_progression_allowed_v31,
     evaluate_context_route_v31,
     hypothesis_transition_for_evaluation_v31,
     project_context_route_receipt_v31,
@@ -19,7 +29,10 @@ from analysis.strategy_5scr_pressure_hypothesis_v31 import (
     admit_hypothesis_v31,
     make_transition_v31,
 )
+from contracts.strategy_5scr_analysis_lifecycle_v31 import AnalysisLifecycleV31
 from contracts.strategy_5scr_context_epoch_v31 import (
+    V31_CONTEXT_EPOCH_NAMESPACE,
+    V31_CONTEXT_ROUTE_EVALUATION_NAMESPACE,
     ContextClockPolicyV31,
     ContextEpochV31,
     ContextRouteEvaluationV31,
@@ -27,6 +40,8 @@ from contracts.strategy_5scr_context_epoch_v31 import (
     DirectionDomainRegistryV31,
     LocationRoutePolicyV31,
     RouteRuleV31,
+    context_epoch_id_v31,
+    context_route_evaluation_id_v31,
     with_hash,
 )
 from contracts.strategy_5scr_context_route_v31 import (
@@ -34,8 +49,17 @@ from contracts.strategy_5scr_context_route_v31 import (
     MaterialContextV31,
     context_route_receipt_hash_v31,
 )
-from contracts.strategy_5scr_pressure_hypothesis_v31 import canonical_sha256_v31
-from tests.test_strategy_5scr_pressure_hypothesis_v31 import DECISION, _build
+from contracts.strategy_5scr_identity_v31 import canonical_sha256_v31
+from contracts.strategy_5scr_market_episode_v31 import strategy_lifecycle_id_from_episode_v31
+from tests.test_strategy_5scr_per_symbol_admission import _safety
+from tests.test_strategy_5scr_pressure_hypothesis_v31 import (
+    DECISION,
+    _advisory_s1b,
+    _build,
+    _canonical_s1b,
+    _episode,
+    _hypothesis_from,
+)
 
 
 def _digest(label: str) -> str:
@@ -106,10 +130,37 @@ CLOCK = with_hash(
 )
 
 
+def _s1b():
+    """The canonical S1B lineage that #494's default hypothesis is built on: same episode, same lifecycle."""
+
+    s1b = _canonical_s1b()
+    assert s1b is not None
+    return s1b
+
+
 def _hypothesis():
     record = _build().hypothesis
     assert record is not None and record.direction == "BUY"
     return record
+
+
+def _relifecycle(lifecycle: AnalysisLifecycleV31, **overrides: Any) -> AnalysisLifecycleV31:
+    """Rebuild a lifecycle view with a different derived state, keeping the material hash honest."""
+
+    body = {**lifecycle.model_dump(mode="json"), **overrides}
+    body["material_state_hash"] = canonical_sha256_v31({k: v for k, v in body.items() if k != "material_state_hash"})
+    return AnalysisLifecycleV31.model_validate(body)
+
+
+def _foreign_lifecycle(lifecycle: AnalysisLifecycleV31) -> AnalysisLifecycleV31:
+    """A lifecycle rooted in a DIFFERENT market episode, derived exactly as section 8.1 requires."""
+
+    episode = uuid5(lifecycle.market_episode_id, "a-different-market-episode")
+    return _relifecycle(
+        lifecycle,
+        market_episode_id=str(episode),
+        strategy_lifecycle_id=str(strategy_lifecycle_id_from_episode_v31(episode)),
+    )
 
 
 def _epoch(
@@ -120,11 +171,10 @@ def _epoch(
     at: Any = DECISION,
     registry: Any = REGISTRY,
     clock: Any = CLOCK,
+    lifecycle: Any = None,
 ) -> Any:
-    hypothesis = _hypothesis()
     return resolve_context_epoch_v31(
-        strategy_lifecycle_id=hypothesis.strategy_lifecycle_id,
-        canonical_symbol="EURUSD",
+        lifecycle=_s1b().lifecycle if lifecycle is None else lifecycle,
         material=material or _material(),
         source_closed_through=DECISION - timedelta(seconds=60),
         registry=registry,
@@ -148,8 +198,10 @@ def _evaluate(
     policy: Any = POLICY,
     at: Any = DECISION,
     invalidate: str | None = None,
+    lifecycle: Any = None,
 ) -> Any:
     return evaluate_context_route_v31(
+        lifecycle=_s1b().lifecycle if lifecycle is None else lifecycle,
         epoch=epoch,
         evaluated_direction=direction,
         hypothesis=_hypothesis() if hypothesis == "auto" else hypothesis,
@@ -218,6 +270,7 @@ def test_stale_quote_defers_without_receipt_and_leaves_epoch_unchanged():
     evaluation = decision.evaluation
     assert evaluation is not None
     assert (evaluation.outcome, evaluation.defer_reason, evaluation.selected_route) == ("DEFER", "PRICE_QUALITY", None)
+    assert evaluation.outcome != "BLOCK_ROUTE" and evaluation.context_alignment == "ALIGNED"
     assert project_context_route_receipt_v31(epoch, evaluation) is None
     assert _epoch(previous=epoch).epoch == epoch
     intent = hypothesis_transition_for_evaluation_v31(evaluation)
@@ -350,3 +403,186 @@ def test_records_reject_forged_identity_and_route_without_permitting_outcome():
     forbidden = {"spread", "volume", "lot", "risk", "stop_loss", "take_profit", "final_direction"}
     assert not forbidden & set(ContextEpochV31.model_fields)
     assert not forbidden & set(ContextRouteEvaluationV31.model_fields)
+
+
+# --- requalification acceptance on the #504 lineage --------------------------------------------------------------
+
+
+def test_the_epoch_lifecycle_comes_from_the_s1b_lineage_and_is_episode_rooted():
+    s1b = _s1b()
+    epoch = _epoch().epoch
+    assert epoch is not None
+    assert epoch.strategy_lifecycle_id == s1b.lifecycle.strategy_lifecycle_id == s1b.receipt.strategy_lifecycle_id
+    assert epoch.market_episode_id == s1b.episode.market_episode_id
+    assert epoch.strategy_lifecycle_id == strategy_lifecycle_id_from_episode_v31(epoch.market_episode_id)
+    assert epoch.canonical_symbol == s1b.lifecycle.symbol
+    # There is no way to hand a free lifecycle (or symbol) to either producer any more.
+    for producer in (resolve_context_epoch_v31, evaluate_context_route_v31):
+        names = set(inspect.signature(producer).parameters)
+        assert "lifecycle" in names and not names & {"strategy_lifecycle_id", "canonical_symbol"}
+    evaluation = _evaluate(epoch).evaluation
+    assert evaluation is not None and evaluation.market_episode_id == epoch.market_episode_id
+
+
+def test_a_mature_advisory_hypothesis_is_evaluable_and_carries_no_admission_class():
+    advisory = _advisory_s1b()
+    hypothesis = _hypothesis_from(advisory).hypothesis
+    assert hypothesis is not None and hypothesis.analysis_admission_class == "MATURE_ADVISORY"
+    epoch = _epoch(lifecycle=advisory.lifecycle).epoch
+    assert epoch is not None
+    decision = _evaluate(epoch, hypothesis=hypothesis, lifecycle=advisory.lifecycle)
+    evaluation = decision.evaluation
+    assert evaluation is not None and evaluation.outcome == "ALIGN"
+    assert project_context_route_receipt_v31(epoch, evaluation) is not None  # analysis handoff, never a risk handoff
+    assert (evaluation.direction_authority, evaluation.final_signal_allowed, evaluation.execution_command_allowed) == (
+        False,
+        False,
+        False,
+    )
+    # The class is neither stored nor identity-bearing, so it can never silently upgrade a route.
+    blob = str(epoch.model_dump(mode="json")) + str(evaluation.model_dump(mode="json"))
+    assert "MATURE_ADVISORY" not in blob and "CANONICAL_RAW" not in blob
+    assert not {"analysis_admission_class", "strategy_analysis_admission_id", "admission_receipt_hash"} & (
+        set(ContextEpochV31.model_fields) | set(ContextRouteEvaluationV31.model_fields)
+    )
+
+
+def test_authority_upgrade_keeps_the_same_epoch_and_evaluation_and_only_re_evaluates_progression():
+    reduction = _episode()
+    advisory = _advisory_s1b(reduction)
+    hypothesis = _hypothesis_from(advisory).hypothesis
+    assert hypothesis is not None
+    epoch_before = _epoch(lifecycle=advisory.lifecycle).epoch
+    evaluation_before = _evaluate(epoch_before, hypothesis=hypothesis, lifecycle=advisory.lifecycle).evaluation
+    assert epoch_before is not None and evaluation_before is not None
+
+    canonical = _canonical_s1b(reduction=reduction, ledger=advisory.ledger, decided_at=DECISION)
+    assert canonical is not None
+    assert canonical.lifecycle.strategy_lifecycle_id == advisory.lifecycle.strategy_lifecycle_id  # SAME lifecycle L
+    assert canonical.lifecycle.highest_analysis_authority == "CANONICAL_RAW"
+    upgraded_hypothesis = _hypothesis_from(canonical).hypothesis
+    assert upgraded_hypothesis is not None
+    assert upgraded_hypothesis.pressure_hypothesis_id == hypothesis.pressure_hypothesis_id  # same material evidence
+
+    # Same material context after the upgrade: the epoch is REUSED, not re-created and not superseded.
+    reused = _epoch(previous=epoch_before, lifecycle=canonical.lifecycle)
+    assert (reused.outcome, reused.reason_code) == ("REUSED", "MATERIAL_CONTEXT_UNCHANGED")
+    assert reused.epoch == epoch_before and reused.termination is None
+    evaluation_after = _evaluate(epoch_before, hypothesis=upgraded_hypothesis, lifecycle=canonical.lifecycle).evaluation
+    assert evaluation_after is not None and evaluation_after == evaluation_before  # byte-identical record
+
+    # Only genuinely different material context creates a new epoch.
+    moved = _epoch(
+        _material(h4_structure="H4_RANGE"), previous=epoch_before, lifecycle=canonical.lifecycle, at=DECISION
+    )
+    assert moved.outcome == "CREATED" and moved.epoch is not None
+    assert moved.epoch.context_epoch_id != epoch_before.context_epoch_id
+    assert moved.epoch.strategy_lifecycle_id == epoch_before.strategy_lifecycle_id
+
+
+def test_context_modules_never_read_pair_admission_directly():
+    forbidden_modules = ("pair_admission", "admission_identity")
+    for path in (
+        "contracts/strategy_5scr_context_epoch_v31.py",
+        "analysis/strategy_5scr_context_epoch_v31.py",
+    ):
+        tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                assert not any(token in module for token in forbidden_modules), f"{path} imports {module}"
+                names = {alias.name for alias in node.names}
+                assert not {n for n in names if "PairAdmission" in n or "pair_admission" in n}, f"{path}: {names}"
+                if module.endswith("strategy_5scr_per_symbol_admission"):
+                    # Only the global safety overlay may come from the #492 module; nothing pair-local.
+                    assert names == {"GlobalSafetyStateV1"}, f"{path}: {names}"
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not any(token in alias.name for token in forbidden_modules)
+
+
+def test_a_global_veto_is_an_overlay_and_never_touches_the_epoch_or_the_evaluation():
+    epoch = _epoch().epoch
+    evaluation = _evaluate(epoch).evaluation
+    assert epoch is not None and evaluation is not None and evaluation.outcome == "ALIGN"
+    allowed, vetoes = context_progression_allowed_v31(evaluation, _safety())
+    assert (allowed, vetoes) == (True, ())
+    stopped, reasons = context_progression_allowed_v31(evaluation, _safety(kill_switch_active=True))
+    assert stopped is False and reasons == ("KILL_SWITCH_ACTIVE",)
+    # Re-resolving and re-evaluating under the veto yields the very same records: history is untouched.
+    assert _epoch(previous=epoch).epoch == epoch
+    assert _evaluate(epoch).evaluation == evaluation
+    assert project_context_route_receipt_v31(epoch, evaluation) is not None
+
+
+def test_epoch_and_lifecycle_must_bind_exactly_and_a_terminal_lifecycle_stops_analysis():
+    s1b = _s1b()
+    epoch = _epoch().epoch
+    assert epoch is not None
+    other = _foreign_lifecycle(s1b.lifecycle)
+    assert other.strategy_lifecycle_id != s1b.lifecycle.strategy_lifecycle_id
+    assert _evaluate(epoch, lifecycle=other).reason_code == "EPOCH_LIFECYCLE_MISMATCH"
+    foreign_epoch = _epoch(lifecycle=other).epoch
+    assert foreign_epoch is not None
+    assert _epoch(previous=foreign_epoch).reason_code == "PREVIOUS_EPOCH_LIFECYCLE_MISMATCH"
+    terminal = _relifecycle(s1b.lifecycle, state="INVALIDATED")
+    assert _epoch(lifecycle=terminal).reason_code == "LIFECYCLE_TERMINAL"
+    assert _evaluate(epoch, lifecycle=terminal).reason_code == "LIFECYCLE_TERMINAL"
+
+
+def test_records_reject_an_episode_binding_that_is_not_the_lifecycle_root():
+    epoch = _epoch().epoch
+    evaluation = _evaluate(epoch).evaluation
+    assert epoch is not None and evaluation is not None
+    stranger = _foreign_lifecycle(_s1b().lifecycle).market_episode_id
+    with pytest.raises(ValueError, match="CONTEXT_EPOCH_LIFECYCLE_NOT_EPISODE_ROOTED"):
+        ContextEpochV31.model_validate({**epoch.model_dump(), "market_episode_id": stranger})
+    with pytest.raises(ValueError, match="CONTEXT_EVALUATION_LIFECYCLE_NOT_EPISODE_ROOTED"):
+        ContextRouteEvaluationV31.model_validate({**evaluation.model_dump(), "market_episode_id": stranger})
+    assert (epoch.rule_version, evaluation.rule_version) == (
+        "5scr.context-epoch.v31.v2",
+        "5scr.context-route-evaluation.v31.v2",
+    )
+
+
+def test_context_identity_formulas_are_pinned_and_admission_free():
+    """Both tuples are spelled out here. A silently widened identity (an admission class, a clock, a policy
+    version) changes every id uniformly and would otherwise pass every behavioural test in this suite."""
+
+    s1b = _s1b()
+    epoch = _epoch().epoch
+    evaluation = _evaluate(epoch).evaluation
+    assert epoch is not None and evaluation is not None
+
+    epoch_name = json.dumps(
+        [
+            "v31.native-identity.v1",
+            str(s1b.lifecycle.strategy_lifecycle_id),
+            epoch.material_context_hash,
+        ],
+        separators=(",", ":"),
+    )
+    assert epoch.context_epoch_id == uuid5(V31_CONTEXT_EPOCH_NAMESPACE, epoch_name)
+
+    evaluation_name = json.dumps(
+        [
+            "v31.native-identity.v1",
+            str(epoch.context_epoch_id),
+            "BUY",
+            str(evaluation.pressure_hypothesis_id),
+        ],
+        separators=(",", ":"),
+    )
+    assert evaluation.evaluation_id == uuid5(V31_CONTEXT_ROUTE_EVALUATION_NAMESPACE, evaluation_name)
+    assert context_route_evaluation_id_v31(
+        context_epoch_id=epoch.context_epoch_id, evaluated_direction="BUY", pressure_hypothesis_id=None
+    ) == uuid5(
+        V31_CONTEXT_ROUTE_EVALUATION_NAMESPACE,
+        json.dumps(["v31.native-identity.v1", str(epoch.context_epoch_id), "BUY", None], separators=(",", ":")),
+    )
+    assert (
+        context_epoch_id_v31(
+            strategy_lifecycle_id=s1b.lifecycle.strategy_lifecycle_id, material_context_hash=epoch.material_context_hash
+        )
+        == epoch.context_epoch_id
+    )

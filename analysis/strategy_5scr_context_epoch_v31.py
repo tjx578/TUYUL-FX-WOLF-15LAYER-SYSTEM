@@ -1,5 +1,9 @@
 """Pure gap #9 producer: context epoch resolution, route evaluation and positive receipt projection.
 
+Requalified on #504 (2026-09-20): the lifecycle is an input object from the S1B lineage, not a free UUID. Both
+producers read ``AnalysisLifecycleV31`` for the lifecycle id, the market episode and the symbol, so the caller
+cannot invent a lifecycle and an authority upgrade cannot fork the epoch.
+
 No database, worker, wall clock, broker or quote feed: quote authority, location alignment and material context
 are explicit inputs. No liquidity FSM (§13) and no rejection/resolution logic (§12.6).
 """
@@ -9,8 +13,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
-from uuid import UUID
 
+from analysis.strategy_5scr_pressure_hypothesis_v31 import TERMINAL_LIFECYCLE_STATES_V31
+from contracts.strategy_5scr_analysis_lifecycle_v31 import AnalysisLifecycleV31
 from contracts.strategy_5scr_context_epoch_v31 import (
     ROUTE_PERMITTING_OUTCOMES,
     ContextClockPolicyV31,
@@ -27,7 +32,9 @@ from contracts.strategy_5scr_context_route_v31 import (
     MaterialContextV31,
     material_context_hash_v31,
 )
-from contracts.strategy_5scr_pressure_hypothesis_v31 import PressureDirectionalHypothesisV31, canonical_sha256_v31
+from contracts.strategy_5scr_identity_v31 import canonical_sha256_v31
+from contracts.strategy_5scr_per_symbol_admission import GlobalSafetyStateV1
+from contracts.strategy_5scr_pressure_hypothesis_v31 import PressureDirectionalHypothesisV31
 
 
 @dataclass(frozen=True)
@@ -40,8 +47,7 @@ class EpochResolutionV31:
 
 def resolve_context_epoch_v31(
     *,
-    strategy_lifecycle_id: UUID,
-    canonical_symbol: str,
+    lifecycle: AnalysisLifecycleV31,
     material: MaterialContextV31,
     source_closed_through: datetime,
     registry: DirectionDomainRegistryV31 | None,
@@ -51,19 +57,30 @@ def resolve_context_epoch_v31(
     decision_at: datetime,
 ) -> EpochResolutionV31:
     """Same material + live epoch → REUSED. Changed material → new epoch; the old one is SUPERSEDED.
-    Expired epoch + unchanged material → NOT_CREATED (a terminal epoch is never revived under its own id)."""
+    Expired epoch + unchanged material → NOT_CREATED (a terminal epoch is never revived under its own id).
+
+    The lifecycle, the market episode and the symbol all come from the S1B lineage object. The admission class is
+    never read here, so an advisory-to-canonical upgrade on the same episode resolves to the SAME epoch."""
 
     if registry is None:
         return EpochResolutionV31("NOT_CREATED", "REGISTRY_MISSING")
     if clock_policy is None:
         return EpochResolutionV31("NOT_CREATED", "CONTEXT_CLOCK_POLICY_MISSING")
+    lifecycle = AnalysisLifecycleV31.model_validate(lifecycle.model_dump())
+    if lifecycle.state in TERMINAL_LIFECYCLE_STATES_V31:
+        return EpochResolutionV31("NOT_CREATED", "LIFECYCLE_TERMINAL")
+    strategy_lifecycle_id = lifecycle.strategy_lifecycle_id
+    canonical_symbol = lifecycle.symbol
     material = MaterialContextV31.model_validate(material.model_dump())
     allowed = registry.directions_for(material.primary_direction_domain)
     if allowed is None or not set(material.allowed_directions) <= set(allowed):
         return EpochResolutionV31("NOT_CREATED", "DIRECTION_DOMAIN_NOT_IN_REGISTRY")
     material_hash = material_context_hash_v31(canonical_symbol, material)
     termination = None
-    if previous is not None and previous.strategy_lifecycle_id == strategy_lifecycle_id:
+    if previous is not None and previous.strategy_lifecycle_id != strategy_lifecycle_id:
+        # Fail closed: a foreign epoch is never silently ignored, because ignoring it would hide a supersession.
+        return EpochResolutionV31("NOT_CREATED", "PREVIOUS_EPOCH_LIFECYCLE_MISMATCH")
+    if previous is not None:
         expired = decision_at >= previous.valid_until
         if previous.material_context_hash == material_hash:
             if previous_terminated or expired:
@@ -83,6 +100,7 @@ def resolve_context_epoch_v31(
             strategy_lifecycle_id=strategy_lifecycle_id, material_context_hash=material_hash
         ),
         strategy_lifecycle_id=strategy_lifecycle_id,
+        market_episode_id=lifecycle.market_episode_id,
         canonical_symbol=canonical_symbol,
         material=material,
         material_context_hash=material_hash,
@@ -106,6 +124,7 @@ class RouteEvaluationDecisionV31:
 
 def evaluate_context_route_v31(
     *,
+    lifecycle: AnalysisLifecycleV31,
     epoch: ContextEpochV31,
     evaluated_direction: Literal["BUY", "SELL"],
     hypothesis: PressureDirectionalHypothesisV31 | None,
@@ -118,10 +137,25 @@ def evaluate_context_route_v31(
     decision_at: datetime,
     invalidating_material_event_hash: str | None = None,
 ) -> RouteEvaluationDecisionV31:
-    """Evaluate the epoch for one direction. Never changes the hypothesis; never picks a direction."""
+    """Evaluate the epoch for one direction. Never changes the hypothesis; never picks a direction.
+
+    A hypothesis from EITHER admission class is evaluable: context is analysis, and the containment of a
+    MATURE_ADVISORY lineage is carried by the hypothesis and the lifecycle, never re-decided here. The admission
+    class is deliberately neither read nor stored, so it can never change an outcome or an identity. PairAdmission
+    is never read: the only admission evidence that reaches this function is the S1B lineage.
+    """
 
     if registry is None or policy is None:
         return RouteEvaluationDecisionV31("NOT_EVALUATED", "REGISTRY_MISSING")
+    lifecycle = AnalysisLifecycleV31.model_validate(lifecycle.model_dump())
+    if (
+        epoch.strategy_lifecycle_id != lifecycle.strategy_lifecycle_id
+        or epoch.market_episode_id != lifecycle.market_episode_id
+        or epoch.canonical_symbol != lifecycle.symbol
+    ):
+        return RouteEvaluationDecisionV31("NOT_EVALUATED", "EPOCH_LIFECYCLE_MISMATCH")
+    if lifecycle.state in TERMINAL_LIFECYCLE_STATES_V31:
+        return RouteEvaluationDecisionV31("NOT_EVALUATED", "LIFECYCLE_TERMINAL")
     if (registry.registry_version, registry.registry_hash) != (
         epoch.direction_domain_registry_version,
         epoch.direction_domain_registry_hash,
@@ -198,6 +232,7 @@ def evaluate_context_route_v31(
         ),
         context_epoch_id=epoch.context_epoch_id,
         strategy_lifecycle_id=epoch.strategy_lifecycle_id,
+        market_episode_id=epoch.market_episode_id,
         canonical_symbol=epoch.canonical_symbol,
         evaluated_direction=evaluated_direction,
         pressure_hypothesis_id=hypothesis_id,
@@ -248,6 +283,19 @@ def project_context_route_receipt_v31(
     )
 
 
+def context_progression_allowed_v31(
+    evaluation: ContextRouteEvaluationV31, global_safety: GlobalSafetyStateV1
+) -> tuple[bool, tuple[str, ...]]:
+    """Global safety is an overlay (as in #492 and #503): it stops effective progression and never mutates history.
+
+    It is a read over an already-recorded evaluation, so no epoch, evaluation or receipt can depend on a veto.
+    """
+
+    ContextRouteEvaluationV31.model_validate(evaluation.model_dump())
+    vetoes = tuple(str(veto) for veto in global_safety.vetoes)
+    return (not vetoes and evaluation.outcome in ROUTE_PERMITTING_OUTCOMES, vetoes)
+
+
 @dataclass(frozen=True)
 class HypothesisTransitionIntentV31:
     to_state: str
@@ -280,6 +328,7 @@ def hypothesis_transition_for_evaluation_v31(
 
 __all__ = [
     "EpochResolutionV31",
+    "context_progression_allowed_v31",
     "HypothesisTransitionIntentV31",
     "RouteEvaluationDecisionV31",
     "evaluate_context_route_v31",

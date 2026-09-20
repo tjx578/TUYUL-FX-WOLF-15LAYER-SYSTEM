@@ -1,5 +1,10 @@
 """ContextEpochV31 + ContextRouteEvaluationV31 (gap #9, authority decisions 2026-09-19, Option A).
 
+Requalified on #504 (2026-09-20): the lifecycle is the MarketEpisode-rooted ``strategy_lifecycle_id`` of the S1B
+lineage (#501-#503), never derived from an admission. Both records bind the episode and prove the 1:1 derivation,
+so an advisory-to-canonical authority upgrade cannot fork the epoch: neither the admission id nor the admission
+class appears in any identity tuple or in any stored field.
+
 SSOT §12 separates a direction-neutral Material ContextEpoch (§12.1, §12.3) from the evaluation of context for
 one direction (§12.2 location, §12.4 outcome, §28.14 alignment). The existing ``ContextRouteReceiptV31`` stays
 unchanged and is only a POSITIVE projection of an evaluation that permits a route.
@@ -15,17 +20,23 @@ Neither object carries direction, thesis, geometry, risk, broker or execution au
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Any, Literal, TypeVar
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from contracts.strategy_5scr_admission_identity_v31 import IDENTITY_ENCODING_VERSION
 from contracts.strategy_5scr_context_route_v31 import MaterialContextV31, material_context_hash_v31
-from contracts.strategy_5scr_pressure_hypothesis_v31 import canonical_sha256_v31
+from contracts.strategy_5scr_identity_v31 import (
+    IDENTITY_ENCODING_VERSION,
+    SELECTED_SSOT_HASH,
+    canonical_sha256_v31,
+    identity_uuid_v31,
+)
+from contracts.strategy_5scr_market_episode_v31 import strategy_lifecycle_id_from_episode_v31
 
+CONTEXT_EPOCH_V31_RULE_VERSION = "5scr.context-epoch.v31.v2"
+CONTEXT_ROUTE_EVALUATION_V31_RULE_VERSION = "5scr.context-route-evaluation.v31.v2"
 V31_CONTEXT_EPOCH_NAMESPACE = UUID("7977ee0b-5780-4c9d-baf5-0bdf14f4f881")
 V31_CONTEXT_ROUTE_EVALUATION_NAMESPACE = UUID("501f6b98-e095-4084-aad9-1ae3a02c32d2")
 
@@ -131,33 +142,38 @@ def with_hash(model_type: type[_M], hash_field: str, **values: Any) -> _M:
 
 
 def context_epoch_id_v31(*, strategy_lifecycle_id: UUID, material_context_hash: str) -> UUID:
-    name = json.dumps(
-        [IDENTITY_ENCODING_VERSION, str(strategy_lifecycle_id), material_context_hash], separators=(",", ":")
-    )
-    return uuid5(V31_CONTEXT_EPOCH_NAMESPACE, name)
+    """Lifecycle + material only. No admission id, no admission class, no clock, no direction: an authority upgrade
+    inside the same market episode therefore cannot produce a second epoch for the same material context."""
+
+    return identity_uuid_v31(V31_CONTEXT_EPOCH_NAMESPACE, [str(strategy_lifecycle_id), material_context_hash])
 
 
 def context_route_evaluation_id_v31(
     *, context_epoch_id: UUID, evaluated_direction: str, pressure_hypothesis_id: UUID | None
 ) -> UUID:
-    name = json.dumps(
+    """The hypothesis id is admission-free (#494), so the evaluation id is stable across an authority upgrade too."""
+
+    return identity_uuid_v31(
+        V31_CONTEXT_ROUTE_EVALUATION_NAMESPACE,
         [
-            IDENTITY_ENCODING_VERSION,
             str(context_epoch_id),
             evaluated_direction,
             None if pressure_hypothesis_id is None else str(pressure_hypothesis_id),
         ],
-        separators=(",", ":"),
     )
-    return uuid5(V31_CONTEXT_ROUTE_EVALUATION_NAMESPACE, name)
 
 
 class ContextEpochV31(_Strict):
     """Direction-neutral material context truth. Immutable; ends only by clock or material supersession."""
 
+    rule_version: Literal["5scr.context-epoch.v31.v2"] = CONTEXT_EPOCH_V31_RULE_VERSION
     identity_encoding_version: Literal["v31.native-identity.v1"] = IDENTITY_ENCODING_VERSION
+    selected_ssot_hash: Literal["sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"] = (
+        SELECTED_SSOT_HASH
+    )
     context_epoch_id: UUID
     strategy_lifecycle_id: UUID
+    market_episode_id: UUID  # section 8.1 provenance; audit only, deliberately absent from the identity tuple
     canonical_symbol: str = Field(pattern=r"^[A-Z0-9._-]{3,32}$")
     material: MaterialContextV31
     material_context_hash: str = Field(pattern=_DIGEST)
@@ -182,6 +198,8 @@ class ContextEpochV31(_Strict):
         )
         if self.context_epoch_id != expected:
             raise ValueError("CONTEXT_EPOCH_ID_NOT_DERIVED")
+        if self.strategy_lifecycle_id != strategy_lifecycle_id_from_episode_v31(self.market_episode_id):
+            raise ValueError("CONTEXT_EPOCH_LIFECYCLE_NOT_EPISODE_ROOTED")
         if not self.source_closed_through <= self.valid_from < self.valid_until:
             raise ValueError("CONTEXT_EPOCH_CLOCK_ORDER_INVALID")
         return self
@@ -205,10 +223,12 @@ class ContextEpochTerminationV31(_Strict):
 class ContextRouteEvaluationV31(_Strict):
     """Context evaluated for ONE direction. It can only ALIGN/CONFLICT/DEFER/BLOCK/authorize proof/INVALIDATE."""
 
+    rule_version: Literal["5scr.context-route-evaluation.v31.v2"] = CONTEXT_ROUTE_EVALUATION_V31_RULE_VERSION
     identity_encoding_version: Literal["v31.native-identity.v1"] = IDENTITY_ENCODING_VERSION
     evaluation_id: UUID
     context_epoch_id: UUID
     strategy_lifecycle_id: UUID
+    market_episode_id: UUID  # section 8.1 provenance; audit only, never part of the identity tuple
     canonical_symbol: str = Field(pattern=r"^[A-Z0-9._-]{3,32}$")
     evaluated_direction: Direction
     pressure_hypothesis_id: UUID | None
@@ -241,6 +261,8 @@ class ContextRouteEvaluationV31(_Strict):
         )
         if self.evaluation_id != expected:
             raise ValueError("CONTEXT_ROUTE_EVALUATION_ID_NOT_DERIVED")
+        if self.strategy_lifecycle_id != strategy_lifecycle_id_from_episode_v31(self.market_episode_id):
+            raise ValueError("CONTEXT_EVALUATION_LIFECYCLE_NOT_EPISODE_ROOTED")
         if (self.selected_route is not None) != (self.outcome in ROUTE_PERMITTING_OUTCOMES):
             raise ValueError("selected_route is set exactly when the outcome permits a route")
         if (self.outcome == "DEFER") != (self.defer_reason is not None):
@@ -258,6 +280,8 @@ class ContextRouteEvaluationV31(_Strict):
 
 
 __all__ = [
+    "CONTEXT_EPOCH_V31_RULE_VERSION",
+    "CONTEXT_ROUTE_EVALUATION_V31_RULE_VERSION",
     "ROUTE_PERMITTING_OUTCOMES",
     "V31_CONTEXT_EPOCH_NAMESPACE",
     "V31_CONTEXT_ROUTE_EVALUATION_NAMESPACE",

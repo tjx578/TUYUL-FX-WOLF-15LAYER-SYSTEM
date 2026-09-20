@@ -80,7 +80,8 @@ def classify_pressure_maturity_v31(
     return max(met, key=MATURITY_ORDER.__getitem__) if met else None
 
 
-_TERMINAL_LIFECYCLE_STATES = frozenset({"TERMINAL_NO_TRADE", "INVALIDATED", "SUPERSEDED"})
+# Shared by every downstream V31 producer (#495 onwards): a terminal lifecycle admits no further analysis.
+TERMINAL_LIFECYCLE_STATES_V31 = frozenset({"TERMINAL_NO_TRADE", "INVALIDATED", "SUPERSEDED"})
 
 
 def build_pressure_hypothesis_v31(
@@ -120,7 +121,7 @@ def build_pressure_hypothesis_v31(
         or lineage.get(receipt.strategy_analysis_admission_id) != receipt.admission_class
     ):
         return HypothesisDecisionV31("NOT_CREATED", "LIFECYCLE_BINDING_MISMATCH")
-    if lifecycle.state in _TERMINAL_LIFECYCLE_STATES:
+    if lifecycle.state in TERMINAL_LIFECYCLE_STATES_V31:
         return HypothesisDecisionV31("NOT_CREATED", "LIFECYCLE_TERMINAL")
     if not receipt.granted_at_utc <= decision_at < receipt.expires_at_utc:
         return HypothesisDecisionV31("NOT_CREATED", "ADMISSION_NOT_ACTIVE")
@@ -350,6 +351,7 @@ def admit_hypothesis_v31(
 
 
 __all__ = [
+    "TERMINAL_LIFECYCLE_STATES_V31",
     "HypothesisDecisionV31",
     "InMemoryPressureHypothesisLedgerV31",
     "admit_hypothesis_v31",
