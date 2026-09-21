@@ -122,9 +122,11 @@ Source: the 12B audit (`GAP12B_STRUCTURAL_TARGET_AUDIT.md`), open items T1–T10
   - Freshness is produced by a **per-source-class policy**. `SWING`, `D1_SR`, `H4_SR`, `H1_SR`, `RANGE`,
     `BREAKOUT`, `LIQUIDITY` and `FIBONACCI` may form freshness differently, provided each policy is
     **explicit, deterministic, versioned, non-future and authority-approved**.
-  - The target record must carry that provenance: a `freshness_policy_id` together with its version, so a
-    replay can prove which policy produced `freshness_status`. **This provenance does not exist in the current
-    contract** and is a required addition (annex, item 2).
+  - The target record must carry that provenance so a replay can prove which policy produced
+    `freshness_status`. The **literal field names are not mandated** (owner ratification 2026-09-21): an
+    equivalent provenance already present in a contract is acceptable, but the semantics —
+    `freshness_status`, `tested_count` and the identity/version of the policy that produced them — must not
+    be lost. **No such provenance exists in the current contract** (annex, item 2).
   - **Freshness is not consumption.** A target may legitimately be tested and still `FRESH`, tested and no
     longer fresh, or unconsumed yet not fresh. That is why §18.3 stores the two separately.
 - **Reason:** a TTL cannot express "tested twice and still fresh", and §11.6 forbids age from being the
@@ -160,12 +162,25 @@ Source: the 12B audit (`GAP12B_STRUCTURAL_TARGET_AUDIT.md`), open items T1–T10
               → consumed_at is set
     ```
 
-  - **Point targets:** the first authoritative price observation reaching `target_price` sets `consumed_at`,
-    for both directions. "Reaching" uses canonical price evidence; a tick that happens to be visible on one
-    feed is not sufficient.
-  - **Zone targets:** if a zone representation is ever introduced, the source must declare a
-    `completion_boundary` (or an equivalent). Silently using the near edge or the far edge is forbidden.
-    Entering the zone is a `TEST`; reaching the canonical completion boundary is `CONSUMED`.
+  - **Point targets (owner ratification 2026-09-21):**
+
+    ```text
+    consumed_at = the first authoritative target-completion evidence
+    ```
+
+    The **completion rule is source-policy-bound**, under the same discipline as A2-03: explicit,
+    deterministic, versioned, non-future and authority-approved.
+  - **This amendment deliberately fixes NO candle field as the completion criterion.** Whether completion
+    is a wick touch, a close through the level, a bid touch or an ask touch is
+    **`NOT_DEFINED_BY_AUTHORITY`** and must **not** be chosen inside an adapter or an implementation.
+    Until a source policy declares it, a target has no completion rule and therefore cannot be consumed.
+  - Evidence must be canonical: a tick that happens to be visible on a single feed is never sufficient.
+  - **Zone targets — `ZONE_TARGET_RUNTIME_SEMANTICS = NOT_ACTIVE`** (owner ratification 2026-09-21).
+    The canonical contract has no zone representation, so zone semantics are a forward-compatibility
+    constraint and are **not active**. If a zone representation is ever introduced, its source must declare
+    a `completion_boundary` (or an equivalent); entering the zone is a `TEST`, reaching the declared
+    completion boundary is `CONSUMED`. A near edge, a far edge or a midpoint must **never** be chosen
+    silently in an adapter.
   - **§13 liquidity FSM scope:** the §13 state machine is authority for the **`LIQUIDITY` source only**.
     Generalising it to `SWING`, `D1_SR`, `H4_SR`, `H1_SR`, `RANGE`, `BREAKOUT` or `FIBONACCI` is
     **`NOT_DEFINED_BY_AUTHORITY`** and is not granted here.
@@ -226,12 +241,27 @@ Source: the 12B audit (`GAP12B_STRUCTURAL_TARGET_AUDIT.md`), open items T1–T10
   This is exactly the existing deterministic order, restated so that determinism comes from authority rather
   than from an implementation detail. The implementation should express the directional distance explicitly
   rather than relying on `abs()` over a pre-filtered set, so the rule is readable without the filter.
-- **Deliberately NOT frozen:**
-  - **Target-source precedence.** No precedence order over `SWING / D1_SR / H4_SR / H1_SR / RANGE / BREAKOUT /
-    LIQUIDITY / FIBONACCI` exists in any source. Freezing one would be invention, so it is left out.
-  - **`formed_at` as a secondary key.** The field exists, but preferring an older (or newer) structure is a
-    **market-semantics claim**, not a determinism requirement — `target_id` already guarantees determinism.
-    If the owner wants `formed_at`, the amendment must state *why* older-first or newer-first is correct.
+- **`formed_at` is EXCLUDED** (owner decision 2026-09-21, final). Using it as a secondary key would silently
+  create a market preference — *older structure preferred* or *newer structure preferred* — and no authority
+  states that either is correct. That changes market behaviour, not merely determinism, and the existing
+  two-key order is already a total order.
+- **Nothing else may order candidates.** A selector may not silently prefer `D1` over `H4`, `SWING` over
+  `FIBONACCI`, newer over older or older over newer. The following are all excluded unless a later
+  amendment authorises them explicitly:
+
+  ```text
+  TargetSource precedence
+  formed_at precedence
+  RR precedence
+  timeframe precedence
+  source-quality score
+  ```
+
+- **`target_id` carries no structural claim.** It resolves determinism among materially equal-distance
+  candidates and never asserts that one target is structurally better. It must therefore be **stable,
+  deterministic, and independent of deployment, request or worker randomness**. If `target_id` is later
+  found to be non-deterministic, that is a separate **identity gap** — it must not be patched by
+  reintroducing `formed_at`.
 - **shadow_required:** true · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
 ## 3. Non-normative annex

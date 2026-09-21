@@ -140,10 +140,46 @@ def test_tie_policy_freezes_only_what_the_existing_selector_already_proves():
     document = _document()
     assert "primary key   = minimum positive directional distance from decision_price" in document
     assert "secondary key = ascending target_id" in document
-    # Two keys are deliberately NOT frozen, because freezing them would be invention.
-    assert "**Deliberately NOT frozen:**" in document
-    assert "**Target-source precedence.**" in document
-    assert "**`formed_at` as a secondary key.**" in document
+    # formed_at is excluded because it would smuggle in a market preference, not because it is unneeded.
+    assert "**`formed_at` is EXCLUDED**" in document
+    assert "older structure preferred" in document
+    for excluded in (
+        "TargetSource precedence",
+        "formed_at precedence",
+        "RR precedence",
+        "timeframe precedence",
+        "source-quality score",
+    ):
+        assert excluded in document, excluded
+    # target_id resolves determinism only; if it is ever non-deterministic that is a separate identity gap.
+    assert "**`target_id` carries no structural claim.**" in document
+    assert "independent of deployment, request or worker randomness" in document
+    assert "must not be patched by" in document  # a non-deterministic id is an identity gap, not a formed_at fix
+
+
+def test_point_target_consumption_fixes_no_candle_field():
+    """Owner correction 2026-09-21: completion is source-policy-bound, and wick/close/bid/ask stays open."""
+
+    document = _document()
+    assert "consumed_at = the first authoritative target-completion evidence" in document
+    assert "**completion rule is source-policy-bound**" in document
+    assert "deliberately fixes NO candle field as the completion criterion" in document
+    for open_choice in ("a wick touch", "a close through the level", "a bid touch", "an ask touch"):
+        assert open_choice in document, open_choice
+    assert "a target has no completion rule and therefore cannot be consumed" in document
+
+
+def test_zone_runtime_semantics_are_not_active():
+    document = _document()
+    assert "`ZONE_TARGET_RUNTIME_SEMANTICS = NOT_ACTIVE`" in document
+    assert "A near edge, a far edge or a midpoint must **never** be chosen" in document
+
+
+def test_freshness_provenance_allows_equivalents_but_never_loses_the_semantics():
+    document = _document()
+    assert "**literal field names are not mandated**" in document
+    assert "equivalent provenance already present in a contract is acceptable" in document
+    assert "**No such provenance exists in the current contract**" in document
 
 
 def test_the_annex_records_what_the_contract_does_not_have_yet():

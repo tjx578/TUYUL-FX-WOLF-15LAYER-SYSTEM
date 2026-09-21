@@ -5,7 +5,7 @@
   "final_approver": "OWNER",
   "document": {
     "path": "docs/governance/strategy-5scr-v3.1-amendment-A2.md",
-    "sha256": "e5754453086f613c49c595a680b23b0428ded05b6c2ad13e14aefe13611779b2"
+    "sha256": "4780c8989bfad0f6322ff3543774cc637f3e32c68d0e5747670fe18267608815"
   },
   "base_ssot": {
     "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
@@ -65,7 +65,7 @@
         "§11.6"
       ],
       "base_behavior": "Section 17.2 requires fresh and never defines it; Audit/Replay v3 section 18.3 stores a freshness status and a tested count without transitions; section 11.6 forbids wall-clock age from being authority.",
-      "amended_behavior": "Freshness is a structural/source-policy state, not a clock. A wall-clock TTL is not canonical freshness authority and valid_until is reclassified NON_CANONICAL / ADVISORY_ONLY. The canonical selector predicate is freshness_status == FRESH. tested_count is evidence and implies no universal threshold. Each source class may form freshness differently provided the policy is explicit, deterministic, versioned, non-future and authority-approved, and the record carries a freshness_policy_id with its version. Freshness is not consumption.",
+      "amended_behavior": "Freshness is a structural/source-policy state, not a clock. A wall-clock TTL is not canonical freshness authority and valid_until is reclassified NON_CANONICAL / ADVISORY_ONLY. The canonical selector predicate is freshness_status == FRESH. tested_count is evidence and implies no universal threshold. Each source class may form freshness differently provided the policy is explicit, deterministic, versioned, non-future and authority-approved, and the record carries a freshness_policy_id with its version. Freshness is not consumption. Literal field names are not mandated where equivalent provenance already exists, but the semantics of freshness_status, tested_count and the policy identity/version must not be lost.",
       "reason": "A TTL cannot express tested-and-still-fresh, and a universal tested-count threshold would reintroduce the magic number A1-11 removed.",
       "shadow_required": true,
       "replay_required": true,
@@ -83,7 +83,7 @@
         "§13"
       ],
       "base_behavior": "Section 17.2 requires unconsumed, section 18.3 stores consumed_at and invalidated_at and section 21.6 has TARGET_CONSUMED, but nothing states what consumes a target.",
-      "amended_behavior": "Consumption is market-evidence truth: the authoritative price path satisfied the target's canonical completion condition. It is never ExecutionBox creation, TradePlanCandidate creation, risk approval, order submission, a broker fill or a position, and ExecutionBox.CONSUMED must not be imported. TEST is price interaction without completion and changes tested_count and possibly freshness, never consumption. For point targets the first authoritative observation reaching target_price sets consumed_at, using canonical price evidence rather than a single-feed tick. Zone targets require a declared completion_boundary. The section 13 liquidity FSM is authority for the LIQUIDITY source only; generalising it to the other sources is NOT_DEFINED_BY_AUTHORITY.",
+      "amended_behavior": "Consumption is market-evidence truth: the authoritative price path satisfied the target's canonical completion condition. It is never ExecutionBox creation, TradePlanCandidate creation, risk approval, order submission, a broker fill or a position, and ExecutionBox.CONSUMED must not be imported. TEST is price interaction without completion and changes tested_count and possibly freshness, never consumption. For point targets consumed_at is the first authoritative target-completion evidence, with the completion rule source-policy-bound under the A2-03 discipline; this amendment fixes NO candle field as the criterion, so whether completion is a wick touch, a close through, a bid touch or an ask touch is NOT_DEFINED_BY_AUTHORITY and must not be chosen in an adapter. Zone target runtime semantics are NOT_ACTIVE because the canonical contract has no zone representation. The section 13 liquidity FSM is authority for the LIQUIDITY source only.",
       "reason": "Without this separation a touch would silently consume a target and trade-lifecycle events would leak into market-evidence truth.",
       "shadow_required": true,
       "replay_required": true,
@@ -117,7 +117,7 @@
         "§17.3"
       ],
       "base_behavior": "Authority requires the nearest target but says nothing about two eligible targets at equal distance.",
-      "amended_behavior": "Frozen from the existing selector rather than invented: primary key is the minimum positive directional distance from decision_price, secondary key is ascending target_id. Target-source precedence is deliberately NOT frozen because no precedence order exists in any source, and formed_at is NOT frozen because preferring older or newer structure is a market-semantics claim rather than a determinism requirement.",
+      "amended_behavior": "Frozen from the existing selector rather than invented: primary key is the minimum positive directional distance from decision_price, secondary key is ascending target_id. formed_at is EXCLUDED because it would silently create an older-preferred or newer-preferred market semantics that no authority states. TargetSource precedence, RR precedence, timeframe precedence and any source-quality score are likewise excluded unless a later amendment authorises them. target_id carries no structural claim and must be stable, deterministic and independent of deployment, request or worker randomness; a non-deterministic target_id is a separate identity gap and must not be patched with formed_at.",
       "reason": "Determinism must come from authority, not from an implementation detail.",
       "shadow_required": true,
       "replay_required": true,
