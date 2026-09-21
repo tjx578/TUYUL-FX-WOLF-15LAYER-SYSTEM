@@ -33,6 +33,14 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _fenced_lines_after(document: str, marker: str) -> list[str]:
+    """The stripped, non-empty lines of the first fenced block that follows `marker`."""
+
+    tail = document[document.index(marker) :]
+    start = tail.index("```text\n") + len("```text\n")
+    return [line.strip() for line in tail[start : tail.index("```", start)].splitlines() if line.strip()]
+
+
 def test_amendment_document_is_byte_pinned():
     record = _record()
     assert _sha256(ROOT / record["document"]["path"]) == record["document"]["sha256"]
@@ -118,9 +126,21 @@ def test_change_classification_has_three_classes_and_grants_nothing_downstream_y
     classes must be named; and the ExecutionBox consequence stays deferred to G7/12C."""
 
     document = _document()
-    for klass in ("MATERIAL_RANGE_CHANGE", "COVERAGE_CHANGE", "EVIDENCE_REFRESH"):
-        assert klass in document
+    # Pin the definitions and their precedence, not merely the class names: a name-only check let the
+    # COVERAGE_CHANGE definition line be deleted while every test stayed green (mutation v2, 2026-09-21).
+    assert _fenced_lines_after(document, "three change classes over a normative field partition:")[:3] == [
+        "GEOMETRY_MATERIAL : started_at, ended_at, coverage_anchor_rule, low, high",
+        "COVERAGE          : price_coverage_status, coverage_gaps",
+        "EVIDENCE          : source_price_ids, observed_through_utc",
+    ]
+    assert _fenced_lines_after(document, "Classification, highest precedence first:") == [
+        "MATERIAL_RANGE_CHANGE = any GEOMETRY_MATERIAL field differs",
+        "COVERAGE_CHANGE       = no GEOMETRY_MATERIAL difference AND any COVERAGE field differs",
+        "EVIDENCE_REFRESH      = only EVIDENCE fields differ",
+        "(no class)            = only NON_MATERIAL fields differ -> nothing is recorded (§15.2)",
+    ]
     assert "Coverage may change while `low` and `high` are identical." in document
+    assert "That case is `COVERAGE_CHANGE`, not\n    `EVIDENCE_REFRESH`" in document
     assert "deferred to G7/12C" in document
     assert "INTENTIONALLY NOT CREATED" in document  # G8: no material hash is invented
     assert "The range itself never holds authority in any state." in document
