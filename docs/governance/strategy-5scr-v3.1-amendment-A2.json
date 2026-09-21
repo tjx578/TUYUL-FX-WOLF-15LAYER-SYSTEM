@@ -1,11 +1,11 @@
 {
   "amendment_id": "WOLF15-5SCR-SSOT-V3.1-A2",
-  "status": "DRAFT_NOT_APPROVED",
+  "status": "APPROVED_PER_ENTRY",
   "scope": "STRUCTURAL_TARGET_ONLY",
   "final_approver": "OWNER",
   "document": {
     "path": "docs/governance/strategy-5scr-v3.1-amendment-A2.md",
-    "sha256": "4780c8989bfad0f6322ff3543774cc637f3e32c68d0e5747670fe18267608815"
+    "sha256": "9ca93cca0f10fb2de30e858f978b2b0b4908fda5ed9eb9d9ad597990fe6165e7"
   },
   "base_ssot": {
     "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
@@ -35,7 +35,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A2-02",
@@ -54,7 +54,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A2-03",
@@ -71,7 +71,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A2-04",
@@ -89,7 +89,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A2-05",
@@ -106,7 +106,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A2-06",
@@ -123,7 +123,22 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     }
-  ]
+  ],
+  "ratification": {
+    "ratified_draft_sha256": "4780c8989bfad0f6322ff3543774cc637f3e32c68d0e5747670fe18267608815",
+    "ratified_draft_blob_id": "d8433a126c689fea3ea6f859cddeacdd4a4ed1c9",
+    "ratified_on": "2026-09-21",
+    "ratified_by": "OWNER",
+    "method": "independent byte verification by the owner (Get-FileHash + git rev-parse)",
+    "approved_entries": [
+      "A2-01",
+      "A2-02",
+      "A2-03",
+      "A2-04",
+      "A2-05",
+      "A2-06"
+    ]
+  }
 }
