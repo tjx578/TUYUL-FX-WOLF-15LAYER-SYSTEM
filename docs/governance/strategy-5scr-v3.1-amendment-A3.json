@@ -5,7 +5,7 @@
   "final_approver": "OWNER",
   "document": {
     "path": "docs/governance/strategy-5scr-v3.1-amendment-A3.md",
-    "sha256": "b69781ebec098689ae920a8e37abed7eefd682023aa8ce8bc1e487680f65c20f"
+    "sha256": "76f9cad5f6309afd1de03afba8eed9152637c7d1c44164df06bb6a7ae356008a"
   },
   "base_ssot": {
     "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
@@ -433,6 +433,9 @@
     "routes_spec_approved": [
       "BREAK_RETEST",
       "BREAKOUT_ACCEPTANCE"
-    ]
+    ],
+    "label_cleanup_predecessor_sha256": "b69781ebec098689ae920a8e37abed7eefd682023aa8ce8bc1e487680f65c20f",
+    "label_cleanup_predecessor_blob_id": "e9dba29f1c5ea77503c3685118e91a341bb5056d",
+    "label_cleanup_scope": "FOUR_STALE_PROPOSED_LABELS_ONLY"
   }
 }

@@ -370,6 +370,24 @@ def test_a3_08_and_a3_09_carry_the_owner_locks():
     assert "LINEAGE is never\n    hashed merely because an id changed" in text
 
 
+def test_content_approved_sections_carry_no_proposed_label():
+    """An approved normative section that still says "proposed" contradicts its own status (owner, 2026-09-22)."""
+
+    review = _record()["content_review"]
+    assert review["label_cleanup_predecessor_sha256"] == (
+        "b69781ebec098689ae920a8e37abed7eefd682023aa8ce8bc1e487680f65c20f"
+    )
+    assert review["label_cleanup_predecessor_blob_id"] == "e9dba29f1c5ea77503c3685118e91a341bb5056d"
+    assert review["label_cleanup_scope"] == "FOUR_STALE_PROPOSED_LABELS_ONLY"
+    approved = review["entries_content_approved"] + review["entries_content_approved_with_clarification"]
+    for entry_id in approved:
+        assert "propos" not in _entry(entry_id).lower(), entry_id
+    document = _document()
+    route_section = document[document.index("## 3. Route policies") : document.index("## 4. Approval")]
+    assert "propos" not in route_section.lower()
+    assert "### A3-10 · GAP_FILL · SUPERSEDED vs INVALIDATED\n" in document
+
+
 def test_every_question_is_resolved_and_none_left_open():
     record = _record()
     assert "open_questions" not in record

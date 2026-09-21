@@ -249,7 +249,7 @@ T10 gross/net RR relation, broker adaptation, risk, execution command, child/cam
 - **Source:** 12C audit points 3–5; same discipline as A1-12.
 - **Base clauses:** SSOT §15.2, §16.3; Audit/Replay v3 §13.2, §17.2.
 - **Base behavior:** §16.3 lists what may and may not change a box; no field partition exists.
-- **Amended behavior — proposed partition:**
+- **Amended behavior — partition:**
 
   ```text
   GEOMETRY_MATERIAL  : box_low, box_high (canonical Price, A3-05)
@@ -271,7 +271,7 @@ T10 gross/net RR relation, broker adaptation, risk, execution command, child/cam
     canonical material projection and of `material_box_hash`, exactly like GEOMETRY_MATERIAL. LINEAGE is never
     hashed merely because an id changed: `pressure_range_id` and `target_id` are provenance and revision drivers,
     not box material fields.
-  - **`target_id` is LINEAGE, not material.** Under the proposed route policies (A3-R1, A3-R2) the box interval
+  - **`target_id` is LINEAGE, not material.** Under the route policies (A3-R1, A3-R2) the box interval
     does not read the target; the target constrains entry later, through `target_room_interval` (§17.4). A target
     revision therefore re-evaluates the box (A3-07) and versions it only if the projection moves.
   - `pressure_range_id` is LINEAGE (A3-06).
@@ -280,13 +280,13 @@ T10 gross/net RR relation, broker adaptation, risk, execution command, child/cam
     re-evaluation (A3-07) and GEOMETRY if bounds move. The §16.3 forbidden causes are all NON_MATERIAL.
 - **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
-### A3-10 · GAP_FILL · SUPERSEDED vs INVALIDATED (proposed normative rule)
+### A3-10 · GAP_FILL · SUPERSEDED vs INVALIDATED
 
 - **Source:** 12C audit point 9.
 - **Base clauses:** SSOT §16.3, §21.6, §28.17.
 - **Base behavior:** both states and both reason codes (`BOX_SUPERSEDED`, `BOX_INVALIDATED`) exist; neither is
   defined.
-- **Amended behavior — proposed:**
+- **Amended behavior:**
 
   ```text
   SUPERSEDED  = a valid successor exists: a newer version of this box, or a new box under the same thesis
