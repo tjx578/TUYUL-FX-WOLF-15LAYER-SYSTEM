@@ -1,8 +1,16 @@
-# Strategy 5S-CR SSOT v3.1: Amendment A2 — Structural Target Authority Clarification (DRAFT)
+# Strategy 5S-CR SSOT v3.1: Amendment A2 — Structural Target Authority Clarification
 
 ```yaml
 amendment_id: WOLF15-5SCR-SSOT-V3.1-A2
-status: DRAFT_NOT_APPROVED
+status: APPROVED_PER_ENTRY
+ratification:
+  ratified_draft_sha256: 4780c8989bfad0f6322ff3543774cc637f3e32c68d0e5747670fe18267608815
+  ratified_draft_blob_id: d8433a126c689fea3ea6f859cddeacdd4a4ed1c9
+  ratified_on: 2026-09-21
+  ratified_by: OWNER
+  method: independent byte verification by the owner (Get-FileHash + git rev-parse)
+  approved_entries: [A2-01, A2-02, A2-03, A2-04, A2-05, A2-06]
+  pending_entries: []
 base_ssot:
   document_id: WOLF15-5SCR-SSOT-V3.1-CANDIDATE
   path: docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md
@@ -292,6 +300,23 @@ Source: the 12B audit (`GAP12B_STRUCTURAL_TARGET_AUDIT.md`), open items T1–T10
 
 ## 4. Approval
 
-This record is a DRAFT. Approval needs the owner's explicit decision per entry together with the evidence each
-entry declares. A2 grants no runtime activation, and approving A2 is not authorization to implement: the 12B
-implementation gate stays closed until it is opened separately.
+**Ratified 2026-09-21.** The owner approved A2-01 … A2-06 per entry on content, then independently verified
+the exact bytes of the draft (`sha256 4780c898…7608815`, git blob `d8433a12…a4ed1c9`). This document is the
+approved successor of those exact bytes; the `ratification` block above pins the predecessor so the chain
+stays provable without mutating the ratified draft in place.
+
+**Why A2-01 needed no shadow/replay/OOS evidence to ratify** (owner reasoning, recorded): unlike A1-01, which
+changes runtime block semantics, A2-01 changes no runtime behaviour. It resolves a proven internal
+contradiction between two normative orderings by explicit governance precedence. The evidence flags on each
+entry remain the evidence required before any *implementation* is activated, not before the clarification is
+ratified.
+
+**Approval grants no runtime activation and no implementation authority.**
+
+```text
+A2-01 APPROVED  ≠  StructuralTarget implementation authorized
+A2-01 APPROVED  ≠  ExecutionBox implementation authorized
+```
+
+`grants_runtime_activation` stays `false` and every entry keeps `runtime_activation: EXPLICIT_ONLY`. The 12B
+implementation gate stays closed until the owner opens it separately.

@@ -50,13 +50,29 @@ def test_base_ssot_is_unmodified_and_named_explicitly():
     assert base["document_bytes_modified"] is False
 
 
-def test_a2_grants_no_runtime_activation_and_stays_a_draft():
+def test_a2_approval_grants_no_runtime_activation():
+    """Ratification of the authority is never runtime activation and never implementation authority."""
+
     record = _record()
-    assert record["status"] == "DRAFT_NOT_APPROVED"
+    assert record["status"] == "APPROVED_PER_ENTRY"
     assert (record["grants_runtime_activation"], record["dual_authority"]) == (False, False)
     assert record["effective_authority_model"] == "BASE_SSOT_PLUS_EXPLICIT_AMENDMENTS"
     assert all(entry["runtime_activation"] == "EXPLICIT_ONLY" for entry in record["entries"])
-    assert all(entry["approval"] == "PENDING" for entry in record["entries"])
+    assert all(entry["approval"] == "APPROVED" for entry in record["entries"])
+
+
+def test_the_approved_document_is_the_provable_successor_of_the_ratified_bytes():
+    ratification = _record()["ratification"]
+    assert ratification["ratified_draft_sha256"] == ("4780c8989bfad0f6322ff3543774cc637f3e32c68d0e5747670fe18267608815")
+    assert ratification["ratified_draft_blob_id"] == "d8433a126c689fea3ea6f859cddeacdd4a4ed1c9"
+    assert ratification["ratified_by"] == "OWNER"
+    assert ratification["approved_entries"] == ["A2-01", "A2-02", "A2-03", "A2-04", "A2-05", "A2-06"]
+    document = _document()
+    assert ratification["ratified_draft_sha256"] in document
+    # Approving the authority does not open either implementation gate.
+    assert "A2-01 APPROVED  ≠  StructuralTarget implementation authorized" in document
+    assert "A2-01 APPROVED  ≠  ExecutionBox implementation authorized" in document
+    assert "The 12B" in document and "implementation gate stays closed" in document
 
 
 def test_every_entry_is_complete_typed_and_cites_base_clauses():
