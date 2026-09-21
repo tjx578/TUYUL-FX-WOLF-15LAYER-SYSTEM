@@ -1,0 +1,253 @@
+{
+  "amendment_id": "WOLF15-5SCR-SSOT-V3.1-A1",
+  "status": "APPROVED_PER_ENTRY",
+  "final_approver": "OWNER",
+  "document": {
+    "path": "docs/governance/strategy-5scr-v3.1-amendment-A1.md",
+    "sha256": "1fed7f7b2eb79152ba8f825faca4af3eed131f69222860c6793a42eabd152d40"
+  },
+  "base_ssot": {
+    "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
+    "path": "docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md",
+    "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "document_bytes_modified": false
+  },
+  "effective_authority_model": "BASE_SSOT_PLUS_EXPLICIT_AMENDMENTS",
+  "dual_authority": false,
+  "runtime_activation": "EXPLICIT_ONLY",
+  "grants_runtime_activation": false,
+  "entries": [
+    {
+      "entry_id": "A1-01",
+      "amendment_type": "CONFLICT_OVERRIDE",
+      "source_pr": 492,
+      "base_clause": [
+        "§5",
+        "§7.2",
+        "§7.3",
+        "§7.7",
+        "§7.11",
+        "§24.3",
+        "§27"
+      ],
+      "base_behavior": "Single global raw block; another symbol finalizes it; eligibility needs >=300s with cross_symbol_interruption_count=0; shadow gate requires PairAdmission outcomes identical to the old path.",
+      "amended_behavior": "Per-symbol isolated raw admission lineage (5scr.pair-admission.per-symbol-isolated.v3) over an explicit universe; other symbols never interrupt; global safety is an overlay; legacy raw-ledger.v2 replayable; shadow gate records per-symbol divergence instead of requiring identity.",
+      "reason": "Automatic per-pair canonical qualification across 30 pairs; the global FSM lets activity on one symbol finalize every other symbol's admission.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-02",
+      "amendment_type": "GAP_FILL",
+      "source_pr": 494,
+      "base_clause": [
+        "§4.2",
+        "§10",
+        "§28.13"
+      ],
+      "base_behavior": "Opposite direction requires a new hypothesis; the fate of the old active hypothesis is undefined.",
+      "amended_behavior": "One active hypothesis per lifecycle; a pressure-level flip marks the old one INVALIDATED (OPPOSITE_DIRECTION_SUPERSEDED), append-only, CAS active pointer.",
+      "reason": "Deterministic single-active hypothesis without rewriting history.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-03",
+      "amendment_type": "GAP_FILL",
+      "source_pr": 495,
+      "base_clause": [
+        "§12.1",
+        "§18"
+      ],
+      "base_behavior": "Context epoch expires; re-opening with identical material is undefined.",
+      "amended_behavior": "No new epoch and no revival (EPOCH_EXPIRED_MATERIAL_UNCHANGED, fail closed); only a material change opens a new epoch.",
+      "reason": "Telemetry refresh must not extend or revive a clock (§18).",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-04",
+      "amendment_type": "GAP_FILL",
+      "source_pr": 497,
+      "base_clause": [
+        "§12.4",
+        "§14.3"
+      ],
+      "base_behavior": "DEFER is a legal context outcome; proof promotion under DEFER is undefined.",
+      "amended_behavior": "No structural proof promotion under DEFER (CONTEXT_DEFERRED_NO_PROOF_PROMOTION).",
+      "reason": "Deferred context is not a route-permitting context.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-05",
+      "amendment_type": "GAP_FILL",
+      "source_pr": 498,
+      "base_clause": [
+        "§14.1",
+        "§14.2",
+        "§28.16"
+      ],
+      "base_behavior": "Thesis only if proof is available (§14.1) vs PENDING_H1/PENDING_M15 states (§14.2/§28.16).",
+      "amended_behavior": "Evidence may precede the thesis; birth at PENDING_H1 on ALIGN + active same-direction hypothesis; atomic proof binding -> STRUCTURALLY_CONFIRMED; PENDING_M15 reserved; PENDING_CONTEXT/DORMANT unreachable; direction authority derived from state, never execution authority.",
+      "reason": "Resolves the internal §14.1/§28.16 tension without a thesis that holds unearned authority.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-06",
+      "amendment_type": "GAP_FILL",
+      "source_pr": 498,
+      "base_clause": [
+        "§7.9",
+        "§18",
+        "§28.16"
+      ],
+      "base_behavior": "No thesis clock is listed although EXPIRED and 'thesis expiry' exist.",
+      "amended_behavior": "Hashed versioned thesis clock, no default TTL; valid_until = min(valid_from + ttl, context_epoch.valid_until) with explicit valid_until_bound; immutable; expiry terminal.",
+      "reason": "A thesis may not stay actionable beyond its context epoch.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-07",
+      "amendment_type": "GAP_FILL",
+      "source_pr": 498,
+      "base_clause": [
+        "§14.3",
+        "§14.5"
+      ],
+      "base_behavior": "Ordering is defined; invalidation by later closed candles before binding is undefined.",
+      "amended_behavior": "Binding requires a hashed actionability policy: contiguous closed H1/M15 coverage through decision time, no later adjacent counter-H1 break, no later M15 close back through the break level; missing coverage fails closed; proof record never edited.",
+      "reason": "Immutable evidence may still be non-actionable; derived from V1 thesis liveness predicates.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-08",
+      "amendment_type": "GAP_FILL",
+      "source_pr": 498,
+      "base_clause": [
+        "§4.2",
+        "§21.5",
+        "§28.16"
+      ],
+      "base_behavior": "Terminal thesis states and reason codes exist; triggers and concurrency are undefined.",
+      "amended_behavior": "Epoch superseded -> SUPERSEDED; epoch expired -> EXPIRED; structural invalidation of a confirmed thesis -> INVALIDATED; at most one active thesis per lifecycle (CAS); terminal never revived.",
+      "reason": "Deterministic, pair-local thesis supersession.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A1-09",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§16.1",
+        "§16.2",
+        "§8.5",
+        "§8.3",
+        "§11.5"
+      ],
+      "base_behavior": "Section 8.5 defines the window start per admission class and section 16.2 declares ended_at nullable; nothing defines closure, reopening or late evidence.",
+      "amended_behavior": "Window start restated per class with a coverage_anchor_rule derivation label; as-of bound observed_through_utc forbids future observations. NORMATIVE closure authority (owner 2026-09-21): the MarketEpisode close is the sole closure authority; lifecycle supersession does not close the window; raw-block termination alone does not close the window; reopening a closed canonical range is false. Late evidence is appended while open and rejected as a permanent gap after closure.",
+      "reason": "ended_at determines the evidence window and therefore source_price_ids, the low/high universe, coverage and evidence_hash.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A1-10",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§16.2",
+        "§11.5",
+        "§11.2"
+      ],
+      "base_behavior": "Audit/Replay v3 section 11 step 5 constrains when an observation may count (no future price) but never how low and high are derived or which prices qualify.",
+      "amended_behavior": "QualifyingPressurePriceObservation defined first: authoritative closed M1 candle of the canonical symbol, not UNKNOWN/INCOMPLETE/QUARANTINED, close_time <= observed_through_utc, inside the window, deduplicated by evidence id with conflicting duplicates becoming a gap, and period-aligned so that every source_price_ids entry resolves to exactly one canonical period (G2/G6 cardinality consistency). Then low = min(low) and high = max(high) over wicks; zero qualifying observations give null bounds and MISSING coverage; policy inputs are versioned hashed policy with no defaults.",
+      "reason": "Without the qualifying universe, min/max is ambiguous and the geometry is not replayable.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A1-11",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§16.2",
+        "§8.5",
+        "§11.5"
+      ],
+      "base_behavior": "Section 16.2 fixes four coverage values and section 8.5 fixes the consequence of incomplete coverage; nothing defines what selects a value.",
+      "amended_behavior": "Threshold-free set completeness against the provider calendar: QUARANTINED > MISSING > PARTIAL > COMPLETE. No percentage is introduced. Coverage is computed per canonical period and is undecidable (rejected, never defaulted) without the period-aligned cardinality of A1-10. Only COMPLETE permits structural_authority true; the others place the lifecycle in WAITING_PRICE_COVERAGE. Vocabulary is closed: DEGRADED and UNAVAILABLE are not introduced and STALE stays on the observation and feed axes.",
+      "reason": "Coverage decides actionability; an arbitrary ratio would silently move the boundary between analysable and non-analysable lineages.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A1-12",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§15.1",
+        "§15.2",
+        "§16.2"
+      ],
+      "base_behavior": "Section 15.1 names ExecutionBox material revision and section 15.2 forbids duplicate telemetry from creating a new box version; PressureRange is named in neither, so it has no refresh-versus-material rule.",
+      "amended_behavior": "Three classes over a normative field partition: MATERIAL_RANGE_CHANGE (geometry-material fields), COVERAGE_CHANGE (coverage fields with identical geometry), EVIDENCE_REFRESH (evidence fields only), and no class for non-material-only differences. Coverage may change while low and high are identical and that re-evaluates lifecycle actionability. COVERAGE_CHANGE does not by itself imply an ExecutionBox revision; that is G7 and belongs to 12C.",
+      "reason": "Without the partition every authoritative close would cascade range to target to box supersede to lifecycle churn.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    }
+  ],
+  "ratification": {
+    "ratified_draft_sha256": "5b23d8bb60ad03c6dbe00e55f393dbcae2758cfc99a516624b2809f22b1b26d4",
+    "ratified_draft_blob_id": "5c28c414a03f40070c1058cb6feb08fc50bbb0be",
+    "ratified_on": "2026-09-21",
+    "ratified_by": "OWNER",
+    "method": "independent byte verification by the owner (Get-FileHash + git rev-parse)",
+    "approved_entries": [
+      "A1-09",
+      "A1-10",
+      "A1-11",
+      "A1-12"
+    ]
+  }
+}
