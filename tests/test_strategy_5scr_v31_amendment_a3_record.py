@@ -264,27 +264,117 @@ def test_a3_10_a_concurrent_replacement_supersedes_rather_than_invalidates():
     text = _entry("A3-10")
     assert "SUPERSEDED  = a valid successor exists" in text
     assert "INVALIDATED = the box's basis is lost and NO valid successor exists" in text
-    assert "the\n    old box is `SUPERSEDED`, not `INVALIDATED`." in text
+    assert "a replacement is derived in the same re-evaluation" in text
+    assert "transaction, the old box is `SUPERSEDED`, not `INVALIDATED`." in text
     assert "`SUPERSEDED` and `INVALIDATED` are terminal" in text
     assert "`EXPIRED` stays `RESERVED_UNREACHABLE_UNTIL_AUTHORITY_DEFINED`" in text
 
 
-def test_route_drafts_match_the_record_and_read_no_m1_for_bounds():
+def _route(name: str) -> dict:
+    (route,) = [r for r in _record()["route_policies"] if r["route"] == name]
+    return route
+
+
+def test_route_policies_match_the_record_and_read_no_m1_for_bounds():
     document = _document()
     for route in _record()["route_policies"]:
         if route["spec_status"] != "SPEC_DEFINED":
+            assert route["bounds"] is None and "building_prerequisites" not in route
             continue
-        assert f"`{route['route']}` · box policy `{route['box_policy_id']}` v1 (proposed)" in document
+        assert f"`{route['route']}` · box policy `{route['box_policy_id']}` v1\n" in document
         assert f"freeze_reason            : {route['freeze_reason']}" in document
     assert "BUY  box                 : box_low = canon(C.low), box_high = canon(L)" in document
     assert "BUY  box                 : box_low = canon(L),      box_high = canon(C.low)" in document
+    assert "SELL box                 : box_low = canon(C.high), box_high = canon(L)" in document
     assert "M15 (break, completion, freeze). M1: evidence only." in document
+    assert _route("BREAK_RETEST")["bounds"] == {"BUY": ["C.low", "L"], "SELL": ["L", "C.high"]}
+    assert _route("BREAKOUT_ACCEPTANCE")["bounds"] == {"BUY": ["L", "C.low"], "SELL": ["C.high", "L"]}
 
 
-def test_open_questions_are_recorded_not_decided():
-    record = _record()
-    assert record["open_questions"] == ["Q-R1", "Q-R2", "Q-R3", "Q-R4", "Q-R5"]
+def test_the_successor_pins_the_predecessor_draft_and_records_content_decisions():
+    review = _record()["content_review"]
+    assert review["predecessor_draft_sha256"] == "c9243308158f738fb643b6a84c9ebb325cb1a7edceee869512ef9dfbb93f6dfb"
+    assert review["predecessor_draft_blob_id"] == "ae26705c8a2ae23dc4297922b3efdb6fd3d1c478"
+    assert review["content_status"] == "APPROVED_WITH_AMENDMENTS_PENDING_BYTE_RATIFICATION"
+    assert review["entries_content_approved_with_clarification"] == ["A3-09"]
+    assert sorted(review["entries_content_approved"] + review["entries_content_approved_with_clarification"]) == [
+        f"A3-{i:02d}" for i in range(1, 11)
+    ]
+    assert review["routes_spec_approved"] == ["BREAK_RETEST", "BREAKOUT_ACCEPTANCE"]
     document = _document()
-    for question in record["open_questions"]:
-        assert f"\n{question}  " in document, question
-    assert "(strategy content — not chosen here)" in document
+    assert review["predecessor_draft_sha256"] in document
+    # Content approval is not byte ratification: nothing is APPROVED until the owner ratifies these exact bytes.
+    assert "**Not approved as exact bytes.**" in document
+    assert _record()["status"] == "DRAFT_NOT_APPROVED"
+
+
+def test_q_r1_building_and_frozen_may_share_one_authoritative_close():
+    document = _document()
+    assert "BUILDING has no minimum dwell time." in document
+    assert "the transition is ordered and its\n                     event ordering is deterministic." in document
+    assert "No artificial extra candle is required." in document
+    common = _route("BREAK_RETEST")
+    assert (common["same_close_building_to_frozen"], common["minimum_building_dwell"]) == (True, None)
+
+
+def test_q_r2_the_acceptance_box_needs_a_strict_accepted_side_and_has_no_fallback():
+    guard = _route("BREAKOUT_ACCEPTANCE")["acceptance_side_guard"]
+    assert guard == {"BUY": "C.low > L", "SELL": "C.high < L", "on_failure": "NO_CANONICAL_BOX"}
+    assert _route("BREAK_RETEST")["acceptance_side_guard"] is None
+    document = _document()
+    assert "acceptance_side_guard    : BUY requires C.low > L · SELL requires C.high < L (strict" in document
+    assert "**If the acceptance-side guard fails, A3-R2 MUST NOT FREEZE A BOX.**" in document
+    assert "There is no fallback to `[C.low, C.high]`" in document
+    assert "The full acceptance candle range `[C.low, C.high]` is **not** the box." in document
+
+
+def test_q_r3_post_freeze_invalidation_is_a_strict_close_beyond_l_and_never_a_stop_loss():
+    invalidation = _route("BREAK_RETEST")["post_freeze_invalidation"]
+    assert invalidation == {
+        "BUY": "M15_CLOSE_BELOW_L",
+        "SELL": "M15_CLOSE_ABOVE_L",
+        "close_equal_to_L": "NOT_INVALIDATED",
+    }
+    assert _route("BREAK_RETEST")["invalidation_is_stop_loss"] is False
+    document = _document()
+    assert "BUY  : after FROZEN, an authoritative closed M15 candle with close < L invalidates" in document
+    assert "SELL : after FROZEN, an authoritative closed M15 candle with close > L invalidates" in document
+    assert "close == L does not invalidate" in document
+    assert "**Box invalidation ≠ broker stop ≠ risk SL ≠ order stop level.**" in document
+
+
+def test_q_r4_failed_reclaim_stays_unmapped_without_fallback():
+    assert _record()["resolved_questions"]["Q-R4"] == "FAILED_RECLAIM_UNMAPPED"
+    text = _entry("A3-04")
+    assert "**It stays UNMAPPED (Q-R4):**" in text
+    assert "There is no fallback `FAILED_RECLAIM → BREAK_RETEST` and no implicit" in text
+
+
+def test_q_r5_pressure_range_authority_gates_the_box_and_never_the_target():
+    for name in ("BREAK_RETEST", "BREAKOUT_ACCEPTANCE"):
+        assert "PRESSURE_RANGE_STRUCTURAL_AUTHORITY_TRUE" in _route(name)["building_prerequisites"]
+    document = _document()
+    assert "PressureRange.structural_authority == true\n" in document
+    assert "is an ExecutionBox formation prerequisite, not a StructuralTarget\n  predicate." in document
+    assert "Target eligibility stays exactly A2-05's six predicates." in document
+    assert "**no canonical BUILDING box**, with no downgrade and no fallback to M1." in document
+
+
+def test_a3_08_and_a3_09_carry_the_owner_locks():
+    text = _entry("A3-08")
+    assert "box_version starts at 1 and increments by exactly +1; no skipped versions; append-only" in text
+    assert "route or policy changed                                   → new execution_box_id, box_version = 1" in text
+    text = _entry("A3-09")
+    assert "freeze_evidence_id (canonical identity of the closed candle that satisfied the FROZEN predicate)" in text
+    assert "**AUTHORITY_MATERIAL is material for revision semantics**" in text
+    assert "LINEAGE is never\n    hashed merely because an id changed" in text
+
+
+def test_every_question_is_resolved_and_none_left_open():
+    record = _record()
+    assert "open_questions" not in record
+    assert sorted(record["resolved_questions"]) == ["Q-R1", "Q-R2", "Q-R3", "Q-R4", "Q-R5"]
+    document = _document()
+    for question in record["resolved_questions"]:
+        assert f"\n{question}  CLOSED" in document, question
+    assert "not chosen here" not in document

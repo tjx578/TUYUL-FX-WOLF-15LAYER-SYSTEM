@@ -3,6 +3,16 @@
 ```yaml
 amendment_id: WOLF15-5SCR-SSOT-V3.1-A3
 status: DRAFT_NOT_APPROVED
+content_review:
+  decided_by: OWNER
+  decided_on: 2026-09-22
+  content_status: APPROVED_WITH_AMENDMENTS_PENDING_BYTE_RATIFICATION
+  predecessor_draft_sha256: c9243308158f738fb643b6a84c9ebb325cb1a7edceee869512ef9dfbb93f6dfb
+  predecessor_draft_blob_id: ae26705c8a2ae23dc4297922b3efdb6fd3d1c478
+  entries_content_approved: [A3-01, A3-02, A3-03, A3-04, A3-05, A3-06, A3-07, A3-08, A3-10]
+  entries_content_approved_with_clarification: [A3-09]
+  routes_spec_approved: [BREAK_RETEST, BREAKOUT_ACCEPTANCE]
+  questions_resolved: [Q-R1, Q-R2, Q-R3, Q-R4, Q-R5]
 base_ssot:
   document_id: WOLF15-5SCR-SSOT-V3.1-CANDIDATE
   path: docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md
@@ -125,16 +135,18 @@ T10 gross/net RR relation, broker adaptation, risk, execution command, child/cam
 
   | Canonical route | §16.4 relation | Proof form available today | spec | evidence | runtime |
   |---|---|---|---|---|---|
-  | `BREAK_RETEST` | boundary/retest interval | CONTINUATION + `RETEST` | SPEC_DEFINED (proposed, A3-R1) | EVIDENCE_PENDING | RUNTIME_DISABLED |
-  | `BREAKOUT_ACCEPTANCE` | acceptance interval outside the origin range | CONTINUATION + `ACCEPTANCE` | SPEC_DEFINED (proposed, A3-R2) | EVIDENCE_PENDING | RUNTIME_DISABLED |
+  | `BREAK_RETEST` | boundary/retest interval | CONTINUATION + `RETEST` | SPEC_DEFINED (A3-R1) | EVIDENCE_PENDING | RUNTIME_DISABLED |
+  | `BREAKOUT_ACCEPTANCE` | acceptance interval outside the origin range | CONTINUATION + `ACCEPTANCE` | SPEC_DEFINED (A3-R2, acceptance-side guard) | EVIDENCE_PENDING | RUNTIME_DISABLED |
   | `PULLBACK_CONTINUATION` | structural/retest interval inside or at the edge | none that identifies a pullback structure | NOT_YET_DEFINED | EVIDENCE_PENDING | RUNTIME_DISABLED |
   | `FAILED_BREAKOUT_SELL` | failed-reclaim/rejection interval | none (counter-pressure proof, §15.3, not built) | NOT_YET_DEFINED | EVIDENCE_PENDING | RUNTIME_DISABLED |
   | `FAILED_BREAKDOWN_BUY` | reclaim/retest interval | none (counter-pressure proof, §15.3, not built) | NOT_YET_DEFINED | EVIDENCE_PENDING | RUNTIME_DISABLED |
   | `RANGE_FADE` | extreme/rejection interval | none | NOT_YET_DEFINED | EVIDENCE_PENDING | RUNTIME_DISABLED |
 
   - `FAILED_RECLAIM` is a completion kind of the CONTINUATION proof, **not** a route. Mapping it to
-    `FAILED_BREAKDOWN_BUY` / `FAILED_BREAKOUT_SELL` would treat a continuation proof as a counter-pressure proof, so
-    it is left unmapped (`NOT_YET_DEFINED`) until the owner decides (open question Q-R4).
+    `FAILED_BREAKDOWN_BUY` / `FAILED_BREAKOUT_SELL` would treat a continuation proof as a counter-pressure proof.
+    **It stays UNMAPPED (Q-R4):** `CONTINUATION + FAILED_RECLAIM` is a valid proof outcome that yields no canonical
+    ExecutionBox route in this increment. There is no fallback `FAILED_RECLAIM → BREAK_RETEST` and no implicit
+    counter-route; a route for it needs a later amendment.
   - A route becomes `RUNTIME_ELIGIBLE` only after `SPEC_DEFINED` is ratified, replay + shadow + OOS evidence is
     complete, and the owner authorizes runtime activation separately. **A3 approval turns no route on.**
 - **shadow_required:** true · **replay_required:** true · **oos_required:** true · **runtime_activation:** EXPLICIT_ONLY.
@@ -223,6 +235,13 @@ T10 gross/net RR relation, broker adaptation, risk, execution command, child/cam
     the material projection (A3-09) changes. Versions are contiguous (no skipped numbers), append-only, never
     rewritten, and each version n > 1 records `previous_box_version = n − 1` and that version's
     `material_box_hash`. `box_sequence`, if kept, is a lifecycle-local audit ordinal with no authority.
+  - **Version lock (owner, 2026-09-22):**
+
+    ```text
+    box_version starts at 1 and increments by exactly +1; no skipped versions; append-only
+    same thesis + route + policy, material projection changed → same execution_box_id, box_version = previous + 1
+    route or policy changed                                   → new execution_box_id, box_version = 1
+    ```
 - **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A3-09 · GAP_FILL · Material field partition and `material_box_hash`
@@ -234,7 +253,8 @@ T10 gross/net RR relation, broker adaptation, risk, execution command, child/cam
 
   ```text
   GEOMETRY_MATERIAL  : box_low, box_high (canonical Price, A3-05)
-  AUTHORITY_MATERIAL : structural_proof_id (new structural trigger / new retest interval), context_epoch_id
+  AUTHORITY_MATERIAL : structural_proof_id (new structural trigger / new retest interval), context_epoch_id,
+                       freeze_evidence_id (canonical identity of the closed candle that satisfied the FROZEN predicate)
   LINEAGE (not hashed): pressure_range_id, target_id, A2-07 target fact, source candle ids, observed_through_utc,
                         containment sidecar
   NON_MATERIAL       : emission time, tick refresh, cluster, sticky Microboost state, transport context,
@@ -247,6 +267,10 @@ T10 gross/net RR relation, broker adaptation, risk, execution command, child/cam
   box_version++      iff material_box_hash changes and execution_box_id is unchanged
   ```
 
+  - **AUTHORITY_MATERIAL is material for revision semantics** (owner clarification, 2026-09-22): it is part of the
+    canonical material projection and of `material_box_hash`, exactly like GEOMETRY_MATERIAL. LINEAGE is never
+    hashed merely because an id changed: `pressure_range_id` and `target_id` are provenance and revision drivers,
+    not box material fields.
   - **`target_id` is LINEAGE, not material.** Under the proposed route policies (A3-R1, A3-R2) the box interval
     does not read the target; the target constrains entry later, through `target_room_interval` (§17.4). A target
     revision therefore re-evaluates the box (A3-07) and versions it only if the projection moves.
@@ -270,77 +294,112 @@ T10 gross/net RR relation, broker adaptation, risk, execution command, child/cam
   INVALIDATED = the box's basis is lost and NO valid successor exists
   ```
 
-  - **Concurrent case:** when the old box becomes invalid and a replacement is derived in the same evaluation, the
-    old box is `SUPERSEDED`, not `INVALIDATED`. `INVALIDATED` is reserved for "no replacement".
+  - **Concurrent case:** when the old box loses its basis and a replacement is derived in the same re-evaluation
+    transaction, the old box is `SUPERSEDED`, not `INVALIDATED`. `INVALIDATED` is reserved for "no replacement".
   - A "valid successor" is a successor whose own `building_predicate` holds; it need not be FROZEN yet.
   - `SUPERSEDED` and `INVALIDATED` are terminal; a terminal box is never resurrected.
   - Reachable transitions in the first increment: `BUILDING → FROZEN`; `BUILDING | FROZEN → SUPERSEDED |
     INVALIDATED`. `CONSUMED` has no producer; `EXPIRED` stays `RESERVED_UNREACHABLE_UNTIL_AUTHORITY_DEFINED`.
 - **shadow_required:** true · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
-## 3. Route policy drafts (proposed for ratification; strategy governance decides)
+## 3. Route policies (spec content approved 2026-09-22; strategy governance decided)
 
 Notation from the existing proof machinery (#497, `StructuralProofEvidenceV31`): H1 anchor + confirmation;
 M15 **reference R**, **break B**, **completion C**; boundary **L = R.high for BUY, R.low for SELL** (the existing
 `m15_level`). Every price passes A3-05 before use. `canon(x)` = A3-05 canonicalization.
 
-### A3-R1 · `BREAK_RETEST` · box policy `5scr.box-policy.break-retest` v1 (proposed)
+Common to both policies (Q-R1, Q-R3, Q-R5):
+
+```text
+building_predicate : active DirectionalThesis · completed structural proof of the eligible form ·
+                     route permitted by the thesis's ContextRouteEvaluation · canonical StructuralTarget
+                     selection status SELECTED for the thesis (A2-01) ·
+                     PressureRange.structural_authority == true
+same-close transition : BUILDING has no minimum dwell time. BUILDING and FROZEN may share one authority time
+                     when the completion close satisfies both predicates; the transition is ordered and its
+                     event ordering is deterministic. No artificial extra candle is required.
+post-freeze invalidation (not SL):
+  BUY  : after FROZEN, an authoritative closed M15 candle with close < L invalidates the route/box basis
+  SELL : after FROZEN, an authoritative closed M15 candle with close > L invalidates the route/box basis
+  close == L does not invalidate
+upstream invalidation : thesis or proof invalidated without successor, route blocked by the current route
+                     evaluation, or no eligible canonical target
+resulting state      : decided only by A3-10 (SUPERSEDED if a valid successor exists, else INVALIDATED)
+```
+
+- **`PressureRange.structural_authority == true` is an ExecutionBox formation prerequisite, not a StructuralTarget
+  predicate.** Target eligibility stays exactly A2-05's six predicates. Under the current A1 contract only
+  `COMPLETE` coverage carries structural authority, so `MISSING`, `PARTIAL` or `QUARANTINED` ranges yield
+  **no canonical BUILDING box**, with no downgrade and no fallback to M1.
+- **Box invalidation ≠ broker stop ≠ risk SL ≠ order stop level.** The closed-candle reclaim failure against L is a
+  route-validity event only; structural SL (§17.5) remains the geometry step after the box.
+
+### A3-R1 · `BREAK_RETEST` · box policy `5scr.box-policy.break-retest` v1
 
 ```text
 eligible_proof_forms     : proof_class CONTINUATION, m15_completion_kind RETEST, pattern route BREAK_RETEST
 closed_candle_authority  : H1 (structure proof), M15 (break, completion, freeze). M1: evidence only.
 source_evidence          : R, B, C as closed, authoritative M15 candles of the proof
-building_predicate       : active DirectionalThesis · completed structural proof of the eligible form ·
-                           route permitted by the thesis's ContextRouteEvaluation · canonical StructuralTarget
-                           selection status SELECTED for the thesis (A2-01) · PressureRange record present
+building_predicate       : common (above)
 BUY  box                 : box_low = canon(C.low), box_high = canon(L)          (RETEST ⇒ C.low ≤ L)
 SELL box                 : box_low = canon(L),     box_high = canon(C.high)     (RETEST ⇒ C.high ≥ L)
 frozen_predicate         : C closed at or before decision_time · box_low ≤ box_high · every input closed and
                            observed at or before decision_time
 freeze_reason            : M15_RETEST_COMPLETION_CLOSED
-invalidation_basis       : upstream only — thesis or proof invalidated without successor, route blocked by the
-                           current route evaluation, or no eligible canonical target (A3-10 decides the state)
+invalidation_basis       : common post-freeze invalidation + upstream invalidation (above)
 ```
 
-### A3-R2 · `BREAKOUT_ACCEPTANCE` · box policy `5scr.box-policy.breakout-acceptance` v1 (proposed)
+### A3-R2 · `BREAKOUT_ACCEPTANCE` · box policy `5scr.box-policy.breakout-acceptance` v1
 
 ```text
 eligible_proof_forms     : proof_class CONTINUATION, m15_completion_kind ACCEPTANCE, pattern route BREAKOUT_ACCEPTANCE
 closed_candle_authority  : as A3-R1
 source_evidence          : as A3-R1
-building_predicate       : as A3-R1
-BUY  box                 : box_low = canon(L),      box_high = canon(C.low)     (ACCEPTANCE ⇒ C.low > L)
-SELL box                 : box_low = canon(C.high), box_high = canon(L)         (ACCEPTANCE ⇒ C.high < L)
-frozen_predicate         : as A3-R1
+building_predicate       : common (above)
+acceptance_side_guard    : BUY requires C.low > L · SELL requires C.high < L (strict, so the interval is never
+                           degenerate)
+BUY  box                 : box_low = canon(L),      box_high = canon(C.low)
+SELL box                 : box_low = canon(C.high), box_high = canon(L)
+frozen_predicate         : acceptance_side_guard holds · otherwise as A3-R1
 freeze_reason            : M15_ACCEPTANCE_COMPLETION_CLOSED
-invalidation_basis       : as A3-R1
+invalidation_basis       : common post-freeze invalidation + upstream invalidation (above)
 ```
 
-The interval lies entirely outside the origin range (beyond L), matching §16.4's "acceptance interval di luar
-origin range".
+- The interval lies entirely outside the origin range (beyond L), matching §16.4's "acceptance interval di luar
+  origin range". The full acceptance candle range `[C.low, C.high]` is **not** the box.
+- **If the acceptance-side guard fails, A3-R2 MUST NOT FREEZE A BOX.** There is no fallback to `[C.low, C.high]`
+  and no generic interval.
+- Non-normative note: the existing completion classifier labels a candle `ACCEPTANCE` only when it neither
+  retested nor failed-reclaimed, which implies the guard today. The guard is stated anyway so that the policy never
+  depends on that implementation detail.
 
-### Open questions the owner must settle before A3-R1/A3-R2 can be ratified
+### Resolved questions (owner, 2026-09-22)
 
 ```text
-Q-R1  BUILDING vs FROZEN timing. With a completed proof as a BUILDING prerequisite, both predicates are satisfied
-      at the same closed M15 candle, so BUILDING is transient. Accept that, or require an additional closed
-      candle for FROZEN (strategy content — not chosen here)?
-Q-R2  A3-R2 interval: [L, C.low] (boundary to the acceptance candle's near extreme) as proposed, or the
-      acceptance candle's own range [C.low, C.high]?
-Q-R3  Price-path invalidation of a box (e.g. a close back through L) is NOT defined here. It overlaps structural
-      invalidation / SL (§17.5), which is out of A3 scope. Keep it out, or define it in A3?
-Q-R4  FAILED_RECLAIM completion: leave unmapped, or map it to a route?
-Q-R5  PressureRange presence as a BUILDING prerequisite: presence only (as proposed), or a coverage status?
+Q-R1  CLOSED — same-close BUILDING → FROZEN transition allowed; no minimum dwell time; no extra M15 candle.
+Q-R2  CLOSED — BREAKOUT_ACCEPTANCE box = [L, C.low] (BUY) / [C.high, L] (SELL) under the strict acceptance-side
+      guard; never the full acceptance candle.
+Q-R3  CLOSED — define box invalidation in A3: post-freeze authoritative M15 close beyond L (BUY < L, SELL > L);
+      equality does not invalidate; not SL. New strategy behavior: replay + shadow, OOS before runtime.
+Q-R4  CLOSED — FAILED_RECLAIM stays UNMAPPED.
+Q-R5  CLOSED — canonical BUILDING requires PressureRange.structural_authority == true; box prerequisite, not a
+      seventh target predicate.
 ```
 
 ## 4. Approval
 
-**Not approved.** This is a draft for the owner's per-entry review. Approval of any entry grants no runtime
-activation and no implementation authority:
+**Not approved as exact bytes.** The owner approved the content on 2026-09-22 (A3-01 … A3-08 and A3-10 approved,
+A3-09 approved with clarification, A3-R1 and A3-R2 spec approved, Q-R1 … Q-R5 resolved) and required these
+decisions to be encoded before byte ratification. This document is the successor of the draft bytes
+`sha256 c9243308…93f6dfb` (git blob `ae26705c…c478`), pinned in `content_review`. A3 becomes approved only by a
+separate owner ratification of the exact bytes of this document.
+
+Approval grants no runtime activation and no implementation authority:
 
 ```text
 A3 APPROVED  ≠  ExecutionBoxV31 implementation authorized
 A3 APPROVED  ≠  any route RUNTIME_ELIGIBLE
 ```
 
-`grants_runtime_activation` stays `false`; every entry keeps `runtime_activation: EXPLICIT_ONLY`.
+`grants_runtime_activation` stays `false`; every entry keeps `runtime_activation: EXPLICIT_ONLY`. A route becomes
+`RUNTIME_ELIGIBLE` only after replay, shadow and OOS evidence pass and the owner authorizes activation separately.
