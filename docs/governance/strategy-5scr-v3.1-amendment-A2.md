@@ -15,7 +15,15 @@ draft_revision:
   base_approved_document_sha256: 9ca93cca0f10fb2de30e858f978b2b0b4908fda5ed9eb9d9ad597990fe6165e7
   base_approved_blob_id: cf07bd46b4b54edbc0f6fa6b69b6d5a99fd34184
   approved_entries_span_sha256: cb82a987ac2b22f5c8da83348f11175676fdae92b63251bdbfc0590e2a88891f
-  pending_entries: [A2-07]
+  pending_entries: []
+ratification_a2_07:
+  ratified_draft_sha256: 01e9c76d71229a29a370acd023e45566329f1b7805140b4533ce7c0932253ba6
+  ratified_draft_blob_id: 39d380d394c47a6701871a2c9fa5b27b5f71a7dd
+  ratified_on: 2026-09-21
+  ratified_by: OWNER
+  method: independent byte verification by the owner (Get-FileHash + git rev-parse)
+  approved_entries: [A2-07]
+  a2_07_normative_span_sha256: e96a0294b5eab21a13d6a4b6586299d91e444ca684facee93938555867dc6b03
 base_ssot:
   document_id: WOLF15-5SCR-SSOT-V3.1-CANDIDATE
   path: docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md
@@ -279,7 +287,7 @@ Source: the 12B audit (`GAP12B_STRUCTURAL_TARGET_AUDIT.md`), open items T1–T10
 
 ### A2-07 · GAP_FILL · Structural target revision facts
 
-- **Status:** DRAFT — `PENDING`. Not covered by the ratification of A2-01 … A2-06.
+- **Status:** `APPROVED` — ratified by the owner 2026-09-21 on exact bytes (`ratification_a2_07`).
 - **Source:** 12B re-audit, criterion #14; owner decision 2026-09-21 to encode the facts as durable authority
   rather than rely on the 12B GO directive.
 - **Base clauses:** §15.1, §21.6, §17.2.
@@ -417,8 +425,15 @@ A2-01 APPROVED  ≠  ExecutionBox implementation authorized
 `grants_runtime_activation` stays `false` and every entry keeps `runtime_activation: EXPLICIT_ONLY`. The 12B
 implementation gate stays closed until the owner opens it separately.
 
-**A2-07 is a draft, added 2026-09-21 and `PENDING`.** The ratification block above covers A2-01 … A2-06
-only. The `draft_revision` block pins the approved document this draft extends (`sha256 9ca93cca…6fe165e7`)
-and the sha256 of the approved entries span (from `### A2-01` up to the start of `### A2-07`), so any change
-to the ratified A2-01 … A2-06 text is detectable byte for byte. A2-07 is approved only by a separate owner
-ratification of the exact bytes of this document.
+**A2-07 ratified 2026-09-21.** A2-07 was drafted on top of the approved document
+(`sha256 9ca93cca…6fe165e7`); the `draft_revision` block pins that base and the sha256 of the A2-01 … A2-06
+entries span (from `### A2-01` up to the start of `### A2-07`), so the earlier ratified text is provably
+untouched. The owner then approved A2-07 on content and independently verified the exact draft bytes
+(`sha256 01e9c76d…2253ba6`, git blob `39d380d3…a7dd`). This document is the approved successor of those bytes:
+`ratification_a2_07` pins them, and `a2_07_normative_span_sha256` pins the A2-07 section with only its
+status line excluded, so the ratified A2-07 semantics cannot change without detection.
+
+```text
+A2-07 APPROVED  ≠  StructuralTarget implementation authorized
+A2-07 APPROVED  ≠  any ExecutionBox reaction defined (12C)
+```

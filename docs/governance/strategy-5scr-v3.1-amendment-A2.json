@@ -5,7 +5,7 @@
   "final_approver": "OWNER",
   "document": {
     "path": "docs/governance/strategy-5scr-v3.1-amendment-A2.md",
-    "sha256": "01e9c76d71229a29a370acd023e45566329f1b7805140b4533ce7c0932253ba6"
+    "sha256": "9cf9e5318aa69d8ec4455b48588a924be97b7fdeaf9091e67ff90920e68236d2"
   },
   "base_ssot": {
     "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
@@ -141,7 +141,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     }
   ],
   "ratification": {
@@ -163,8 +163,17 @@
     "base_approved_document_sha256": "9ca93cca0f10fb2de30e858f978b2b0b4908fda5ed9eb9d9ad597990fe6165e7",
     "base_approved_blob_id": "cf07bd46b4b54edbc0f6fa6b69b6d5a99fd34184",
     "approved_entries_span_sha256": "cb82a987ac2b22f5c8da83348f11175676fdae92b63251bdbfc0590e2a88891f",
-    "pending_entries": [
+    "pending_entries": []
+  },
+  "ratification_a2_07": {
+    "ratified_draft_sha256": "01e9c76d71229a29a370acd023e45566329f1b7805140b4533ce7c0932253ba6",
+    "ratified_draft_blob_id": "39d380d394c47a6701871a2c9fa5b27b5f71a7dd",
+    "ratified_on": "2026-09-21",
+    "ratified_by": "OWNER",
+    "method": "independent byte verification by the owner (Get-FileHash + git rev-parse)",
+    "approved_entries": [
       "A2-07"
-    ]
+    ],
+    "a2_07_normative_span_sha256": "e96a0294b5eab21a13d6a4b6586299d91e444ca684facee93938555867dc6b03"
   }
 }

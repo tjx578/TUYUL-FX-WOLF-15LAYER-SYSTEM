@@ -58,9 +58,11 @@ def test_a2_approval_grants_no_runtime_activation():
     assert (record["grants_runtime_activation"], record["dual_authority"]) == (False, False)
     assert record["effective_authority_model"] == "BASE_SSOT_PLUS_EXPLICIT_AMENDMENTS"
     assert all(entry["runtime_activation"] == "EXPLICIT_ONLY" for entry in record["entries"])
-    # A2-07 is a draft: approving A2-01..A2-06 must never sweep it in.
+    # Every entry is approved, each by exactly one owner ratification of exact bytes.
     approval = {entry["entry_id"]: entry["approval"] for entry in record["entries"]}
-    assert approval == {**{f"A2-0{i}": "APPROVED" for i in range(1, 7)}, "A2-07": "PENDING"}
+    assert approval == {f"A2-0{i}": "APPROVED" for i in range(1, 8)}
+    ratified = record["ratification"]["approved_entries"] + record["ratification_a2_07"]["approved_entries"]
+    assert sorted(ratified) == sorted(approval) and len(ratified) == len(set(ratified))
 
 
 def test_the_approved_document_is_the_provable_successor_of_the_ratified_bytes():
@@ -199,13 +201,11 @@ def test_the_a2_07_draft_leaves_the_ratified_entries_byte_identical():
         "9ca93cca0f10fb2de30e858f978b2b0b4908fda5ed9eb9d9ad597990fe6165e7"
     )
     assert draft["base_approved_blob_id"] == "cf07bd46b4b54edbc0f6fa6b69b6d5a99fd34184"
-    assert draft["pending_entries"] == ["A2-07"]
-    assert set(draft["pending_entries"]).isdisjoint(record["ratification"]["approved_entries"])
+    assert draft["pending_entries"] == []
     raw = (ROOT / record["document"]["path"]).read_bytes()
     span = raw[raw.index("### A2-01 ·".encode()) : raw.index("### A2-07 ·".encode())]
     assert hashlib.sha256(span).hexdigest() == draft["approved_entries_span_sha256"]
     assert draft["approved_entries_span_sha256"] == ("cb82a987ac2b22f5c8da83348f11175676fdae92b63251bdbfc0590e2a88891f")
-    assert "- **Status:** DRAFT — `PENDING`." in _document()
 
 
 def _a2_07() -> str:
@@ -213,9 +213,35 @@ def _a2_07() -> str:
     return document[document.index("### A2-07 ·") : document.index("## 3. Non-normative annex")]
 
 
+def test_a2_07_is_the_provable_successor_of_the_ratified_draft_bytes():
+    """Only the status line of A2-07 may differ from the bytes the owner verified; its semantics are pinned."""
+
+    record = _record()
+    ratification = record["ratification_a2_07"]
+    assert ratification["ratified_draft_sha256"] == ("01e9c76d71229a29a370acd023e45566329f1b7805140b4533ce7c0932253ba6")
+    assert ratification["ratified_draft_blob_id"] == "39d380d394c47a6701871a2c9fa5b27b5f71a7dd"
+    assert (ratification["ratified_by"], ratification["approved_entries"]) == ("OWNER", ["A2-07"])
+    assert set(ratification["approved_entries"]).isdisjoint(record["ratification"]["approved_entries"])
+    # Computed from blob 39d380d3 with the status line removed; the successor must reproduce it exactly.
+    assert ratification["a2_07_normative_span_sha256"] == (
+        "e96a0294b5eab21a13d6a4b6586299d91e444ca684facee93938555867dc6b03"
+    )
+    lines = _a2_07().split("\n")
+    status = [line for line in lines if line.startswith("- **Status:**")]
+    assert status == [
+        "- **Status:** `APPROVED` — ratified by the owner 2026-09-21 on exact bytes (`ratification_a2_07`)."
+    ]
+    normative = "\n".join(line for line in lines if not line.startswith("- **Status:**"))
+    assert hashlib.sha256(normative.encode()).hexdigest() == ratification["a2_07_normative_span_sha256"]
+    document = _document()
+    assert ratification["ratified_draft_sha256"] in document
+    assert "A2-07 APPROVED  ≠  StructuralTarget implementation authorized" in document
+    assert "A2-07 APPROVED  ≠  any ExecutionBox reaction defined (12C)" in document
+
+
 def test_revision_facts_are_a_closed_vocabulary_with_frozen_precedence():
     (entry,) = [e for e in _record()["entries"] if e["entry_id"] == "A2-07"]
-    assert (entry["amendment_type"], entry["approval"]) == ("GAP_FILL", "PENDING")
+    assert (entry["amendment_type"], entry["approval"]) == ("GAP_FILL", "APPROVED")
     assert set(entry["base_clause"]) == {"§15.1", "§21.6", "§17.2"}
     text = _a2_07()
     assert "(closed, exactly four values)" in text
