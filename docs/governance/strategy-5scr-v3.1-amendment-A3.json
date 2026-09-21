@@ -1,11 +1,11 @@
 {
   "amendment_id": "WOLF15-5SCR-SSOT-V3.1-A3",
-  "status": "DRAFT_NOT_APPROVED",
+  "status": "APPROVED_PER_ENTRY",
   "scope": "EXECUTION_BOX_ONLY",
   "final_approver": "OWNER",
   "document": {
     "path": "docs/governance/strategy-5scr-v3.1-amendment-A3.md",
-    "sha256": "76f9cad5f6309afd1de03afba8eed9152637c7d1c44164df06bb6a7ae356008a"
+    "sha256": "538b3b6f58513bda10d9f7b49f2665c9178d91ff290d1cc811d56130bf7294cf"
   },
   "base_ssot": {
     "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
@@ -73,7 +73,7 @@
       "replay_required": false,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A3-02",
@@ -95,7 +95,7 @@
       "replay_required": false,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A3-03",
@@ -118,7 +118,7 @@
       "replay_required": true,
       "oos_required": true,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A3-04",
@@ -139,7 +139,7 @@
       "replay_required": true,
       "oos_required": true,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A3-05",
@@ -159,7 +159,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A3-06",
@@ -178,7 +178,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A3-07",
@@ -197,7 +197,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A3-08",
@@ -218,7 +218,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A3-09",
@@ -241,7 +241,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     },
     {
       "entry_id": "A3-10",
@@ -262,7 +262,7 @@
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
-      "approval": "PENDING"
+      "approval": "APPROVED"
     }
   ],
   "route_policies": [
@@ -289,7 +289,7 @@
         ]
       },
       "acceptance_side_guard": null,
-      "approval": "PENDING",
+      "approval": "APPROVED",
       "building_prerequisites": [
         "ACTIVE_DIRECTIONAL_THESIS",
         "COMPLETED_STRUCTURAL_PROOF_OF_ELIGIBLE_FORM",
@@ -333,7 +333,7 @@
         "SELL": "C.high < L",
         "on_failure": "NO_CANONICAL_BOX"
       },
-      "approval": "PENDING",
+      "approval": "APPROVED",
       "building_prerequisites": [
         "ACTIVE_DIRECTIONAL_THESIS",
         "COMPLETED_STRUCTURAL_PROOF_OF_ELIGIBLE_FORM",
@@ -361,7 +361,7 @@
       "freeze_reason": null,
       "bounds": null,
       "acceptance_side_guard": null,
-      "approval": "PENDING"
+      "approval": "NOT_DEFINED"
     },
     {
       "route": "FAILED_BREAKOUT_SELL",
@@ -374,7 +374,7 @@
       "freeze_reason": null,
       "bounds": null,
       "acceptance_side_guard": null,
-      "approval": "PENDING"
+      "approval": "NOT_DEFINED"
     },
     {
       "route": "FAILED_BREAKDOWN_BUY",
@@ -387,7 +387,7 @@
       "freeze_reason": null,
       "bounds": null,
       "acceptance_side_guard": null,
-      "approval": "PENDING"
+      "approval": "NOT_DEFINED"
     },
     {
       "route": "RANGE_FADE",
@@ -400,7 +400,7 @@
       "freeze_reason": null,
       "bounds": null,
       "acceptance_side_guard": null,
-      "approval": "PENDING"
+      "approval": "NOT_DEFINED"
     }
   ],
   "resolved_questions": {
@@ -437,5 +437,29 @@
     "label_cleanup_predecessor_sha256": "b69781ebec098689ae920a8e37abed7eefd682023aa8ce8bc1e487680f65c20f",
     "label_cleanup_predecessor_blob_id": "e9dba29f1c5ea77503c3685118e91a341bb5056d",
     "label_cleanup_scope": "FOUR_STALE_PROPOSED_LABELS_ONLY"
+  },
+  "ratification": {
+    "ratified_draft_sha256": "76f9cad5f6309afd1de03afba8eed9152637c7d1c44164df06bb6a7ae356008a",
+    "ratified_draft_blob_id": "176cd41958a0b6111fdcb7224d41bfbc71d81756",
+    "ratified_on": "2026-09-22",
+    "ratified_by": "OWNER",
+    "method": "independent byte verification by the owner (Get-FileHash + git rev-parse), PR #509 head c39f63f1 CI 40/40 + Security Gate PASS",
+    "approved_entries": [
+      "A3-01",
+      "A3-02",
+      "A3-03",
+      "A3-04",
+      "A3-05",
+      "A3-06",
+      "A3-07",
+      "A3-08",
+      "A3-09",
+      "A3-10"
+    ],
+    "approved_route_specs": [
+      "BREAK_RETEST",
+      "BREAKOUT_ACCEPTANCE"
+    ],
+    "ratified_normative_span_sha256": "377365b8a83f434d13933b6700d8c8c07043ffcd56f28a0df479f191dd0f4b42"
   }
 }

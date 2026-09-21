@@ -2,7 +2,17 @@
 
 ```yaml
 amendment_id: WOLF15-5SCR-SSOT-V3.1-A3
-status: DRAFT_NOT_APPROVED
+status: APPROVED_PER_ENTRY
+ratification:
+  ratified_draft_sha256: 76f9cad5f6309afd1de03afba8eed9152637c7d1c44164df06bb6a7ae356008a
+  ratified_draft_blob_id: 176cd41958a0b6111fdcb7224d41bfbc71d81756
+  ratified_on: 2026-09-22
+  ratified_by: OWNER
+  method: independent byte verification by the owner (Get-FileHash + git rev-parse), PR #509 head c39f63f1 CI 40/40 + Security Gate PASS
+  approved_entries: [A3-01, A3-02, A3-03, A3-04, A3-05, A3-06, A3-07, A3-08, A3-09, A3-10]
+  approved_route_specs: [BREAK_RETEST, BREAKOUT_ACCEPTANCE]
+  pending_entries: []
+  ratified_normative_span_sha256: 377365b8a83f434d13933b6700d8c8c07043ffcd56f28a0df479f191dd0f4b42
 content_review:
   decided_by: OWNER
   decided_on: 2026-09-22
@@ -388,11 +398,16 @@ Q-R5  CLOSED — canonical BUILDING requires PressureRange.structural_authority 
 
 ## 4. Approval
 
-**Not approved as exact bytes.** The owner approved the content on 2026-09-22 (A3-01 … A3-08 and A3-10 approved,
-A3-09 approved with clarification, A3-R1 and A3-R2 spec approved, Q-R1 … Q-R5 resolved) and required these
-decisions to be encoded before byte ratification. This document is the successor of the draft bytes
-`sha256 c9243308…93f6dfb` (git blob `ae26705c…c478`), pinned in `content_review`. A3 becomes approved only by a
-separate owner ratification of the exact bytes of this document.
+**Ratified 2026-09-22.** The owner approved the content on 2026-09-22 (A3-01 … A3-08 and A3-10 approved,
+A3-09 approved with clarification, A3-R1 and A3-R2 spec approved, Q-R1 … Q-R5 resolved), had those decisions
+encoded as a successor of the draft bytes `sha256 c9243308…93f6dfb` (git blob `ae26705c…c478`, pinned in
+`content_review`), had four stale "proposed" labels removed from that successor, and then independently verified
+and ratified the exact bytes `sha256 76f9cad5…356008a` (git blob `176cd419…1756`) at PR #509 head `c39f63f1`
+(CI 40/40, Security Gate PASS).
+
+This document is the approved successor of those exact bytes. Only approval metadata changed: the `status` line,
+the `ratification` block and this section. Sections 1–3 are byte-identical to the ratified bytes, pinned by
+`ratified_normative_span_sha256` (from `## 1.` up to the start of `## 4.`).
 
 Approval grants no runtime activation and no implementation authority:
 

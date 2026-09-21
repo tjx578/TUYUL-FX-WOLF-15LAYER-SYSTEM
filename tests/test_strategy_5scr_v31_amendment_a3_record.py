@@ -86,13 +86,22 @@ def test_a3_builds_on_the_exact_ratified_a1_and_a2_bytes():
     assert builds_on["A2"]["entries_used"] == ["A2-01", "A2-07"]
 
 
-def test_the_draft_grants_no_approval_and_no_runtime_activation():
+def test_ratification_approves_every_entry_and_activates_nothing():
     record = _record()
-    assert record["status"] == "DRAFT_NOT_APPROVED"
+    assert record["status"] == "APPROVED_PER_ENTRY"
     assert (record["grants_runtime_activation"], record["dual_authority"]) == (False, False)
     assert record["runtime_activation"] == "EXPLICIT_ONLY"
-    assert all(e["approval"] == "PENDING" and e["runtime_activation"] == "EXPLICIT_ONLY" for e in record["entries"])
-    assert all(r["approval"] == "PENDING" for r in record["route_policies"])
+    assert all(e["approval"] == "APPROVED" and e["runtime_activation"] == "EXPLICIT_ONLY" for e in record["entries"])
+    # Only defined specs are approved; undefined routes have nothing to approve. No route is switched on.
+    assert {r["route"]: r["approval"] for r in record["route_policies"]} == {
+        "BREAK_RETEST": "APPROVED",
+        "BREAKOUT_ACCEPTANCE": "APPROVED",
+        "PULLBACK_CONTINUATION": "NOT_DEFINED",
+        "FAILED_BREAKOUT_SELL": "NOT_DEFINED",
+        "FAILED_BREAKDOWN_BUY": "NOT_DEFINED",
+        "RANGE_FADE": "NOT_DEFINED",
+    }
+    assert {r["runtime_status"] for r in record["route_policies"]} == {"RUNTIME_DISABLED"}
     document = _document()
     assert "A3 APPROVED  ≠  ExecutionBoxV31 implementation authorized" in document
     assert "A3 APPROVED  ≠  any route RUNTIME_ELIGIBLE" in document
@@ -303,9 +312,32 @@ def test_the_successor_pins_the_predecessor_draft_and_records_content_decisions(
     assert review["routes_spec_approved"] == ["BREAK_RETEST", "BREAKOUT_ACCEPTANCE"]
     document = _document()
     assert review["predecessor_draft_sha256"] in document
-    # Content approval is not byte ratification: nothing is APPROVED until the owner ratifies these exact bytes.
-    assert "**Not approved as exact bytes.**" in document
-    assert _record()["status"] == "DRAFT_NOT_APPROVED"
+    # The content-review pin survives ratification as history of how the ratified bytes were produced.
+    assert "pinned in\n`content_review`" in document
+
+
+def test_the_approved_document_is_the_provable_successor_of_the_ratified_bytes():
+    """Ratification changes approval metadata only; sections 1–3 stay byte-identical to what the owner verified."""
+
+    record = _record()
+    ratification = record["ratification"]
+    assert ratification["ratified_draft_sha256"] == "76f9cad5f6309afd1de03afba8eed9152637c7d1c44164df06bb6a7ae356008a"
+    assert ratification["ratified_draft_blob_id"] == "176cd41958a0b6111fdcb7224d41bfbc71d81756"
+    assert ratification["ratified_by"] == "OWNER"
+    assert ratification["approved_entries"] == [f"A3-{i:02d}" for i in range(1, 11)]
+    assert ratification["approved_route_specs"] == ["BREAK_RETEST", "BREAKOUT_ACCEPTANCE"]
+    assert "PR #509 head c39f63f1 CI 40/40 + Security Gate PASS" in ratification["method"]
+    # Computed from blob 176cd419; the approved successor must reproduce it byte for byte.
+    assert ratification["ratified_normative_span_sha256"] == (
+        "377365b8a83f434d13933b6700d8c8c07043ffcd56f28a0df479f191dd0f4b42"
+    )
+    raw = (ROOT / record["document"]["path"]).read_bytes()
+    span = raw[raw.index(b"## 1. Why A3 is separate") : raw.index(b"## 4. Approval")]
+    assert hashlib.sha256(span).hexdigest() == ratification["ratified_normative_span_sha256"]
+    document = _document()
+    assert "**Ratified 2026-09-22.**" in document
+    assert "ratified_draft_sha256: 76f9cad5f6309afd1de03afba8eed9152637c7d1c44164df06bb6a7ae356008a" in document
+    assert "Only approval metadata changed" in document
 
 
 def test_q_r1_building_and_frozen_may_share_one_authoritative_close():
