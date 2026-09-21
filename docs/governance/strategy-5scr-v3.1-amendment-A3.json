@@ -1,0 +1,349 @@
+{
+  "amendment_id": "WOLF15-5SCR-SSOT-V3.1-A3",
+  "status": "DRAFT_NOT_APPROVED",
+  "scope": "EXECUTION_BOX_ONLY",
+  "final_approver": "OWNER",
+  "document": {
+    "path": "docs/governance/strategy-5scr-v3.1-amendment-A3.md",
+    "sha256": "c9243308158f738fb643b6a84c9ebb325cb1a7edceee869512ef9dfbb93f6dfb"
+  },
+  "base_ssot": {
+    "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
+    "path": "docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md",
+    "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "document_bytes_modified": false
+  },
+  "companion_authority": {
+    "document_id": "WOLF15-5SCR-FINAL-AUDIT-REPLAY-WORKFLOW-V3",
+    "location": "OUTSIDE_REPOSITORY",
+    "sha256": "4420a32f981f18e9fcd9f0cd3f8aa22362216baf4fff241ab4d6700bbee2b172",
+    "document_bytes_modified": false
+  },
+  "builds_on": {
+    "A1": {
+      "sha256": "1fed7f7b2eb79152ba8f825faca4af3eed131f69222860c6793a42eabd152d40",
+      "entries_used": [
+        "A1-09",
+        "A1-10",
+        "A1-11",
+        "A1-12"
+      ]
+    },
+    "A2": {
+      "sha256": "9cf9e5318aa69d8ec4455b48588a924be97b7fdeaf9091e67ff90920e68236d2",
+      "entries_used": [
+        "A2-01",
+        "A2-07"
+      ]
+    }
+  },
+  "effective_authority_model": "BASE_SSOT_PLUS_EXPLICIT_AMENDMENTS",
+  "dual_authority": false,
+  "runtime_activation": "EXPLICIT_ONLY",
+  "grants_runtime_activation": false,
+  "out_of_scope": [
+    "CONSUMED_TRIGGER",
+    "EXPIRED_TRIGGER",
+    "STRUCTURAL_SL",
+    "TP1",
+    "RR",
+    "T10",
+    "BROKER",
+    "RISK",
+    "EXECUTION_COMMAND",
+    "CHILD_CAMPAIGN"
+  ],
+  "entries": [
+    {
+      "entry_id": "A3-01",
+      "amendment_type": "CONFLICT_OVERRIDE",
+      "source_pr": null,
+      "base_documents": [
+        "AUDIT_REPLAY_V3",
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§8",
+        "§17.1"
+      ],
+      "base_behavior": "Audit/Replay v3 section 8 orders the box before the target; A2-01 resolved the same conflict for SSOT only.",
+      "amended_behavior": "A2-01 target-first precedence also governs Audit/Replay v3: wherever it orders the box before the target, SSOT section 17.1 controls. RouteEvaluation is not moved.",
+      "reason": "Without it the replay workflow could later be read as contrary authority.",
+      "shadow_required": false,
+      "replay_required": false,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A3-02",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "AUDIT_REPLAY_V3",
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§13.1",
+        "§17.4",
+        "§16.1"
+      ],
+      "base_behavior": "Audit/Replay v3 line 55 gives M1 no box role while its section 13.1 names M1 box evidence; section 17.4 names no freeze timeframe.",
+      "amended_behavior": "M1/tick may contribute PressureRange evidence, ExecutionBox evidence, entry timing, fill/path observation and MAE/MFE, but must not independently create or freeze a canonical box or determine route policy. Freeze authority is an approved route policy plus the closed-candle authority it names.",
+      "reason": "Evidence is not authority; two lines of one document must not keep yielding different readings.",
+      "shadow_required": false,
+      "replay_required": false,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A3-03",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§16.1",
+        "§16.4",
+        "§17.3",
+        "§17.4"
+      ],
+      "base_behavior": "The route registry carries only route, direction, location alignment and quote requirement; no route has an executable interval or freeze rule.",
+      "amended_behavior": "A route policy is canonical only if route, policy identity, eligible proof forms, closed-candle authority, source evidence requirements, BUILDING predicate, box_low and box_high derivations, FROZEN predicate, freeze reason, invalidation basis and future-evidence prohibition are all defined; otherwise NOT_CANONICALLY_IMPLEMENTABLE and no canonical box. No fallback to M1, ExecutionBoxV1, the v2 first-M15 rule or a generic interval.",
+      "reason": "Route geometry is strategy behavior and cannot be chosen by an implementer.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A3-04",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§16.4",
+        "§17.3"
+      ],
+      "base_behavior": "Six routes are named in prose; route labels in code are free strings.",
+      "amended_behavior": "Closed six-route vocabulary with independent spec, evidence and runtime status axes. BREAK_RETEST and BREAKOUT_ACCEPTANCE are SPEC_DEFINED (proposed); the other four are NOT_YET_DEFINED; all are EVIDENCE_PENDING and RUNTIME_DISABLED. FAILED_RECLAIM is a completion kind, not a route. A3 approval turns no route on.",
+      "reason": "Enable only routes the proof machinery actually supports.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A3-05",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§11.1",
+        "§16.1"
+      ],
+      "base_behavior": "Proof levels and closed-candle prices are float; no clause fixes the box bound representation.",
+      "amended_behavior": "Canonical box bounds use the existing Price type (Decimal, 12 dp). Legacy float evidence is canonicalized once by Decimal(str(value)); a value not fitting Price is rejected, never rounded. Hashing uses fixed-point decimal strings without exponent or trailing zeros. Float arithmetic into material_box_hash, float equality for versioning and broker tick_size quantization are forbidden.",
+      "reason": "Float artifacts must never decide a box version.",
+      "shadow_required": false,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A3-06",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§16.3"
+      ],
+      "base_behavior": "A1-12 says MATERIAL_RANGE_CHANGE affects the box once 12C exists; section 16.3 closed cause list omits PressureRange.",
+      "amended_behavior": "A PressureRange change requires box re-evaluation but alone never forces a box_version increment; a version is appended only if the approved box material projection changes. pressure_range_id is lineage, not material.",
+      "reason": "Upstream truth changing does not mean downstream material changed.",
+      "shadow_required": false,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A3-07",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§16.3"
+      ],
+      "base_behavior": "Section 16.3 names target/invalidation revision as a box change cause; A2-07 defines no box reaction.",
+      "amended_behavior": "requires_box_reevaluation is false for TARGET_UNCHANGED and true for TARGET_MATERIAL_CHANGE, TARGET_NO_LONGER_ELIGIBLE and TARGET_INVALIDATED. resulting_box_state is never mapped from a target fact; it follows only from re-derivation, the material projection and the SUPERSEDED/INVALIDATED rule.",
+      "reason": "A target fact is an obligation to re-derive, not a state.",
+      "shadow_required": false,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A3-08",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§4.1",
+        "§4.2",
+        "§17.7"
+      ],
+      "base_behavior": "Section 4.1 names execution_box_id + box_version; nothing fixes the tuple.",
+      "amended_behavior": "execution_box_id = UUIDv5 over [box derivation version, strategy_thesis_id, route, box_policy_id, box_policy_version]; revision = (execution_box_id, box_version). pressure_range_id, target_id, proof revision, source evidence, admission class and clocks stay outside the id. Route or policy change creates a new id. Version 1 is created with the record; versions are contiguous, append-only and linked to the previous version and its material hash.",
+      "reason": "Separate logical identity from material revisions.",
+      "shadow_required": false,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A3-09",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§15.2",
+        "§16.3",
+        "§13.2",
+        "§17.2"
+      ],
+      "base_behavior": "Section 16.3 lists what may and may not change a box; no field partition exists.",
+      "amended_behavior": "GEOMETRY_MATERIAL = box_low, box_high; AUTHORITY_MATERIAL = structural_proof_id, context_epoch_id; LINEAGE (not hashed) = pressure_range_id, target_id, target fact, source candle ids, observed_through_utc, containment sidecar; NON_MATERIAL = telemetry, deployment, request, publisher, broker quote, reference price, observational timestamps, box_version. material_box_hash covers GEOMETRY and AUTHORITY material only; box_version increments iff it changes under the same id. target_id is lineage because the proposed policies do not read the target.",
+      "reason": "Every version bump must name its cause.",
+      "shadow_required": false,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    },
+    {
+      "entry_id": "A3-10",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§16.3",
+        "§21.6",
+        "§28.17"
+      ],
+      "base_behavior": "SUPERSEDED, INVALIDATED and their reason codes exist but are undefined.",
+      "amended_behavior": "SUPERSEDED = a valid successor exists (newer version, or new box under the same thesis); INVALIDATED = basis lost with no valid successor. An invalid box with a concurrently derived replacement is SUPERSEDED. A valid successor satisfies its own BUILDING predicate. Both states are terminal. CONSUMED has no producer; EXPIRED stays reserved and unreachable.",
+      "reason": "Two terminal states need one rule that separates them.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
+    }
+  ],
+  "route_policies": [
+    {
+      "route": "BREAK_RETEST",
+      "spec_status": "SPEC_DEFINED",
+      "evidence_status": "EVIDENCE_PENDING",
+      "runtime_status": "RUNTIME_DISABLED",
+      "box_policy_id": "5scr.box-policy.break-retest",
+      "box_policy_version": "v1",
+      "proof_form": {
+        "proof_class": "CONTINUATION",
+        "m15_completion_kind": "RETEST"
+      },
+      "freeze_reason": "M15_RETEST_COMPLETION_CLOSED",
+      "approval": "PENDING"
+    },
+    {
+      "route": "BREAKOUT_ACCEPTANCE",
+      "spec_status": "SPEC_DEFINED",
+      "evidence_status": "EVIDENCE_PENDING",
+      "runtime_status": "RUNTIME_DISABLED",
+      "box_policy_id": "5scr.box-policy.breakout-acceptance",
+      "box_policy_version": "v1",
+      "proof_form": {
+        "proof_class": "CONTINUATION",
+        "m15_completion_kind": "ACCEPTANCE"
+      },
+      "freeze_reason": "M15_ACCEPTANCE_COMPLETION_CLOSED",
+      "approval": "PENDING"
+    },
+    {
+      "route": "PULLBACK_CONTINUATION",
+      "spec_status": "NOT_YET_DEFINED",
+      "evidence_status": "EVIDENCE_PENDING",
+      "runtime_status": "RUNTIME_DISABLED",
+      "box_policy_id": null,
+      "box_policy_version": null,
+      "proof_form": null,
+      "freeze_reason": null,
+      "approval": "PENDING"
+    },
+    {
+      "route": "FAILED_BREAKOUT_SELL",
+      "spec_status": "NOT_YET_DEFINED",
+      "evidence_status": "EVIDENCE_PENDING",
+      "runtime_status": "RUNTIME_DISABLED",
+      "box_policy_id": null,
+      "box_policy_version": null,
+      "proof_form": null,
+      "freeze_reason": null,
+      "approval": "PENDING"
+    },
+    {
+      "route": "FAILED_BREAKDOWN_BUY",
+      "spec_status": "NOT_YET_DEFINED",
+      "evidence_status": "EVIDENCE_PENDING",
+      "runtime_status": "RUNTIME_DISABLED",
+      "box_policy_id": null,
+      "box_policy_version": null,
+      "proof_form": null,
+      "freeze_reason": null,
+      "approval": "PENDING"
+    },
+    {
+      "route": "RANGE_FADE",
+      "spec_status": "NOT_YET_DEFINED",
+      "evidence_status": "EVIDENCE_PENDING",
+      "runtime_status": "RUNTIME_DISABLED",
+      "box_policy_id": null,
+      "box_policy_version": null,
+      "proof_form": null,
+      "freeze_reason": null,
+      "approval": "PENDING"
+    }
+  ],
+  "open_questions": [
+    "Q-R1",
+    "Q-R2",
+    "Q-R3",
+    "Q-R4",
+    "Q-R5"
+  ]
+}
