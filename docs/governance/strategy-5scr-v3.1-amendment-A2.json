@@ -5,7 +5,7 @@
   "final_approver": "OWNER",
   "document": {
     "path": "docs/governance/strategy-5scr-v3.1-amendment-A2.md",
-    "sha256": "9ca93cca0f10fb2de30e858f978b2b0b4908fda5ed9eb9d9ad597990fe6165e7"
+    "sha256": "01e9c76d71229a29a370acd023e45566329f1b7805140b4533ce7c0932253ba6"
   },
   "base_ssot": {
     "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
@@ -124,6 +124,24 @@
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
       "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A2-07",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§15.1",
+        "§21.6",
+        "§17.2"
+      ],
+      "base_behavior": "Section 15.1 lists target-map revision as a material re-evaluation trigger and section 21.6 supplies target reason codes, but no clause says what kind of target revision occurred, so downstream geometry has no authority-defined signal for when the target side changed.",
+      "amended_behavior": "Closed revision-fact vocabulary of exactly four values comparing the previous canonical selected target with the current canonical target selection. TARGET_UNCHANGED: same stable target_id, geometry-relevant canonical material unchanged, all six A2-05 predicates still hold; no target-side re-evaluation. TARGET_MATERIAL_CHANGE: the selected-target result changed materially without invalidation or ineligibility as cause, covering (A) same target_id with changed geometry-relevant material and (B) a different target_id because the eligible set or nearest solution changed; target-side re-evaluation required, no ExecutionBox revision by itself. TARGET_INVALIDATED: the source's authoritative structural policy explicitly invalidates the previously selected target. TARGET_NO_LONGER_ELIGIBLE: the previously selected target stays a known record but fails one or more A2-05 predicates; staleness, consumption, being passed, direction change and authority loss are this value, never TARGET_INVALIDATED unless the source also explicitly invalidates. Precedence frozen: TARGET_INVALIDATED > TARGET_NO_LONGER_ELIGIBLE > TARGET_MATERIAL_CHANGE > TARGET_UNCHANGED; one classification reports one value. Section 21.6 reason codes are unchanged. No mapping from a target fact to any ExecutionBox FSM state or revision effect is encoded; that is 12C authority. No target_id formula and no material field list is fixed.",
+      "reason": "12C will consume these facts to decide when downstream geometry must re-evaluate, so they must be durable authority rather than a GO directive, and without precedence one revision could report several contradictory facts.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "PENDING"
     }
   ],
   "ratification": {
@@ -139,6 +157,14 @@
       "A2-04",
       "A2-05",
       "A2-06"
+    ]
+  },
+  "draft_revision": {
+    "base_approved_document_sha256": "9ca93cca0f10fb2de30e858f978b2b0b4908fda5ed9eb9d9ad597990fe6165e7",
+    "base_approved_blob_id": "cf07bd46b4b54edbc0f6fa6b69b6d5a99fd34184",
+    "approved_entries_span_sha256": "cb82a987ac2b22f5c8da83348f11175676fdae92b63251bdbfc0590e2a88891f",
+    "pending_entries": [
+      "A2-07"
     ]
   }
 }
