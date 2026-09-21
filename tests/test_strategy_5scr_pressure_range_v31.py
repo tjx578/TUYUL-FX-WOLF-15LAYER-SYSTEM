@@ -559,3 +559,67 @@ def test_a_raw_tick_id_is_rejected_as_such_not_merely_as_a_hash_mismatch():
         PressureRangeV31.model_construct(**body).__class__.model_validate(
             {**record.model_dump(), "source_price_ids": ("tick:0:a", *record.source_price_ids)}
         )
+
+
+# --- A1-12 regression guards (test hardening 2026-09-21) -----------------------------------------------------
+# Each test below kills a source mutant that the suite above let survive. The source was already correct; these
+# pin it. Fixtures come from the real producer, never from hand-built contract state.
+
+
+def _quarantined_and_complete_with_identical_everything_else() -> tuple[Any, Any]:
+    """QUARANTINED → COMPLETE with coverage_gaps=() on both sides and identical bounds and evidence ids.
+
+    Every expected period is covered by AUTHORITATIVE evidence; the only difference is one extra QUARANTINED item
+    for an already covered period, which flips the status without opening a gap.
+    """
+
+    covered = (_evidence(0, low=1.1000, high=1.1010), _evidence(1, low=1.0990, high=1.1005))
+    extra = _evidence(1, low=1.0990, high=1.1005, quality="QUARANTINED", tag="outlier-verdict")
+    quarantined = _materialize(evidence=(*covered, extra), expected=_periods(2)).range
+    complete = _materialize(evidence=covered, expected=_periods(2)).range
+    assert quarantined is not None and complete is not None
+    assert (quarantined.price_coverage_status, complete.price_coverage_status) == ("QUARANTINED", "COMPLETE")
+    assert quarantined.coverage_gaps == complete.coverage_gaps == ()
+    assert (quarantined.low, quarantined.high) == (complete.low, complete.high)
+    assert quarantined.source_price_ids == complete.source_price_ids
+    assert quarantined.observed_through_utc == complete.observed_through_utc
+    return quarantined, complete
+
+
+def test_an_isolated_coverage_status_transition_is_a_coverage_change():
+    """A1-12: price_coverage_status is a COVERAGE field. With gaps, bounds and evidence identical, only the status
+    moves, so dropping it from COVERAGE_FIELDS would silently report no material change."""
+
+    quarantined, complete = _quarantined_and_complete_with_identical_everything_else()
+    assert classify_pressure_range_change_v31(quarantined, complete) == "COVERAGE_CHANGE"
+    assert classify_pressure_range_change_v31(complete, quarantined) == "COVERAGE_CHANGE"
+    assert downstream_reevaluation_v31(classify_pressure_range_change_v31(quarantined, complete)) == ("LIFECYCLE",)
+
+
+def test_a_coverage_status_transition_is_never_an_evidence_refresh():
+    """A1-12: price_coverage_status is not an EVIDENCE field. Reclassifying it as evidence would turn a coverage
+    transition that re-evaluates lifecycle actionability into a refresh that re-evaluates nothing."""
+
+    from contracts.strategy_5scr_pressure_range_v31 import COVERAGE_FIELDS, EVIDENCE_FIELDS
+
+    assert "price_coverage_status" in COVERAGE_FIELDS
+    assert "price_coverage_status" not in EVIDENCE_FIELDS
+    quarantined, complete = _quarantined_and_complete_with_identical_everything_else()
+    assert classify_pressure_range_change_v31(quarantined, complete) != "EVIDENCE_REFRESH"
+
+
+def test_geometry_takes_precedence_over_a_simultaneous_coverage_change():
+    """A1-12 precedence: when bounds and coverage move together the class is MATERIAL_RANGE_CHANGE, never
+    COVERAGE_CHANGE, because only the material class re-evaluates the structural target."""
+
+    partial = _materialize(evidence=(_evidence(0, low=1.1000, high=1.1010),), expected=_periods(2)).range
+    complete = _materialize(
+        evidence=(_evidence(0, low=1.1000, high=1.1010), _evidence(1, low=1.0950, high=1.1005)),
+        expected=_periods(2),
+    ).range
+    assert partial is not None and complete is not None
+    assert (partial.price_coverage_status, complete.price_coverage_status) == ("PARTIAL", "COMPLETE")
+    assert partial.coverage_gaps != complete.coverage_gaps
+    assert partial.low != complete.low
+    assert classify_pressure_range_change_v31(partial, complete) == "MATERIAL_RANGE_CHANGE"
+    assert "STRUCTURAL_TARGET" in downstream_reevaluation_v31("MATERIAL_RANGE_CHANGE")
