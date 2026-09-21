@@ -11,6 +11,11 @@ ratification:
   method: independent byte verification by the owner (Get-FileHash + git rev-parse)
   approved_entries: [A2-01, A2-02, A2-03, A2-04, A2-05, A2-06]
   pending_entries: []
+draft_revision:
+  base_approved_document_sha256: 9ca93cca0f10fb2de30e858f978b2b0b4908fda5ed9eb9d9ad597990fe6165e7
+  base_approved_blob_id: cf07bd46b4b54edbc0f6fa6b69b6d5a99fd34184
+  approved_entries_span_sha256: cb82a987ac2b22f5c8da83348f11175676fdae92b63251bdbfc0590e2a88891f
+  pending_entries: [A2-07]
 base_ssot:
   document_id: WOLF15-5SCR-SSOT-V3.1-CANDIDATE
   path: docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md
@@ -272,6 +277,97 @@ Source: the 12B audit (`GAP12B_STRUCTURAL_TARGET_AUDIT.md`), open items T1–T10
   reintroducing `formed_at`.
 - **shadow_required:** true · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
+### A2-07 · GAP_FILL · Structural target revision facts
+
+- **Status:** DRAFT — `PENDING`. Not covered by the ratification of A2-01 … A2-06.
+- **Source:** 12B re-audit, criterion #14; owner decision 2026-09-21 to encode the facts as durable authority
+  rather than rely on the 12B GO directive.
+- **Base clauses:** §15.1, §21.6, §17.2.
+- **Base behavior:** §15.1 lists `target-map revision` as a material re-evaluation trigger and §21.6 supplies
+  target reason codes (`TARGET_MISSING`, `TARGET_CONSUMED`, `TARGET_ALREADY_PASSED`, …), but no clause says
+  **what kind** of target revision occurred. Downstream geometry therefore has no authority-defined signal for
+  when the target side has changed.
+- **Amended behavior — the revision-fact vocabulary (closed, exactly four values):**
+
+  ```text
+  TARGET_UNCHANGED
+  TARGET_MATERIAL_CHANGE
+  TARGET_INVALIDATED
+  TARGET_NO_LONGER_ELIGIBLE
+  ```
+
+  A revision fact compares the **previous** canonical selected target with the **current** canonical target
+  selection.
+
+  - **`TARGET_UNCHANGED`** — the previous and current canonical selections resolve to the same stable
+    `target_id`, the canonical target material relevant to downstream geometry is unchanged, and the target
+    still satisfies all six A2-05 predicates. No target-side structural re-evaluation follows.
+  - **`TARGET_MATERIAL_CHANGE`** — the canonical selected-target result changed materially and target
+    invalidation or ineligibility is not the cause. It covers both:
+
+    ```text
+    A. same target_id, but canonical material relevant to geometry changed
+       (e.g. a canonical target price or material evidence revision)
+    B. a different target_id is selected because the canonical eligible set or nearest solution changed
+       (e.g. a new nearer eligible target became authoritative)
+    ```
+
+    Meaning: target-side structural re-evaluation is required. It does **not** by itself revise any
+    ExecutionBox.
+  - **`TARGET_INVALIDATED`** — the target source's authoritative structural policy explicitly invalidates the
+    previously selected target. This is target-side structural invalidation only.
+  - **`TARGET_NO_LONGER_ELIGIBLE`** — the previously selected target remains a known record with its evidence
+    intact, but now fails one or more of the six A2-05 predicates, for example:
+
+    ```text
+    FRESH                → not fresh
+    UNCONSUMED           → consumed
+    NOT PASSED           → passed
+    IN THESIS DIRECTION  → no longer in thesis direction
+    AUTHORITATIVE        → authority lost
+    ```
+
+    The target is not deleted historically; it is only no longer eligible for canonical selection at that
+    decision state.
+
+- **Staleness, consumption, being passed, a direction change or loss of authority is NOT
+  `TARGET_INVALIDATED`.** Each of those is `TARGET_NO_LONGER_ELIGIBLE` unless the source's structural policy
+  also explicitly invalidates the target.
+- **Precedence — frozen.** One classification reports exactly one value, the highest-semantic cause; the four
+  values are not independent flags:
+
+  ```text
+  TARGET_INVALIDATED  >  TARGET_NO_LONGER_ELIGIBLE  >  TARGET_MATERIAL_CHANGE  >  TARGET_UNCHANGED
+  ```
+
+  ```text
+  target explicitly invalidated by source authority          → TARGET_INVALIDATED
+    (not TARGET_NO_LONGER_ELIGIBLE, although it is also no longer eligible)
+  target consumed                                            → TARGET_NO_LONGER_ELIGIBLE
+    (not TARGET_INVALIDATED)
+  previous target still valid, fresh and unconsumed, but a
+  nearer eligible target became authoritative                → TARGET_MATERIAL_CHANGE
+  ```
+
+- **Relation to §21.6.** The §21.6 reason codes stay the reason vocabulary. A2-07 adds a revision-fact
+  vocabulary; it does not rename, replace or remove any reason code.
+- **Target-side facts only — no ExecutionBox reaction.** A2-07 reports target-side canonical revision facts
+  and nothing else. It must **not** encode any mapping from a target fact to an ExecutionBox FSM state or
+  revision effect. All of the following are forbidden here:
+
+  ```text
+  TARGET_MATERIAL_CHANGE     → box_version++
+  TARGET_INVALIDATED         → ExecutionBox.INVALIDATED
+  TARGET_NO_LONGER_ELIGIBLE  → SUPERSEDED
+  ```
+
+  Every `A2 target fact → ExecutionBox FSM/revision effect` mapping, including how §16.3's
+  "target/invalidation revision" trigger is interpreted, is **12C authority** and is left `NOT_DEFINED` by A2.
+- **Not decided here.** A2-07 fixes no `target_id` derivation formula and no list of material target fields.
+  Both belong to the implementation design, bound by A2-06 (`target_id` stable, deterministic, no randomness)
+  and by this entry's semantics.
+- **shadow_required:** true · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+
 ## 3. Non-normative annex
 
 1. **Point vs zone — settled by inspection, not by choice.** `StructuralTargetV31.price` is a single
@@ -320,3 +416,9 @@ A2-01 APPROVED  ≠  ExecutionBox implementation authorized
 
 `grants_runtime_activation` stays `false` and every entry keeps `runtime_activation: EXPLICIT_ONLY`. The 12B
 implementation gate stays closed until the owner opens it separately.
+
+**A2-07 is a draft, added 2026-09-21 and `PENDING`.** The ratification block above covers A2-01 … A2-06
+only. The `draft_revision` block pins the approved document this draft extends (`sha256 9ca93cca…6fe165e7`)
+and the sha256 of the approved entries span (from `### A2-01` up to the start of `### A2-07`), so any change
+to the ratified A2-01 … A2-06 text is detectable byte for byte. A2-07 is approved only by a separate owner
+ratification of the exact bytes of this document.
