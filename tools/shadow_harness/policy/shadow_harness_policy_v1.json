@@ -1,0 +1,15 @@
+{
+  "policy_schema": "wolf15.shadow-harness.policy.v1",
+  "policy_version": "1.0.0",
+  "symbol_universe": "WOLF15_XM_30_V1",
+  "expected_symbol_count": 30,
+  "symbol_map_relpath": "ea_interface/wolf15_executor/broker_maps/xmglobal-mt5-10.csv",
+  "symbol_map_canonical_sha256": "6496e7057a94b0cb7d24ffe06822b37bca0268246f025b5bec40508cdd1ca9db",
+  "bundle_schema": "wolf15.shadow-harness.bundle.v1",
+  "capture_schema_version": "wolf15.shadow-harness.capture.v1",
+  "price_contamination_rule": "EXACT_PRICE_VECTOR",
+  "required_broker_submit_count": 0,
+  "operator_pair_selection_allowed": false,
+  "operator_direction_selection_allowed": false,
+  "no_candidate_status": "WAIT"
+}
