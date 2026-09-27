@@ -57,6 +57,30 @@ PAIR_BINDING_REQUIRED_CAPTURE_KINDS: Final[tuple[str, ...]] = ("CANDIDATE", "TRA
 if set(GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS) & set(GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS):  # pragma: no cover
     raise RuntimeError("a pair-specific strategy capture kind can never be GLOBAL-allowed")
 
+ACCOUNT_SNAPSHOT_BINDING_FIELDS_EXEMPT_FROM_CROSS_PAIR_REUSE: Final[tuple[str, ...]] = (
+    "exact_s_id",
+    "exact_s_sha256",
+    "r9_artifact_sha256",
+)
+"""Owner decision D1 (2026-09-28, policy 1.5.0). Pinned here; the policy file must carry exactly this list.
+
+Snapshot S is an ACCOUNT snapshot, not a pair snapshot, and the R9 artifact is one binding for the whole
+bundle. The same verified S / R9 artifact bound by the ``EXACT_S`` captures of several pairs is therefore not
+cross-pair contamination. Exactly these three ``EXACT_S`` fields are excluded from the secondary cross-pair
+evidence-reuse count, and only while a reused value is carried by these fields alone (a value that also
+appears in any other field, e.g. an ``evidence_sha256`` or ``capture_id``, is counted as before).
+
+Nothing else is exempt: ``capture_id``, ``evidence_sha256``, every lineage id (lifecycle / thesis / proof /
+pressure range / target / execution box / tradeplan candidate), ``candidate_id`` and every other
+pair-specific id or digest stay pair-bound, and reuse across pairs stays CROSS_PAIR_CONTAMINATION.
+``EXACT_S`` keeps ``evidence_scope = "PAIR"`` (the GLOBAL allow-list stays empty).
+
+The exemption carries no acceptance authority. EXACT_S acceptance is still only
+``verify_r9_envelope_v1(...).exact_s_accepted`` AND, for every candidate, ``exact_s_id ==
+snapshot_s.snapshot_id``, ``exact_s_sha256 == snapshot_s.snapshot_sha256`` and ``r9_artifact_sha256 ==
+artifact_sha256`` (see ``tools.shadow_harness.evaluator``).
+"""
+
 R9_ENVELOPE_SCHEMA_RELPATH: Final = "docs/governance/r9-envelope-v1.md"
 """Schema document of the owner-frozen ``R9EnvelopeV1`` (PR #517), read read-only at load."""
 
@@ -156,6 +180,12 @@ class HarnessPolicyV1(BaseModel):
     global_scope_forbidden_capture_kinds: list[str]
     global_scope_violation: Literal["REJECT_BUNDLE"]
     pair_scoped_evidence_reuse: Literal["CROSS_PAIR_CONTAMINATION"]
+    account_snapshot_binding_fields_exempt_from_cross_pair_reuse: list[str]
+    """Must equal :data:`ACCOUNT_SNAPSHOT_BINDING_FIELDS_EXEMPT_FROM_CROSS_PAIR_REUSE` exactly (policy 1.5.0).
+
+    The detector reads the code constant, never this value; any other list (wider, narrower, reordered or
+    empty) rejects the policy, so the policy file cannot widen the exemption.
+    """
     global_scoped_evidence_reuse: Literal["DIAGNOSTIC_ONLY"]
     price_vector_overlap: Literal["DIAGNOSTIC_ONLY"]
     exact_s_acceptance_rule: Literal["R9_ENVELOPE_V1_VERIFIED_AND_SNAPSHOT_S_BOUND"]
@@ -192,6 +222,16 @@ class HarnessPolicyV1(BaseModel):
         drifted = sorted(name for name, (actual, expected) in pinned.items() if tuple(actual) != expected)
         if drifted:
             raise ValueError(f"evidence-scope kind lists must equal the enforced code lists: {', '.join(drifted)}")
+        return self
+
+    @model_validator(mode="after")
+    def _account_snapshot_exemption_pinned(self) -> HarnessPolicyV1:
+        exempt = tuple(self.account_snapshot_binding_fields_exempt_from_cross_pair_reuse)
+        if exempt != ACCOUNT_SNAPSHOT_BINDING_FIELDS_EXEMPT_FROM_CROSS_PAIR_REUSE:
+            raise ValueError(
+                "account_snapshot_binding_fields_exempt_from_cross_pair_reuse must equal the pinned code list "
+                f"{list(ACCOUNT_SNAPSHOT_BINDING_FIELDS_EXEMPT_FROM_CROSS_PAIR_REUSE)}"
+            )
         return self
 
     @model_validator(mode="after")
@@ -429,6 +469,7 @@ def summarise_validation_error(exc: ValidationError) -> str:
 
 
 __all__ = [
+    "ACCOUNT_SNAPSHOT_BINDING_FIELDS_EXEMPT_FROM_CROSS_PAIR_REUSE",
     "CANONICAL_SYMBOL_PATTERN",
     "CAPTURE_KINDS",
     "GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS",

@@ -12,6 +12,11 @@ The acceptance block contains exactly five flags:
 * ``CROSS_PAIR_CONTAMINATION`` - number of distinct identity-based (lineage /
   PAIR-scoped evidence id) contaminating values. Price-vector overlap and
   GLOBAL-scoped evidence reuse are DIAGNOSTIC_ONLY and never counted here.
+  Owner decision D1 (policy 1.5.0): snapshot S is an ACCOUNT snapshot, so the
+  same S / R9 artifact bound by the EXACT_S captures of several pairs, carried
+  only by ``exact_s_id`` / ``exact_s_sha256`` / ``r9_artifact_sha256``, is not
+  counted (DIAGNOSTIC_ONLY ``ACCOUNT_SNAPSHOT_BINDING_REUSE``). That exemption
+  grants nothing towards ``EXACT_S_ACCEPTED`` below.
 * ``BROKER_SUBMIT`` - number of dry-run captures that attempted a broker submit.
 
 ``gate_passed`` and ``gate_failures`` are DERIVED only, from those five flags
@@ -81,6 +86,7 @@ from tools.shadow_harness.isolation import (
     ContaminationFinding,
     DiagnosticFinding,
     IsolationFinding,
+    detect_account_snapshot_binding_reuse_diagnostics,
     detect_cross_pair_contamination,
     detect_global_evidence_reuse_diagnostics,
     detect_price_overlap_diagnostics,
@@ -570,7 +576,11 @@ def evaluate_bundle(
     verification = verify_r9_inputs(r9_envelope, r9_artifact)
     isolation = validate_symbol_isolation(bundle, universe)
     contamination = detect_cross_pair_contamination(bundle)
-    diagnostics = detect_price_overlap_diagnostics(bundle) + detect_global_evidence_reuse_diagnostics(bundle)
+    diagnostics = (
+        detect_price_overlap_diagnostics(bundle)
+        + detect_global_evidence_reuse_diagnostics(bundle)
+        + detect_account_snapshot_binding_reuse_diagnostics(bundle)
+    )
     captures = [capture for _key, capture in iter_captures(bundle)]
 
     keys = set(bundle.captures_by_symbol)

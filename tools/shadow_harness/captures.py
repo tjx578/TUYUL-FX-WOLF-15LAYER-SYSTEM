@@ -52,7 +52,11 @@ EvidenceScope = Literal["PAIR", "GLOBAL"]
 ``PAIR``: the evidence belongs to exactly one pair. The capture's ``symbol`` must equal the canonical
 symbol key it is filed under, and PAIR-scoped CANDIDATE / TRADEPLAN captures must bind the strategy
 lifecycle id and their revision identity (see :func:`evidence_scope_violations`); otherwise the bundle
-is rejected. Reuse under another pair is CROSS_PAIR_CONTAMINATION.
+is rejected. Reuse under another pair is CROSS_PAIR_CONTAMINATION, with one narrow exception (owner
+decision D1, policy 1.5.0): an ``EXACT_S`` capture's ``exact_s_id`` / ``exact_s_sha256`` /
+``r9_artifact_sha256`` bind the ACCOUNT snapshot S and the bundle-wide R9 artifact, so the same values under
+several pairs are not counted (``ACCOUNT_SNAPSHOT_BINDING_FIELDS_EXEMPT_FROM_CROSS_PAIR_REUSE``). EXACT_S stays
+``PAIR``-scoped and every other id/digest of it stays pair-bound.
 ``GLOBAL``: only for system/global authority evidence carrying no pair-specific strategy conclusion,
 and only for kinds on the explicit allow-list ``GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS`` (policy 1.3.0).
 That list is currently empty: every existing kind is pair-specific, so GLOBAL on any capture rejects

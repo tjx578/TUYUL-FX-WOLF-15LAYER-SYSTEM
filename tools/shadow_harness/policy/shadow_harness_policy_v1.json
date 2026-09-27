@@ -1,6 +1,6 @@
 {
   "policy_schema": "wolf15.shadow-harness.policy.v1",
-  "policy_version": "1.4.0",
+  "policy_version": "1.5.0",
   "symbol_universe": "WOLF15_XM_30_V1",
   "expected_symbol_count": 30,
   "symbol_map_relpath": "ea_interface/wolf15_executor/broker_maps/xmglobal-mt5-10.csv",
@@ -15,6 +15,7 @@
   "global_scope_forbidden_capture_kinds": ["BROKER_ADAPTATION_DRY_RUN", "CANDIDATE", "EXACT_S", "RISK_DRY_RUN", "TRADEPLAN"],
   "global_scope_violation": "REJECT_BUNDLE",
   "pair_scoped_evidence_reuse": "CROSS_PAIR_CONTAMINATION",
+  "account_snapshot_binding_fields_exempt_from_cross_pair_reuse": ["exact_s_id", "exact_s_sha256", "r9_artifact_sha256"],
   "global_scoped_evidence_reuse": "DIAGNOSTIC_ONLY",
   "price_vector_overlap": "DIAGNOSTIC_ONLY",
   "exact_s_acceptance_rule": "R9_ENVELOPE_V1_VERIFIED_AND_SNAPSHOT_S_BOUND",

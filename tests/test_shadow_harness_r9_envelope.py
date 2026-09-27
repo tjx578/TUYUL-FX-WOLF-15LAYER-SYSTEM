@@ -381,11 +381,11 @@ def test_verified_envelope_without_candidates_is_not_exact_s_accepted() -> None:
     assert report.shadow_acceptance_passed is False
 
 
-def test_same_s_bound_under_two_pairs_is_cross_pair_contamination() -> None:
-    """exact_s_id / exact_s_sha256 are PAIR-scoped evidence (EXACT_S can never be GLOBAL, policy 1.3.0).
+def test_same_s_bound_under_two_pairs_is_not_cross_pair_contamination() -> None:
+    """Owner decision D1 (policy 1.5.0): S is an ACCOUNT snapshot, so one S bound under two pairs is not reuse.
 
-    One S bound by candidates of two pairs is therefore identity reuse across pairs: the gate fails and final
-    acceptance stays false. Documented, not changed: the evidence-scope rule is owner-locked.
+    EXACT_S stays PAIR-scoped; only exact_s_id / exact_s_sha256 / r9_artifact_sha256 are exempt from the
+    cross-pair count (full 30-pair coverage: ``tests/test_shadow_harness_account_snapshot.py``).
     """
 
     loaded, universe = load_real()
@@ -394,10 +394,10 @@ def test_same_s_bound_under_two_pairs_is_cross_pair_contamination() -> None:
         bundle(loaded, universe, captures), loaded, universe, r9_envelope=r9_envelope(), r9_artifact=R9_ARTIFACT_BYTES
     )
     assert report.dependent_acceptance.exact_s_accepted is True
-    assert report.gate_failures == ("CROSS_PAIR_CONTAMINATION",)
-    fields = {field for finding in report.contamination_findings for field in finding.fields}
-    assert {"exact_s_id", "exact_s_sha256"} <= fields
-    assert report.shadow_acceptance_passed is False
+    assert report.acceptance.cross_pair_contamination == 0
+    assert report.contamination_findings == ()
+    assert report.gate_failures == ()
+    assert report.shadow_acceptance_passed is True
 
 
 def test_verification_block_cannot_be_forged_true() -> None:

@@ -15,11 +15,23 @@ All are pure functions over an already-parsed :class:`ShadowCaptureBundle`.
   value declares ``evidence_scope = "PAIR"`` it is contamination
   (``SECONDARY_PAIR_SCOPED_EVIDENCE``). The count is the number of distinct
   contaminating values.
+* Account-snapshot exemption (owner decision D1, policy 1.5.0): snapshot S is an
+  ACCOUNT snapshot and the R9 artifact binds the whole bundle, so a value reused
+  across symbols that is carried *only* by the ``EXACT_S`` fields in
+  ``ACCOUNT_SNAPSHOT_BINDING_FIELDS_EXEMPT_FROM_CROSS_PAIR_REUSE``
+  (``exact_s_id``, ``exact_s_sha256``, ``r9_artifact_sha256``) is not counted by
+  the secondary detector. As soon as the same value also appears in any other
+  field (``capture_id``, ``evidence_sha256``, ...) every observation counts
+  again, so an exempt field can never shelter another field. Lineage ids are
+  never exempt. The exemption grants no acceptance: whether that S is accepted
+  is decided only by the evaluator's R9 verifier + snapshot_s binding.
 * Diagnostics (DIAGNOSTIC_ONLY, never a gate input):
   - identical price vectors across symbols (two pairs may legitimately share
     numeric prices);
   - evidence ids / digests reused across symbols where *every* carrying capture
-    declares ``evidence_scope = "GLOBAL"``.
+    declares ``evidence_scope = "GLOBAL"``;
+  - account-snapshot binding values reused across symbols (the exempt reuse
+    above, reported so it is visible rather than silently dropped).
   The scope is a required capture field; a missing or unknown scope is rejected
   at parse time and is never treated as ``GLOBAL``.
 
@@ -52,7 +64,7 @@ from tools.shadow_harness.captures import (
     ShadowCaptureBundle,
     TradeplanCapture,
 )
-from tools.shadow_harness.manifest import SymbolUniverse
+from tools.shadow_harness.manifest import ACCOUNT_SNAPSHOT_BINDING_FIELDS_EXEMPT_FROM_CROSS_PAIR_REUSE, SymbolUniverse
 
 IsolationCode = Literal[
     "UNKNOWN_SYMBOL_KEY",
@@ -65,7 +77,10 @@ EvidenceKind = Literal["EVIDENCE_ID", "EVIDENCE_SHA256"]
 ContaminationDetector = Literal["PRIMARY_LINEAGE", "SECONDARY_PAIR_SCOPED_EVIDENCE"]
 ContaminationCode = Literal["CROSS_PAIR_CONTAMINATION"]
 DiagnosticKind = Literal[
-    "PRICE_VECTOR_OVERLAP", "GLOBAL_SCOPED_EVIDENCE_ID_REUSE", "GLOBAL_SCOPED_EVIDENCE_SHA256_REUSE"
+    "PRICE_VECTOR_OVERLAP",
+    "GLOBAL_SCOPED_EVIDENCE_ID_REUSE",
+    "GLOBAL_SCOPED_EVIDENCE_SHA256_REUSE",
+    "ACCOUNT_SNAPSHOT_BINDING_REUSE",
 ]
 
 _GLOBAL_REUSE_KIND: dict[EvidenceKind, DiagnosticKind] = {
@@ -116,6 +131,8 @@ class _EvidenceObservation(_Frozen):
     field: str
     ref: CaptureRef
     scope: EvidenceScope
+    account_snapshot_binding: bool
+    """True only for an ``EXACT_S`` capture's ``exact_s_id`` / ``exact_s_sha256`` / ``r9_artifact_sha256``."""
 
 
 def iter_captures(bundle: ShadowCaptureBundle) -> Iterable[tuple[str, Capture]]:
@@ -139,9 +156,24 @@ def _evidence_ids(capture: Capture) -> tuple[tuple[str, str], ...]:
 
 def _evidence_digests(capture: Capture) -> tuple[tuple[str, str], ...]:
     digests = [("evidence_sha256", capture.evidence_sha256)]
-    if isinstance(capture, ExactSCapture) and capture.exact_s_sha256 is not None:
-        digests.append(("exact_s_sha256", capture.exact_s_sha256))
+    if isinstance(capture, ExactSCapture):
+        if capture.exact_s_sha256 is not None:
+            digests.append(("exact_s_sha256", capture.exact_s_sha256))
+        if capture.r9_artifact_sha256 is not None:
+            digests.append(("r9_artifact_sha256", capture.r9_artifact_sha256))
     return tuple(digests)
+
+
+def _is_account_snapshot_binding(capture: Capture, field: str) -> bool:
+    """The D1 exemption, narrowly: an ``EXACT_S`` capture's pinned account-snapshot binding fields only."""
+
+    return isinstance(capture, ExactSCapture) and field in ACCOUNT_SNAPSHOT_BINDING_FIELDS_EXEMPT_FROM_CROSS_PAIR_REUSE
+
+
+def _account_snapshot_binding_only(observations: Iterable[_EvidenceObservation]) -> bool:
+    """True when every observation of a reused value is an account-snapshot binding field (nothing else)."""
+
+    return all(item.account_snapshot_binding for item in observations)
 
 
 def _normalise_price(value: Decimal) -> str:
@@ -183,7 +215,14 @@ def _cross_pair_evidence_reuse(
         entries.extend(("EVIDENCE_ID", field, value) for field, value in _evidence_ids(capture))
         entries.extend(("EVIDENCE_SHA256", field, value) for field, value in _evidence_digests(capture))
         for kind, field, value in entries:
-            index[(kind, value)].append(_EvidenceObservation(field=field, ref=ref, scope=capture.evidence_scope))
+            index[(kind, value)].append(
+                _EvidenceObservation(
+                    field=field,
+                    ref=ref,
+                    scope=capture.evidence_scope,
+                    account_snapshot_binding=_is_account_snapshot_binding(capture, field),
+                )
+            )
     return [
         (kind, value, tuple(observed))
         for (kind, value), observed in sorted(index.items())
@@ -197,7 +236,8 @@ def detect_cross_pair_contamination(bundle: ShadowCaptureBundle) -> tuple[Contam
     Primary: lineage ids (always pair-bound) and records filed under another symbol's key.
     Secondary: evidence ids / digests reused across symbols where any carrying capture is ``PAIR``-scoped.
     Reuse where every carrying capture is ``GLOBAL``-scoped is not contamination
-    (see :func:`detect_global_evidence_reuse_diagnostics`).
+    (see :func:`detect_global_evidence_reuse_diagnostics`). Reuse carried *only* by the D1 account-snapshot
+    binding fields is not counted either (see :func:`detect_account_snapshot_binding_reuse_diagnostics`).
     """
 
     findings: list[ContaminationFinding] = []
@@ -238,6 +278,8 @@ def detect_cross_pair_contamination(bundle: ShadowCaptureBundle) -> tuple[Contam
             )
 
     for kind, value, observations in _cross_pair_evidence_reuse(bundle):
+        if _account_snapshot_binding_only(observations):
+            continue  # D1: one account snapshot S / one R9 artifact across pairs is not contamination
         declared: set[EvidenceScope] = {item.scope for item in observations}
         scopes: tuple[EvidenceScope, ...] = tuple(sorted(declared))
         if "PAIR" in scopes:
@@ -261,11 +303,36 @@ def detect_global_evidence_reuse_diagnostics(bundle: ShadowCaptureBundle) -> tup
 
     findings: list[DiagnosticFinding] = []
     for kind, value, observations in _cross_pair_evidence_reuse(bundle):
+        if _account_snapshot_binding_only(observations):
+            continue
         if all(item.scope == "GLOBAL" for item in observations):
             findings.append(
                 DiagnosticFinding(
                     severity="DIAGNOSTIC_ONLY",
                     kind=_GLOBAL_REUSE_KIND[kind],
+                    fields=tuple(sorted({item.field for item in observations})),
+                    value=value,
+                    symbols=tuple(sorted({item.ref.symbol for item in observations})),
+                    captures=_sorted_refs(item.ref for item in observations),
+                )
+            )
+    return tuple(findings)
+
+
+def detect_account_snapshot_binding_reuse_diagnostics(bundle: ShadowCaptureBundle) -> tuple[DiagnosticFinding, ...]:
+    """Account-snapshot binding values (D1) reused across symbols. DIAGNOSTIC_ONLY: visible, never a gate input.
+
+    Reported only where every observation is an exempt ``EXACT_S`` binding field; anything else is contamination.
+    This carries no acceptance: binding to the verified R9 ``snapshot_s`` is checked by the evaluator.
+    """
+
+    findings: list[DiagnosticFinding] = []
+    for _kind, value, observations in _cross_pair_evidence_reuse(bundle):
+        if _account_snapshot_binding_only(observations):
+            findings.append(
+                DiagnosticFinding(
+                    severity="DIAGNOSTIC_ONLY",
+                    kind="ACCOUNT_SNAPSHOT_BINDING_REUSE",
                     fields=tuple(sorted({item.field for item in observations})),
                     value=value,
                     symbols=tuple(sorted({item.ref.symbol for item in observations})),
@@ -366,6 +433,7 @@ __all__ = [
     "ContaminationFinding",
     "DiagnosticFinding",
     "IsolationFinding",
+    "detect_account_snapshot_binding_reuse_diagnostics",
     "detect_cross_pair_contamination",
     "detect_global_evidence_reuse_diagnostics",
     "detect_price_overlap_diagnostics",

@@ -142,10 +142,15 @@ def test_policy_rejects_changed_or_hidden_values(mutation: dict[str, Any], code:
     assert info.value.code == code
 
 
-def test_policy_1_4_0_pins_scope_and_final_acceptance_rules() -> None:
+def test_policy_1_5_0_pins_scope_and_final_acceptance_rules() -> None:
     loaded, _ = load_real()
     policy = loaded.policy
-    assert policy.policy_version == "1.4.0"
+    assert policy.policy_version == "1.5.0"
+    assert policy.account_snapshot_binding_fields_exempt_from_cross_pair_reuse == [
+        "exact_s_id",
+        "exact_s_sha256",
+        "r9_artifact_sha256",
+    ]
     assert (policy.evidence_scope_rule, policy.pair_scoped_evidence_reuse, policy.global_scoped_evidence_reuse) == (
         "EXPLICIT_REQUIRED",
         "CROSS_PAIR_CONTAMINATION",
@@ -190,9 +195,10 @@ def test_policy_1_4_0_pins_scope_and_final_acceptance_rules() -> None:
         "global_scope_allowed_capture_kinds",
         "global_scope_forbidden_capture_kinds",
         "global_scope_violation",
+        "account_snapshot_binding_fields_exempt_from_cross_pair_reuse",
     ],
 )
-def test_policy_1_3_0_and_1_4_0_fields_are_required_not_defaulted(field: str) -> None:
+def test_policy_1_3_0_to_1_5_0_fields_are_required_not_defaulted(field: str) -> None:
     payload = _policy_payload()
     del payload[field]
     with pytest.raises(HarnessInputError) as info:
