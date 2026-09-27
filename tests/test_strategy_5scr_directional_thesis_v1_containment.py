@@ -129,6 +129,14 @@ def test_p4_has_only_reviewed_p5_and_test_only_v31_consumers() -> None:
         # V3.1 reuses candle contracts/predicates under Literal["TEST_ONLY"].
         ("analysis/strategy_5scr_reference_pattern_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
         ("contracts/strategy_5scr_ordered_proof_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
+        # Gap #10 native structural proof: closed-candle ref + completion predicate only, STRUCTURAL_EVIDENCE_ONLY.
+        ("contracts/strategy_5scr_structural_proof_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
+        ("analysis/strategy_5scr_structural_proof_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
+        # Gap #11 native thesis: closed-candle ref for proof-actionability coverage only, never V1 thesis authority.
+        ("analysis/strategy_5scr_directional_thesis_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
+        # 12C ExecutionBox (A3, ratified): closed-candle ref for completion/freeze evidence and post-freeze
+        # invalidation only, never V1 thesis authority. RUNTIME_DISABLED; no runtime wiring.
+        ("analysis/strategy_5scr_execution_box_v31.py", "contracts.strategy_5scr_directional_thesis_v1"),
         (
             "analysis/strategy_5scr_execution_box_v1.py",
             "contracts.strategy_5scr_directional_thesis_v1",
