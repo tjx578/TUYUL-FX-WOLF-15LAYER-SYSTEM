@@ -40,6 +40,14 @@ from contracts.mt5_execution_protocol import (
     ExecutorMode,
     ShadowAcceptanceSource,
 )
+from ops.demo_canary_verifier.side_ledger import (
+    CLAIM_BOUNDARY,
+    V31SideLedgerV1,
+    bounded_canary_volume,
+    check_bounded_volume,
+    check_ledger_command_binding,
+    evidence_volume_min,
+)
 from ops.mt5_mcp.report_integrity import evidence_digest
 
 ENVELOPE_SCHEMA: Final = "wolf15.demo-canary.envelope.v1"
@@ -126,7 +134,7 @@ def _parse_snapshot(raw: Any, *, name: str, refusals: set[str]) -> AccountSnapsh
         return None
 
 
-def _command_snapshot_id(command: ExecutionCommandV1) -> str | None:
+def command_snapshot_id(command: ExecutionCommandV1) -> str | None:
     guards = command.guards
     if isinstance(guards, CommandGuards):
         return guards.risk_snapshot_id
@@ -228,6 +236,26 @@ def _check_ea_final_preflight(raw: Any, refusals: set[str]) -> None:
         refusals.add("EA_FINAL_PREFLIGHT_EA_VERSION_MISMATCH")
 
 
+def _check_side_ledger(
+    raw: Any, command: ExecutionCommandV1 | None, pinned: AccountSnapshotV1 | None, refusals: set[str]
+) -> str | None:
+    """B1 binding + B5 bounded volume at pre-submit. Returns the volume decision, or ``None`` if not evaluable."""
+
+    if raw is None:
+        refusals.add("V31_SIDE_LEDGER_MISSING")
+        return None
+    try:
+        ledger = V31SideLedgerV1.model_validate(raw)
+    except ValidationError:
+        refusals.add("V31_SIDE_LEDGER_INVALID")
+        return None
+    if command is not None:
+        check_ledger_command_binding(ledger, command, refusals)
+    volume_min = evidence_volume_min(pinned, command)
+    check_bounded_volume(ledger, volume_min, command, refusals)
+    return None if volume_min is None else bounded_canary_volume(ledger.canonical_sized_volume, volume_min)[0]
+
+
 def _bundle_digest(bundle: Mapping[str, Any]) -> str | None:
     try:
         return evidence_digest(dict(bundle))
@@ -272,7 +300,7 @@ def check_presubmit_bundle(
             if (
                 item.executor_binding.executor_id != pinned.executor_id
                 or item.executor_binding.account_id != pinned.account_id
-                or _command_snapshot_id(item) != pinned.snapshot_id
+                or command_snapshot_id(item) != pinned.snapshot_id
             ):
                 refusals.add("COMMAND_SNAPSHOT_BINDING_MISMATCH")
 
@@ -280,6 +308,7 @@ def check_presubmit_bundle(
         _check_latest_state_veto(bundle, command, pinned, refusals, latest_state_veto or _canonical_latest_state_veto())
     if envelope.EA_FINAL_PREFLIGHT == "REQUIRED":
         _check_ea_final_preflight(bundle.get("ea_final_preflight"), refusals)
+    volume_decision = _check_side_ledger(bundle.get("v31_side_ledger"), command, pinned, refusals)
 
     return {
         "schema_version": ENVELOPE_DECISION_SCHEMA,
@@ -287,6 +316,8 @@ def check_presubmit_bundle(
         "bundle_sha256": _bundle_digest(bundle),
         "status": "REFUSED" if refusals else "WITHIN_ENVELOPE",
         "refusals": sorted(refusals),
+        "volume_decision": volume_decision,
+        "claim_boundary": dict(CLAIM_BOUNDARY),
         "SUBMIT_AUTHORITY": False,
     }
 
@@ -301,6 +332,7 @@ __all__ = [
     "EnvelopeError",
     "check_command_envelope",
     "check_presubmit_bundle",
+    "command_snapshot_id",
     "envelope_sha256",
     "load_envelope",
 ]

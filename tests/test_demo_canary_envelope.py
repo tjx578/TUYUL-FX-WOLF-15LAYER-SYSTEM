@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from contracts.mt5_execution_protocol import ENGINEERING_DEMO_CANARY_EA_VERSION, AccountSnapshotV1
+from contracts.mt5_execution_protocol import ENGINEERING_DEMO_CANARY_EA_VERSION, AccountSnapshotV1, ExecutionCommandV1
 from execution.mt5_command_repository import engineering_canary_latest_state_veto
 from ops.demo_canary_verifier.envelope import (
     ENVELOPE_V1_PATH,
@@ -22,6 +22,7 @@ from ops.demo_canary_verifier.envelope import (
     envelope_sha256,
     load_envelope,
 )
+from ops.demo_canary_verifier.side_ledger import SIDE_LEDGER_SCHEMA, broker_adaptation_digest
 
 T0 = datetime(2026, 9, 22, 8, 0, 0, tzinfo=UTC)
 EXECUTOR_ID = "11111111-1111-4111-8111-111111111111"
@@ -164,6 +165,46 @@ OPEN_POSITION = {
 }
 
 
+PENDING_ORDER = {
+    "order_ticket": 5009,
+    "symbol": BROKER_SYMBOL,
+    "order_type": "BUY_LIMIT",
+    "volume": 0.01,
+    "requested_price": 1.09,
+    "magic": MAGIC,
+}
+
+EXACT_S = {
+    "source_artifact": "R9",
+    "r9_artifact_sha256": "sha256:" + "9" * 64,
+    "exact_s_id": "exact-s:EURUSD:001",
+    "exact_s_sha256": "sha256:" + "5" * 64,
+}
+
+
+def side_ledger(*, for_command: dict[str, Any] | None = None, **overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "schema_version": SIDE_LEDGER_SCHEMA,
+        "path_label": "ENGINEERING_DEMO_CANARY",
+        "tradeplan_candidate_id": TRADEPLAN_ID,
+        "tradeplan_candidate_revision": 3,
+        "risk_decision_id": RISK_DECISION_ID,
+        "risk_reservation_id": RISK_DECISION_ID,
+        "exact_s": dict(EXACT_S),
+        "broker_adaptation_digest": broker_adaptation_digest(
+            ExecutionCommandV1.model_validate(for_command or command())
+        ),
+        "command_id": COMMAND_ID,
+        "ea_receipt_report_id": None,
+        "broker_truth": None,
+        "canonical_sized_volume": "0.03",
+        "demo_submitted_volume": "0.01",
+        "volume_reason": "BOUNDED_CANARY_DOWNSIZE_TO_VOLUME_MIN",
+    }
+    payload.update(overrides)
+    return payload
+
+
 def bundle(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": PRESUBMIT_BUNDLE_SCHEMA,
@@ -178,6 +219,7 @@ def bundle(**overrides: Any) -> dict[str, Any]:
             "result": None,
         },
         "ea_final_preflight": {"ea_version": ENGINEERING_DEMO_CANARY_EA_VERSION, "final_preflight": "REQUIRED"},
+        "v31_side_ledger": side_ledger(),
     }
     payload.update(overrides)
     return payload
@@ -272,6 +314,7 @@ def test_checker_never_mutates_the_bundle() -> None:
         ({"commands": [command(revision=2)]}, "AUTO_RETRY_REVISION_PRESENT"),
         ({"commands": [command(block_role="CHILD")]}, "PYRAMIDING_NON_PARENT_ROLE"),
         ({"pinned_snapshot": snapshot(open_positions=[OPEN_POSITION])}, "NOT_FLAT_OPEN_POSITIONS"),
+        ({"pinned_snapshot": snapshot(pending_orders=[PENDING_ORDER])}, "NOT_FLAT_PENDING_ORDERS"),
         ({"pinned_snapshot": snapshot(trade_allowed=False)}, "TERMINAL_TRADING_DISABLED"),
         ({"pinned_snapshot": None}, "PINNED_SNAPSHOT_MISSING"),
         ({"pinned_snapshot": snapshot(snapshot_id="other-snapshot")}, "COMMAND_SNAPSHOT_BINDING_MISMATCH"),
@@ -361,3 +404,91 @@ def test_envelope_model_is_immutable() -> None:
     with pytest.raises(ValueError):
         envelope.MAX_SUBMIT = 2  # type: ignore[misc]
     assert isinstance(envelope, CanaryEnvelopeV1)
+
+
+# ---- B1 side ledger + B5 bounded volume-min canary at pre-submit ------------------------------------------------
+
+
+def test_clean_bundle_submits_exactly_volume_min_with_fixed_claim_boundary() -> None:
+    decision = check(bundle())
+    assert decision["status"] == "WITHIN_ENVELOPE", decision["refusals"]
+    assert decision["volume_decision"] == "SUBMIT_VOLUME_MIN"
+    assert decision["claim_boundary"] == {
+        "PATH_LABEL": "ENGINEERING_DEMO_CANARY",
+        "EA_NATIVE_V31_SCORECARD": "NOT_PROVEN",
+        "PRODUCTION_READY": False,
+    }
+
+
+def test_canonical_volume_below_broker_min_is_no_submit() -> None:
+    decision = check(bundle(v31_side_ledger=side_ledger(canonical_sized_volume="0.009")))
+    assert decision["status"] == "REFUSED"
+    assert decision["volume_decision"] == "NO_SUBMIT"
+    assert {"CANONICAL_VOLUME_BELOW_BROKER_MIN", "DEMO_SUBMITTED_VOLUME_EXCEEDS_CANONICAL"} <= set(decision["refusals"])
+
+
+def test_canonical_volume_equal_to_broker_min_submits() -> None:
+    decision = check(bundle(v31_side_ledger=side_ledger(canonical_sized_volume="0.01")))
+    assert decision["status"] == "WITHIN_ENVELOPE", decision["refusals"]
+
+
+def test_upsized_demo_volume_is_refused() -> None:
+    upsized = command(volume=0.02)
+    decision = check(
+        bundle(commands=[upsized], v31_side_ledger=side_ledger(for_command=upsized, demo_submitted_volume="0.02"))
+    )
+    assert {"DEMO_SUBMITTED_VOLUME_EXCEEDS_VOLUME_MIN", "DEMO_SUBMITTED_VOLUME_NOT_VOLUME_MIN"} <= set(
+        decision["refusals"]
+    )
+    assert "COMMAND_VOLUME_NOT_DEMO_SUBMITTED_VOLUME" not in decision["refusals"]
+
+
+def test_command_volume_must_equal_the_ledger_submitted_volume() -> None:
+    other = command(volume=0.02)
+    decision = check(bundle(commands=[other], v31_side_ledger=side_ledger(for_command=other)))
+    assert decision["refusals"] == ["COMMAND_VOLUME_NOT_DEMO_SUBMITTED_VOLUME"]
+
+
+def test_volume_min_comes_only_from_the_pinned_snapshot_evidence() -> None:
+    symbols = snapshot()["symbols"]
+    symbols[0] = {**symbols[0], "volume_min": 0.1, "volume_step": 0.1}
+    minimum = command(volume=0.1)
+    ledger = side_ledger(for_command=minimum, canonical_sized_volume=0.25, demo_submitted_volume=0.1)
+    latest = snapshot(snapshot_id="snapshot-latest-002", captured=T0 + timedelta(seconds=5), symbols=symbols)
+    decision = check(
+        bundle(
+            commands=[minimum],
+            pinned_snapshot=snapshot(symbols=symbols),
+            latest_snapshot=latest,
+            v31_side_ledger=ledger,
+        )
+    )
+    assert decision["status"] == "WITHIN_ENVELOPE", decision["refusals"]
+    assert (
+        "DEMO_SUBMITTED_VOLUME_NOT_VOLUME_MIN" in check(bundle(pinned_snapshot=snapshot(symbols=symbols)))["refusals"]
+    )
+    no_symbol = check(bundle(pinned_snapshot=snapshot(symbols=[])))
+    assert "BROKER_VOLUME_MIN_EVIDENCE_MISSING" in no_symbol["refusals"]
+    assert no_symbol["volume_decision"] is None
+
+
+@pytest.mark.parametrize(
+    ("ledger", "code"),
+    [
+        (None, "V31_SIDE_LEDGER_MISSING"),
+        ({"schema_version": "other"}, "V31_SIDE_LEDGER_INVALID"),
+        ("path_label", "V31_SIDE_LEDGER_INVALID"),
+        ("command_id", "V31_LEDGER_COMMAND_ID_MISMATCH"),
+        ("tradeplan_candidate_id", "V31_LEDGER_TRADEPLAN_MISMATCH"),
+        ("risk_reservation_id", "V31_LEDGER_RISK_RESERVATION_MISMATCH"),
+        ("broker_adaptation_digest", "V31_LEDGER_BROKER_ADAPTATION_DIGEST_MISMATCH"),
+    ],
+)
+def test_side_ledger_absent_invalid_or_unbound_is_refused(ledger: Any, code: str) -> None:
+    if isinstance(ledger, str):
+        value = "sha256:" + "0" * 64 if ledger == "broker_adaptation_digest" else "LIVE_PATH-other-id"
+        overrides: dict[str, Any] = {ledger: value}
+        ledger = side_ledger(**overrides)
+    decision = check(bundle(v31_side_ledger=ledger))
+    assert decision["status"] == "REFUSED"
+    assert code in decision["refusals"]

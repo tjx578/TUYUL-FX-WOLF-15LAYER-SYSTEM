@@ -24,6 +24,15 @@ projections, the chain-evidence bundle, and the acceptance report. MT5 has no br
 order id in the MCP export (no ``comment`` field), so the command's ``idempotency_key`` is the
 client-order identity and the broker join is by EA-reported tickets only.
 
+ENGINEERING_DEMO_CANARY path (owner B1/B5, see ``side_ledger``): the mechanical chain above is joined
+to the V31 lineage only through the immutable ``v31_side_ledger`` section, by explicit identifiers
+(tradeplan candidate id + revision, risk decision id, risk reservation id, command id, broker-adaptation
+digest, EA receipt report id, broker-truth ticket fingerprints). A missing ledger is ``NOT_EXECUTED``,
+a mismatch is a ``V31_LEDGER_*`` break, and absent exact-S is ``NOT_MEASURED``: none of them pass.
+The bounded volume-min canary is re-verified against the pinned snapshot's ``volume_min`` and the
+broker-truth order volume. The report's claim boundary is fixed: ``EA_NATIVE_V31_SCORECARD`` is
+``NOT_PROVEN`` and ``PRODUCTION_READY`` is ``False``.
+
 Missing evidence never passes: any absent section yields ``NOT_EXECUTED`` values and
 ``BROKER_TRUTH_RECONCILED = False``.
 """
@@ -38,13 +47,32 @@ from typing import Any, Final, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from contracts.mt5_execution_protocol import (
+    AccountSnapshotV1,
     CommandGuards,
     CommandSource,
     ExecutionCommandV1,
     ExecutionReportState,
     ExecutionReportV1,
 )
-from ops.demo_canary_verifier.envelope import CanaryEnvelopeV1, check_command_envelope, envelope_sha256
+from ops.demo_canary_verifier.envelope import (
+    CanaryEnvelopeV1,
+    check_command_envelope,
+    command_snapshot_id,
+    envelope_sha256,
+)
+from ops.demo_canary_verifier.side_ledger import (
+    CLAIM_BOUNDARY,
+    DEMO_PATH_LABEL,
+    EXACT_S_MEASURED,
+    BrokerTruthRefsV1,
+    V31SideLedgerV1,
+    bounded_canary_volume,
+    check_bounded_volume,
+    check_ledger_command_binding,
+    evidence_decimal,
+    evidence_volume_min,
+    exact_s_state,
+)
 from ops.mt5_mcp.reconcile import _fingerprint, _measurement_summary, _record_time
 from ops.mt5_mcp.report_integrity import evidence_digest
 
@@ -63,7 +91,18 @@ EA_SUBMIT_DETAIL: Final = "ATTEMPT_1_OF_1"
 EA_ORDER_CHECK_PASSED: Final = "DEMO_ORDER_CHECK_PASSED"
 EA_FINAL_PREFLIGHT_REJECTED: Final = "DEMO_FINAL_PREFLIGHT_REJECTED"
 RECEIPT_FILL_STATES: Final = frozenset({ExecutionReportState.FILLED, ExecutionReportState.PARTIALLY_FILLED})
-REQUIRED_SECTIONS: Final = ("window", "tradeplans", "risk_decisions", "commands", "ea_receipts", "ea_ledger", "broker")
+REQUIRED_SECTIONS: Final = (
+    "window",
+    "tradeplans",
+    "risk_decisions",
+    "commands",
+    "ea_receipts",
+    "ea_ledger",
+    "broker",
+    "pinned_snapshot",
+    "v31_side_ledger",
+)
+EXACT_S_MISSING: Final = "v31_side_ledger.exact_s"
 
 
 class _Strict(BaseModel):
@@ -501,6 +540,24 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
                 breaks.add("POSITION_VOLUME_EXCEEDS_COMMAND", "POSITION", ref)
         chains.append({"command_id": ref, "hops": hops})
 
+    side_ledger, ledger_report = _reconcile_side_ledger(
+        evidence,
+        by_command=by_command,
+        tradeplans=tradeplans,
+        decisions=decisions,
+        receipts_by_command=receipts_by_command,
+        primary=primary,
+        orders=orders,
+        deals_by_order=deals_by_order,
+        joined_positions=joined_positions,
+        broker_measured=broker_measured,
+        breaks=breaks,
+    )
+    exact_s = exact_s_state(side_ledger)
+    if exact_s != EXACT_S_MEASURED:
+        missing.append(EXACT_S_MISSING)
+    ledger_joined: bool | str = NOT_EXECUTED if "v31_side_ledger" in missing else ledger_report["status"] == "JOINED"
+
     canary_orders = sum(len(tickets) for tickets in primary.values()) + sum(
         1 for item in order_refs if item["classification"] == "DUPLICATE_ORDER"
     )
@@ -517,7 +574,14 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
         return value if broker_measured else NOT_EXECUTED
 
     missing = sorted(set(missing))
-    reconciled = not missing and not breaks.items and one_command is True and one_submit_max is True
+    reconciled = (
+        not missing
+        and not breaks.items
+        and one_command is True
+        and one_submit_max is True
+        and ledger_joined is True
+        and exact_s == EXACT_S_MEASURED
+    )
     status = NOT_EXECUTED if missing else ("RECONCILED" if reconciled else "NOT_RECONCILED")
     return {
         "schema_version": CHAIN_REPORT_SCHEMA,
@@ -531,8 +595,11 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
             "UNKNOWN_POSITION": count(unknown_position),
             "ORPHAN_ORDER": count(orphan_order),
             "UNACCOUNTED_BROKER_FILL": count(unaccounted_fill),
+            "V31_SIDE_LEDGER_JOINED": ledger_joined,
+            "V31_EXACT_S": exact_s,
             "BROKER_TRUTH_RECONCILED": reconciled,
         },
+        "v31_side_ledger": ledger_report,
         "missing_evidence": missing,
         "breaks": breaks.as_list(),
         "chains": chains,
@@ -544,10 +611,116 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
             "non_trade_deals": non_trade_deals,
         },
         "broker_measurements": measurements,
+        "claim_boundary": dict(CLAIM_BOUNDARY),
+        "PATH_LABEL": DEMO_PATH_LABEL,
+        "EA_NATIVE_V31_SCORECARD": "NOT_PROVEN",
         "SUBMIT_AUTHORITY": False,
         "EXECUTION_READY": False,
         "PRODUCTION_READY": False,
     }
+
+
+def _single_ref(entity: str, values: set[int]) -> str | None:
+    return _ticket_ref(entity, next(iter(values))) if len(values) == 1 else None
+
+
+def _reconcile_side_ledger(
+    evidence: Mapping[str, Any],
+    *,
+    by_command: Mapping[str, ExecutionCommandV1],
+    tradeplans: list[TradePlanRefV1],
+    decisions: list[RiskDecisionRefV1],
+    receipts_by_command: Mapping[str, list[ExecutionReportV1]],
+    primary: Mapping[str, set[int]],
+    orders: Mapping[int, Mapping[str, Any]],
+    deals_by_order: Mapping[int, list[Mapping[str, Any]]],
+    joined_positions: Mapping[str, set[int]],
+    broker_measured: bool,
+    breaks: _Breaks,
+) -> tuple[V31SideLedgerV1 | None, dict[str, Any]]:
+    """B1: the side ledger joins the chain by explicit identifiers. B5: bounded volume-min canary."""
+
+    report: dict[str, Any] = {"status": NOT_EXECUTED, "ledger_sha256": None, "volume_decision": None}
+    snapshot: AccountSnapshotV1 | None = None
+    raw_snapshot = evidence.get("pinned_snapshot")
+    if raw_snapshot is not None:
+        try:
+            snapshot = AccountSnapshotV1.model_validate(raw_snapshot)
+        except ValidationError:
+            breaks.add("RECORD_INVALID", "PINNED_SNAPSHOT")
+    raw = evidence.get("v31_side_ledger")
+    if raw is None:
+        return None, report
+    try:
+        ledger = V31SideLedgerV1.model_validate(raw)
+    except ValidationError:
+        breaks.add("V31_SIDE_LEDGER_INVALID", "V31_SIDE_LEDGER")
+        report["status"] = "INVALID"
+        return None, report
+
+    found: set[str] = set()
+    command = by_command.get(ledger.command_id)
+    ref = ledger.command_id
+    if command is None:
+        found.add("V31_LEDGER_COMMAND_ID_MISMATCH")
+    else:
+        check_ledger_command_binding(ledger, command, found)
+        plan_key = (ledger.tradeplan_candidate_id, ledger.tradeplan_candidate_revision)
+        if sum(1 for plan in tradeplans if (plan.tradeplan_id, plan.tradeplan_revision) == plan_key) != 1:
+            found.add("V31_LEDGER_TRADEPLAN_MISMATCH")
+        matches = [item for item in decisions if item.risk_decision_id == ledger.risk_decision_id]
+        if (
+            len(matches) != 1
+            or _command_links(command)[1] != ledger.risk_decision_id
+            or (matches[0].tradeplan_id, matches[0].tradeplan_revision) != plan_key
+        ):
+            found.add("V31_LEDGER_RISK_DECISION_MISMATCH")
+        report_ids = {str(item.report_id) for item in receipts_by_command.get(ref, [])}
+        if ledger.ea_receipt_report_id is None or ledger.ea_receipt_report_id not in report_ids:
+            found.add("V31_LEDGER_EA_RECEIPT_MISMATCH")
+        tickets = primary.get(ref, set())
+        entry_deals = {
+            ticket
+            for order in tickets
+            for deal in deals_by_order.get(order, [])
+            if _int(deal.get("entry")) == DEAL_ENTRY_IN and (ticket := _int(deal.get("ticket"))) is not None
+        }
+        pids = joined_positions.get(ref, set())
+        refs = ledger.broker_truth or BrokerTruthRefsV1()
+        expected = (_single_ref("ORDER", tickets), _single_ref("DEAL", entry_deals), _single_ref("POSITION", pids))
+        if broker_measured and (
+            max(len(tickets), len(entry_deals), len(pids)) > 1
+            or (refs.order_ref, refs.deal_ref, refs.position_ref) != expected
+        ):
+            found.add("V31_LEDGER_BROKER_TRUTH_MISMATCH")
+        if snapshot is not None and (
+            command_snapshot_id(command) != snapshot.snapshot_id
+            or command.executor_binding.executor_id != snapshot.executor_id
+            or command.executor_binding.account_id != snapshot.account_id
+        ):
+            found.add("PINNED_SNAPSHOT_BINDING_MISMATCH")
+        for ticket in tickets:
+            record = orders.get(ticket)
+            if record is not None and evidence_decimal(record.get("volume_initial")) != ledger.demo_submitted_volume:
+                found.add("BROKER_ORDER_VOLUME_NOT_DEMO_SUBMITTED_VOLUME")
+    volume_min = evidence_volume_min(snapshot, command)
+    check_bounded_volume(ledger, volume_min, command, found)
+    for code in found:
+        breaks.add(code, "V31_SIDE_LEDGER", ref)
+    report.update(
+        {
+            "status": "BROKEN" if found else "JOINED",
+            "ledger_sha256": evidence_digest(ledger.model_dump(mode="json")),
+            "canonical_sized_volume": str(ledger.canonical_sized_volume),
+            "demo_submitted_volume": str(ledger.demo_submitted_volume),
+            "broker_volume_min": None if volume_min is None else str(volume_min),
+            "volume_decision": (
+                None if volume_min is None else bounded_canary_volume(ledger.canonical_sized_volume, volume_min)[0]
+            ),
+            "volume_reason": ledger.volume_reason,
+        }
+    )
+    return ledger, report
 
 
 def _safe_digest(value: Mapping[str, Any]) -> str | None:

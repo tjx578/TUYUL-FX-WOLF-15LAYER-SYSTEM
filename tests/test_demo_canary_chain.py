@@ -6,6 +6,7 @@ import ast
 import copy
 import json
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,14 @@ from ops.demo_canary_verifier.chain import (
     reconcile_chain,
 )
 from ops.demo_canary_verifier.envelope import ENVELOPE_V1_SHA256, load_envelope
+from ops.demo_canary_verifier.side_ledger import (
+    NO_SUBMIT,
+    SUBMIT_VOLUME_MIN,
+    V31SideLedgerV1,
+    bounded_canary_volume,
+    evidence_decimal,
+)
+from ops.mt5_mcp.reconcile import _fingerprint
 from tests.test_demo_canary_envelope import (
     ACCOUNT_ID,
     BROKER_SYMBOL,
@@ -31,6 +40,8 @@ from tests.test_demo_canary_envelope import (
     TRADEPLAN_ID,
     command,
     iso,
+    side_ledger,
+    snapshot,
 )
 
 WINDOW_FROM = T0 - timedelta(minutes=1)
@@ -170,6 +181,18 @@ def marker(command_id: str = COMMAND_ID, detail: str = "ATTEMPT_1_OF_1") -> dict
     }
 
 
+FILL_REPORT_ID = "00000000-0000-4000-8000-000000000002"
+BROKER_TRUTH = {
+    "order_ref": _fingerprint("ORDER", ORDER),
+    "deal_ref": _fingerprint("DEAL", DEAL),
+    "position_ref": _fingerprint("POSITION", POSITION),
+}
+
+
+def chain_ledger(**overrides: Any) -> dict[str, Any]:
+    return side_ledger(**{"ea_receipt_report_id": FILL_REPORT_ID, "broker_truth": dict(BROKER_TRUTH), **overrides})
+
+
 def evidence(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": CHAIN_EVIDENCE_SCHEMA,
@@ -188,6 +211,8 @@ def evidence(**overrides: Any) -> dict[str, Any]:
         "ea_receipts": filled_receipts(),
         "ea_ledger": [{"timestamp_utc": iso(T0), "command_id": "-", "state": "STARTED", "detail": "x"}, marker()],
         "broker": broker(),
+        "pinned_snapshot": snapshot(),
+        "v31_side_ledger": chain_ledger(),
     }
     payload.update(overrides)
     return payload
@@ -212,8 +237,16 @@ def test_fully_joined_chain_reconciles() -> None:
         "UNKNOWN_POSITION": 0,
         "ORPHAN_ORDER": 0,
         "UNACCOUNTED_BROKER_FILL": 0,
+        "V31_SIDE_LEDGER_JOINED": True,
+        "V31_EXACT_S": "MEASURED",
         "BROKER_TRUTH_RECONCILED": True,
     }
+    assert report["v31_side_ledger"]["status"] == "JOINED"
+    assert report["v31_side_ledger"]["canonical_sized_volume"] == "0.03"
+    assert report["v31_side_ledger"]["demo_submitted_volume"] == "0.01"
+    assert report["v31_side_ledger"]["broker_volume_min"] == "0.01"
+    assert report["v31_side_ledger"]["volume_decision"] == "SUBMIT_VOLUME_MIN"
+    assert report["v31_side_ledger"]["volume_reason"] == "BOUNDED_CANARY_DOWNSIZE_TO_VOLUME_MIN"
     assert report["chains"] == [
         {
             "command_id": COMMAND_ID,
@@ -253,6 +286,7 @@ def test_broker_rejected_command_with_no_broker_effect_reconciles() -> None:
                 receipt(2, "BROKER_REJECTED", "DEMO_BROKER_REJECTED"),
             ],
             broker=broker(history_orders=[], deals=[], positions=[]),
+            v31_side_ledger=chain_ledger(broker_truth=None),
         )
     )
     assert report["status"] == "RECONCILED", report["breaks"]
@@ -444,7 +478,10 @@ def test_strategy_lineage_break_is_reported(overrides: dict[str, Any], code: str
     assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
 
 
-@pytest.mark.parametrize("section", ["broker", "ea_ledger", "commands", "ea_receipts", "window", "tradeplans"])
+@pytest.mark.parametrize(
+    "section",
+    ["broker", "ea_ledger", "commands", "ea_receipts", "window", "tradeplans", "pinned_snapshot", "v31_side_ledger"],
+)
 def test_missing_evidence_is_not_executed_never_pass(section: str) -> None:
     payload = evidence()
     del payload[section]
@@ -459,6 +496,10 @@ def test_missing_evidence_is_not_executed_never_pass(section: str) -> None:
         assert report["acceptance"]["ONE_SUBMIT_MAX"] == NOT_EXECUTED
     if section == "commands":
         assert report["acceptance"]["ONE_COMMAND"] == NOT_EXECUTED
+    if section == "v31_side_ledger":
+        assert report["acceptance"]["V31_SIDE_LEDGER_JOINED"] == NOT_EXECUTED
+        assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+        assert report["v31_side_ledger"]["status"] == NOT_EXECUTED
 
 
 def test_truncated_broker_measurement_is_not_executed() -> None:
@@ -503,7 +544,9 @@ def _mcp_export_fields() -> dict[str, set[str]]:
 
 def test_mcp_export_carries_every_field_the_join_reads() -> None:
     fields = _mcp_export_fields()
-    assert {"ticket", "state", "magic", "position_id", "symbol", "time_setup_msc"} <= fields["_ORDER_FIELDS"]
+    assert {"ticket", "state", "magic", "position_id", "symbol", "time_setup_msc", "volume_initial"} <= fields[
+        "_ORDER_FIELDS"
+    ]
     assert {"ticket", "order", "type", "entry", "magic", "position_id", "time_msc"} <= fields["_DEAL_FIELDS"]
     assert {"ticket", "identifier", "magic", "volume", "symbol"} <= fields["_POSITION_FIELDS"]
     assert "trade_mode" in fields["_ACCOUNT_FIELDS"]
@@ -545,3 +588,248 @@ def test_cli_envelope_mode_refuses_with_blocked_exit(tmp_path: Path) -> None:
     assert "ACCOUNT_NOT_DEMO" in json.loads(out.read_text(encoding="utf-8"))["refusals"]
     source.write_text(json.dumps(bundle()), encoding="utf-8")
     assert main(["envelope", "--bundle", str(source), "--out", str(tmp_path / "ok.json")]) == 0
+
+
+# ---- B1: ENGINEERING_DEMO_CANARY + immutable V31 side ledger ----------------------------------------------------
+
+
+def test_report_carries_the_fixed_claim_boundary() -> None:
+    for report in (run(evidence()), run(evidence(v31_side_ledger=None))):
+        assert report["PATH_LABEL"] == "ENGINEERING_DEMO_CANARY"
+        assert report["EA_NATIVE_V31_SCORECARD"] == "NOT_PROVEN"
+        assert report["PRODUCTION_READY"] is False
+        assert report["claim_boundary"] == {
+            "PATH_LABEL": "ENGINEERING_DEMO_CANARY",
+            "EA_NATIVE_V31_SCORECARD": "NOT_PROVEN",
+            "PRODUCTION_READY": False,
+        }
+
+
+def test_missing_side_ledger_is_not_executed_never_reconciled() -> None:
+    report = run(evidence(v31_side_ledger=None))
+    assert report["status"] == NOT_EXECUTED
+    assert "v31_side_ledger" in report["missing_evidence"]
+    assert report["acceptance"]["V31_SIDE_LEDGER_JOINED"] == NOT_EXECUTED
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+
+
+def test_missing_exact_s_is_not_measured_and_blocks_reconciliation() -> None:
+    report = run(evidence(v31_side_ledger=chain_ledger(exact_s=None)))
+    assert report["breaks"] == []
+    assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+    assert report["acceptance"]["V31_SIDE_LEDGER_JOINED"] is True
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert report["missing_evidence"] == ["v31_side_ledger.exact_s"]
+    assert report["status"] == NOT_EXECUTED
+
+
+@pytest.mark.parametrize(
+    "exact_s",
+    [
+        {
+            "source_artifact": "R8",
+            "r9_artifact_sha256": "sha256:" + "9" * 64,
+            "exact_s_id": "x-001",
+            "exact_s_sha256": "sha256:" + "5" * 64,
+        },
+        {"source_artifact": "R9", "exact_s_id": "x-001", "exact_s_sha256": "sha256:" + "5" * 64},
+        {
+            "source_artifact": "R9",
+            "r9_artifact_sha256": "sha256:" + "9" * 64,
+            "exact_s_id": "x-001",
+            "exact_s_sha256": "not-a-digest",
+        },
+    ],
+)
+def test_exact_s_not_from_an_r9_artifact_never_passes(exact_s: dict[str, Any]) -> None:
+    report = run(evidence(v31_side_ledger=chain_ledger(exact_s=exact_s)))
+    assert "V31_SIDE_LEDGER_INVALID" in codes(report)
+    assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"path_label": "LIVE"},
+        {"volume_reason": "UPSIZE"},
+        {"extra_field": 1},
+        {"canonical_sized_volume": True},
+        {"demo_submitted_volume": "NaN"},
+        {"demo_submitted_volume": 0},
+    ],
+)
+def test_malformed_side_ledger_is_invalid(overrides: dict[str, Any]) -> None:
+    report = run(evidence(v31_side_ledger=chain_ledger(**overrides)))
+    assert "V31_SIDE_LEDGER_INVALID" in codes(report)
+    assert report["v31_side_ledger"]["status"] == "INVALID"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+
+
+def test_side_ledger_model_is_immutable() -> None:
+    ledger = V31SideLedgerV1.model_validate(chain_ledger())
+    with pytest.raises(ValueError):
+        ledger.demo_submitted_volume = Decimal("1")
+
+
+OTHER_REF = "0123456789abcdef"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "code"),
+    [
+        ({"command_id": SECOND_COMMAND_ID}, "V31_LEDGER_COMMAND_ID_MISMATCH"),
+        ({"tradeplan_candidate_id": "5scr-plan:" + "f" * 32}, "V31_LEDGER_TRADEPLAN_MISMATCH"),
+        ({"tradeplan_candidate_revision": 4}, "V31_LEDGER_TRADEPLAN_MISMATCH"),
+        ({"risk_decision_id": "55555555-5555-4555-8555-555555555555"}, "V31_LEDGER_RISK_DECISION_MISMATCH"),
+        ({"risk_reservation_id": "55555555-5555-4555-8555-555555555555"}, "V31_LEDGER_RISK_RESERVATION_MISMATCH"),
+        ({"broker_adaptation_digest": "sha256:" + "0" * 64}, "V31_LEDGER_BROKER_ADAPTATION_DIGEST_MISMATCH"),
+        ({"ea_receipt_report_id": None}, "V31_LEDGER_EA_RECEIPT_MISMATCH"),
+        ({"ea_receipt_report_id": "00000000-0000-4000-8000-000000000099"}, "V31_LEDGER_EA_RECEIPT_MISMATCH"),
+        ({"broker_truth": None}, "V31_LEDGER_BROKER_TRUTH_MISMATCH"),
+        ({"broker_truth": {**BROKER_TRUTH, "order_ref": OTHER_REF}}, "V31_LEDGER_BROKER_TRUTH_MISMATCH"),
+        ({"broker_truth": {**BROKER_TRUTH, "deal_ref": OTHER_REF}}, "V31_LEDGER_BROKER_TRUTH_MISMATCH"),
+        ({"broker_truth": {**BROKER_TRUTH, "position_ref": OTHER_REF}}, "V31_LEDGER_BROKER_TRUTH_MISMATCH"),
+    ],
+)
+def test_side_ledger_identifier_mismatch_is_a_break(overrides: dict[str, Any], code: str) -> None:
+    report = run(evidence(v31_side_ledger=chain_ledger(**overrides)))
+    assert code in codes(report)
+    assert report["acceptance"]["V31_SIDE_LEDGER_JOINED"] is False
+    assert report["v31_side_ledger"]["status"] == "BROKEN"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert report["status"] == "NOT_RECONCILED"
+
+
+def test_ledger_risk_decision_must_be_the_one_the_command_carries() -> None:
+    other = "55555555-5555-4555-8555-555555555555"
+    decisions = [
+        *evidence()["risk_decisions"],
+        {"risk_decision_id": other, "tradeplan_id": TRADEPLAN_ID, "tradeplan_revision": 3, "decision": "REJECTED"},
+    ]
+    report = run(evidence(risk_decisions=decisions, v31_side_ledger=chain_ledger(risk_decision_id=other)))
+    assert "V31_LEDGER_RISK_DECISION_MISMATCH" in codes(report)
+
+
+def test_ledger_risk_decision_must_bind_the_ledger_tradeplan_revision() -> None:
+    plans = [
+        *evidence()["tradeplans"],
+        {"tradeplan_id": TRADEPLAN_ID, "tradeplan_revision": 2, "content_sha256": "sha256:" + "e" * 64},
+    ]
+    decisions = [
+        {
+            "risk_decision_id": RISK_DECISION_ID,
+            "tradeplan_id": TRADEPLAN_ID,
+            "tradeplan_revision": 2,
+            "decision": "APPROVED",
+        }
+    ]
+    report = run(evidence(tradeplans=plans, risk_decisions=decisions))
+    assert codes(report) == {"V31_LEDGER_RISK_DECISION_MISMATCH"}
+
+
+def test_ledger_broker_truth_refs_with_two_joined_orders_are_a_break() -> None:
+    receipts = [*filled_receipts(), receipt(3, "BROKER_ACCEPTED", "DEMO_ONE_ORDER_ACCEPTED", order_ticket=5002)]
+    report = run(
+        evidence(ea_receipts=receipts, broker=broker(history_orders=[order_record(), order_record(5002, state=2)]))
+    )
+    assert "V31_LEDGER_BROKER_TRUTH_MISMATCH" in codes(report)
+
+
+def test_pinned_snapshot_must_bind_the_command() -> None:
+    report = run(evidence(pinned_snapshot=snapshot(snapshot_id="other-snapshot")))
+    assert codes(report) == {"PINNED_SNAPSHOT_BINDING_MISMATCH"}
+
+
+def test_invalid_pinned_snapshot_is_a_break_and_has_no_volume_min() -> None:
+    report = run(evidence(pinned_snapshot={"snapshot_id": "x"}))
+    assert {"RECORD_INVALID", "BROKER_VOLUME_MIN_EVIDENCE_MISSING"} <= codes(report)
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+
+
+# ---- B5: bounded volume-min canary, never increase risk ---------------------------------------------------------
+
+
+def test_bounded_canary_volume_decision() -> None:
+    assert bounded_canary_volume(Decimal("0.009"), Decimal("0.01")) == (NO_SUBMIT, None)
+    assert bounded_canary_volume(Decimal("0.01"), Decimal("0.01")) == (SUBMIT_VOLUME_MIN, Decimal("0.01"))
+    assert bounded_canary_volume(Decimal("5"), Decimal("0.01")) == (SUBMIT_VOLUME_MIN, Decimal("0.01"))
+
+
+def test_evidence_decimal_is_exact_and_never_rounds() -> None:
+    assert evidence_decimal(0.1) == Decimal("0.1")
+    assert str(evidence_decimal(0.1)) == "0.1"
+    assert evidence_decimal("0.0100") == Decimal("0.01")
+    assert str(evidence_decimal("0.0100")) == "0.0100"
+    assert evidence_decimal(0.012345678901) == Decimal("0.012345678901")
+    assert evidence_decimal(Decimal("0.02")) == Decimal("0.02")
+    assert evidence_decimal(2) == Decimal("2")
+    for bad in (True, None, "abc", float("nan"), float("inf"), "Infinity", [0.01]):
+        assert evidence_decimal(bad) is None
+
+
+def test_canonical_volume_below_broker_min_is_a_break() -> None:
+    report = run(evidence(v31_side_ledger=chain_ledger(canonical_sized_volume="0.009")))
+    assert {"CANONICAL_VOLUME_BELOW_BROKER_MIN", "DEMO_SUBMITTED_VOLUME_EXCEEDS_CANONICAL"} <= codes(report)
+    assert report["v31_side_ledger"]["volume_decision"] == "NO_SUBMIT"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+
+
+def test_canonical_volume_equal_to_broker_min_reconciles() -> None:
+    report = run(evidence(v31_side_ledger=chain_ledger(canonical_sized_volume=0.01)))
+    assert report["status"] == "RECONCILED", report["breaks"]
+
+
+def test_upsized_demo_submission_is_a_break() -> None:
+    upsized = command(volume=0.02)
+    ledger = chain_ledger(for_command=upsized, demo_submitted_volume="0.02")
+    history = [order_record() | {"volume_initial": 0.02}]
+    report = run(evidence(commands=[upsized], v31_side_ledger=ledger, broker=broker(history_orders=history)))
+    assert codes(report) == {"DEMO_SUBMITTED_VOLUME_EXCEEDS_VOLUME_MIN", "DEMO_SUBMITTED_VOLUME_NOT_VOLUME_MIN"}
+
+
+def test_demo_submission_below_volume_min_is_a_break() -> None:
+    small = command(volume=0.005)
+    ledger = chain_ledger(for_command=small, demo_submitted_volume="0.005")
+    history = [order_record() | {"volume_initial": 0.005}]
+    positions = [position_record(volume=0.005)]
+    report = run(
+        evidence(commands=[small], v31_side_ledger=ledger, broker=broker(history_orders=history, positions=positions))
+    )
+    assert codes(report) == {"DEMO_SUBMITTED_VOLUME_NOT_VOLUME_MIN"}
+
+
+def test_command_volume_differing_from_ledger_is_a_break() -> None:
+    other = command(volume=0.02)
+    report = run(evidence(commands=[other], v31_side_ledger=chain_ledger(for_command=other)))
+    assert codes(report) == {"COMMAND_VOLUME_NOT_DEMO_SUBMITTED_VOLUME"}
+
+
+@pytest.mark.parametrize("volume_initial", [0.02, None, "0.01x"])
+def test_broker_truth_order_volume_must_equal_demo_submitted_volume(volume_initial: object) -> None:
+    history = [order_record() | {"volume_initial": volume_initial}]
+    report = run(evidence(broker=broker(history_orders=history)))
+    assert codes(report) == {"BROKER_ORDER_VOLUME_NOT_DEMO_SUBMITTED_VOLUME"}
+
+
+def test_volume_min_is_read_from_the_pinned_snapshot_not_a_constant() -> None:
+    symbols = snapshot()["symbols"]
+    symbols[0] = {**symbols[0], "volume_min": 0.1, "volume_step": 0.1}
+    pinned = snapshot(symbols=symbols)
+    minimum = command(volume=0.1)
+    ledger = chain_ledger(for_command=minimum, canonical_sized_volume=0.25, demo_submitted_volume=0.1)
+    history = [order_record() | {"volume_initial": 0.1}]
+    report = run(
+        evidence(
+            commands=[minimum],
+            pinned_snapshot=pinned,
+            v31_side_ledger=ledger,
+            broker=broker(history_orders=history, positions=[position_record(volume=0.1)]),
+        )
+    )
+    assert report["status"] == "RECONCILED", report["breaks"]
+    assert report["v31_side_ledger"]["broker_volume_min"] == "0.1"
+    assert "DEMO_SUBMITTED_VOLUME_NOT_VOLUME_MIN" in codes(run(evidence(pinned_snapshot=pinned)))
+    missing_symbol = run(evidence(pinned_snapshot=snapshot(symbols=[])))
+    assert codes(missing_symbol) == {"BROKER_VOLUME_MIN_EVIDENCE_MISSING"}
+    assert missing_symbol["v31_side_ledger"]["volume_decision"] is None
