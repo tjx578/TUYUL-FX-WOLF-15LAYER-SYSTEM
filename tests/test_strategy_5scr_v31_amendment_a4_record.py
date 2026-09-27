@@ -89,18 +89,21 @@ def test_a4_builds_on_the_exact_approved_a1_a2_a3_bytes():
     assert builds_on["A3"]["entries_used"] == ["A3-05", "A3-07", "A3-08", "A3-09", "A3-10", "A3-R1", "A3-R2"]
 
 
-def test_draft_approves_nothing_and_activates_nothing():
+def test_ratification_approves_every_entry_and_activates_nothing():
     record = _record()
-    assert record["status"] == "DRAFT_NOT_APPROVED"
+    assert record["status"] == "APPROVED_PER_ENTRY"
     assert (record["grants_runtime_activation"], record["dual_authority"]) == (False, False)
     assert record["runtime_activation"] == "EXPLICIT_ONLY"
-    assert "ratification" not in record
-    assert all(e["approval"] == "PENDING" and e["runtime_activation"] == "EXPLICIT_ONLY" for e in record["entries"])
-    assert {p["approval"] for p in record["geometry_policies"]} == {"PENDING"}
+    assert all(e["approval"] == "APPROVED" and e["runtime_activation"] == "EXPLICIT_ONLY" for e in record["entries"])
+    assert {p["route"]: p["approval"] for p in record["geometry_policies"]} == {
+        "BREAK_RETEST": "APPROVED",
+        "BREAKOUT_ACCEPTANCE": "APPROVED",
+    }
     assert {p["runtime_status"] for p in record["geometry_policies"]} == {"RUNTIME_DISABLED"}
     document = _document()
-    assert "status: DRAFT_NOT_APPROVED\n" in document
-    assert "**Not approved.**" in document
+    assert "status: APPROVED_PER_ENTRY\n" in document
+    assert "**Ratified 2026-09-27.**" in document
+    assert "Approval is authority and specification approval only. It grants no runtime activation:" in document
     assert "A4 APPROVED  ≠  StructuralGeometryV31 implementation authorized" in document
     assert "A4 APPROVED  ≠  any route RUNTIME_ELIGIBLE" in document
     assert "A4 APPROVED  ≠  net RR, broker adaptation or order type decided" in document
@@ -407,12 +410,38 @@ def test_q_a4_3_extra_codes_are_prerequisite_failures_only():
     assert "broker or risk semantics (Q-A4-3)" in text
 
 
-def test_the_successor_pins_the_predecessor_draft_and_is_still_unratified():
+def test_the_content_successor_pins_the_first_draft():
     review = _record()["content_review"]
     assert review["predecessor_draft_sha256"] == "ab5ceb24012d7bfa87f942a2cb49b981f5a6bbc95f28a7203c950e089bec9a44"
     assert review["predecessor_draft_blob_id"] == "0ad47194b52f56fcc33f530ec4957acbd5a7e4fd"
     assert review["content_status"] == "APPROVED_PENDING_BYTE_RATIFICATION"
     document = _document()
     assert review["predecessor_draft_sha256"] in document
-    assert "The content is approved; no entry is approved until the owner ratifies these exact bytes." in document
-    assert _record()["status"] == "DRAFT_NOT_APPROVED"
+    # The content-review pin survives ratification as history of how the ratified bytes were produced.
+    assert "pinned in `content_review`" in document
+
+
+def test_the_approved_document_is_the_provable_successor_of_the_ratified_bytes():
+    """Ratification changes approval metadata only; sections 1–3 stay byte-identical to what the owner verified."""
+
+    record = _record()
+    ratification = record["ratification"]
+    assert ratification["ratified_draft_sha256"] == "3afd4339f3c4d330aa12af5b16da98dbfba6b54fade0a517bb3f3f9d0d48ff02"
+    assert ratification["ratified_draft_blob_id"] == "f84aa6079ccf0603c74152094358e8f59808f2c0"
+    assert ratification["ratified_draft_bytes"] == 22334
+    assert (ratification["ratified_by"], ratification["ratified_on"]) == ("OWNER", "2026-09-27")
+    assert ratification["approved_entries"] == [f"A4-{i:02d}" for i in range(1, 17)]
+    assert ratification["approved_geometry_policies"] == ["BREAK_RETEST", "BREAKOUT_ACCEPTANCE"]
+    assert "PR #511 head 2564a581 CI 40/40 + Security Gate PASS" in ratification["method"]
+    # Computed from blob f84aa607; the approved successor must reproduce it byte for byte.
+    assert ratification["ratified_normative_span_sha256"] == (
+        "0eb2788b923ac5fdc3e22d646d9ca765ad20b16da3c235bdd610d885b1afa780"
+    )
+    raw = (ROOT / record["document"]["path"]).read_bytes()
+    span = raw[raw.index(b"## 1. Why A4 is separate") : raw.index(b"## 4. Approval")]
+    assert hashlib.sha256(span).hexdigest() == ratification["ratified_normative_span_sha256"]
+    document = _document()
+    assert f"ratified_draft_sha256: {ratification['ratified_draft_sha256']}\n" in document
+    assert f"ratified_normative_span_sha256: {ratification['ratified_normative_span_sha256']}\n" in document
+    assert "Only approval metadata changed" in document
+    assert "including the risk-first cause precedence of A4-11" in document

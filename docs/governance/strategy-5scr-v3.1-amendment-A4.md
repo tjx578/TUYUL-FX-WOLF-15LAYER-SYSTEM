@@ -2,7 +2,17 @@
 
 ```yaml
 amendment_id: WOLF15-5SCR-SSOT-V3.1-A4
-status: DRAFT_NOT_APPROVED
+status: APPROVED_PER_ENTRY
+ratification:
+  ratified_draft_sha256: 3afd4339f3c4d330aa12af5b16da98dbfba6b54fade0a517bb3f3f9d0d48ff02
+  ratified_draft_blob_id: f84aa6079ccf0603c74152094358e8f59808f2c0
+  ratified_on: 2026-09-27
+  ratified_by: OWNER
+  method: independent byte verification by the owner against the GitHub head (sha256 + git blob + 22334 bytes), PR #511 head 2564a581 CI 40/40 + Security Gate PASS
+  approved_entries: [A4-01, A4-02, A4-03, A4-04, A4-05, A4-06, A4-07, A4-08, A4-09, A4-10, A4-11, A4-12, A4-13, A4-14, A4-15, A4-16]
+  approved_geometry_policies: [A4-G1 BREAK_RETEST, A4-G2 BREAKOUT_ACCEPTANCE]
+  pending_entries: []
+  ratified_normative_span_sha256: 0eb2788b923ac5fdc3e22d646d9ca765ad20b16da3c235bdd610d885b1afa780
 content_review:
   decided_by: OWNER
   decided_on: 2026-09-27
@@ -418,9 +428,17 @@ Q-A4-4  CLOSED — per-entry shadow/replay/OOS flags fixed by the owner matrix (
 
 ## 4. Approval
 
-**Not approved.** This draft encodes owner decisions OD-1 … OD-16 (2026-09-22) and the owner's answers to Q-A4-1 …
-Q-A4-4 (2026-09-27) as a successor of the draft bytes `sha256 ab5ceb24…9a44` (git blob `0ad47194…e4fd`, pinned in
-`content_review`). The content is approved; no entry is approved until the owner ratifies these exact bytes. Approval would grant no runtime activation and no implementation authority:
+**Ratified 2026-09-27.** The owner approved the content (OD-1 … OD-16 on 2026-09-22; Q-A4-1 … Q-A4-4 on
+2026-09-27, including the risk-first cause precedence of A4-11), had those decisions encoded as a successor of the
+draft bytes `sha256 ab5ceb24…9a44` (git blob `0ad47194…e4fd`, pinned in `content_review`), and then independently
+verified and ratified the exact bytes `sha256 3afd4339…ff02` (git blob `f84aa607…f2c0`, 22334 bytes) at PR #511
+head `2564a581` (CI 40/40, Security Gate PASS). A4-01 … A4-16 and geometry policies A4-G1, A4-G2 are approved.
+
+This document is the approved successor of those exact bytes. Only approval metadata changed: the `status` line,
+the `ratification` block and this section. Sections 1–3 are byte-identical to the ratified bytes, pinned by
+`ratified_normative_span_sha256` (from `## 1.` up to the start of `## 4.`).
+
+Approval is authority and specification approval only. It grants no runtime activation:
 
 ```text
 A4 APPROVED  ≠  StructuralGeometryV31 implementation authorized
@@ -428,4 +446,6 @@ A4 APPROVED  ≠  any route RUNTIME_ELIGIBLE
 A4 APPROVED  ≠  net RR, broker adaptation or order type decided
 ```
 
-`grants_runtime_activation` stays `false`; every entry keeps `runtime_activation: EXPLICIT_ONLY`.
+`grants_runtime_activation` stays `false`; every entry keeps `runtime_activation: EXPLICIT_ONLY`. Implementation
+authority is a separate owner decision; a route becomes `RUNTIME_ELIGIBLE` only after the evidence each entry
+requires passes and the owner authorizes activation separately.
