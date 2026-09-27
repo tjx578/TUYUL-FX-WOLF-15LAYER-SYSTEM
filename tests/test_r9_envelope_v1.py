@@ -633,14 +633,24 @@ def test_direct_receipt_reuses_direct_broker_receipt_names():
         assert column in receipt_sql
 
 
+# The only permitted importer: the OFFLINE DEMO-canary evidence verifier (reads exported files, writes one report; no
+# network, DB, broker, or submit authority). It consumes the verdict as the sole exact-S authority and is not a runtime
+# path, so runtime_activation stays false. Any other importer is a runtime activation and fails this guard.
+OFFLINE_VERIFIER_IMPORTERS = frozenset({"ops/demo_canary_verifier/side_ledger.py"})
+
+
 def test_contract_has_no_runtime_importer_and_no_execution_dependency():
     source = (ROOT / "contracts" / "r9_envelope_v1.py").read_text("utf-8")
     assert "from execution" not in source and "import execution" not in source
     importers = [
-        path
+        path.relative_to(ROOT).as_posix()
         for folder in ("api", "execution", "services", "storage", "ops", "core", "engine", "pipeline")
         if (ROOT / folder).is_dir()
         for path in (ROOT / folder).rglob("*.py")
         if "r9_envelope_v1" in path.read_text("utf-8", errors="ignore")
     ]
-    assert importers == []
+    assert sorted(set(importers) - OFFLINE_VERIFIER_IMPORTERS) == []
+    for relative in OFFLINE_VERIFIER_IMPORTERS:
+        offline = (ROOT / relative).read_text("utf-8")
+        for runtime in ("import requests", "import httpx", "import socket", "sqlalchemy", "asyncpg", "MetaTrader5"):
+            assert runtime not in offline, (relative, runtime)
