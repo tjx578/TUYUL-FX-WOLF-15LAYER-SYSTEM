@@ -1,0 +1,179 @@
+{
+  "amendment_id": "WOLF15-5SCR-SSOT-V3.1-A2",
+  "status": "APPROVED_PER_ENTRY",
+  "scope": "STRUCTURAL_TARGET_ONLY",
+  "final_approver": "OWNER",
+  "document": {
+    "path": "docs/governance/strategy-5scr-v3.1-amendment-A2.md",
+    "sha256": "9cf9e5318aa69d8ec4455b48588a924be97b7fdeaf9091e67ff90920e68236d2"
+  },
+  "base_ssot": {
+    "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
+    "path": "docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md",
+    "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "document_bytes_modified": false
+  },
+  "effective_authority_model": "BASE_SSOT_PLUS_EXPLICIT_AMENDMENTS",
+  "dual_authority": false,
+  "runtime_activation": "EXPLICIT_ONLY",
+  "grants_runtime_activation": false,
+  "entries": [
+    {
+      "entry_id": "A2-01",
+      "amendment_type": "CONFLICT_OVERRIDE",
+      "source_pr": null,
+      "base_clause": [
+        "§5",
+        "§17.1",
+        "§28",
+        "§16.1"
+      ],
+      "base_behavior": "Sections 5 and 28 list PressureRange + route-specific ExecutionBox BEFORE the nearest fresh structural target, while section 17.1 'Correct solve order' lists the target at step 3 and the route-specific structural entry interval at step 4; section 16.1 makes that interval the ExecutionBox, so both orders cannot hold.",
+      "amended_behavior": "Section 17.1 controls wherever the section 5 / 28 summary ordering conflicts with it. Structural target selection precedes route-specific ExecutionBox materialization. RouteEvaluation is not moved: section 17.1 step 2 still precedes the target; what is forbidden is forming the route-specific legal entry geometry before the canonical target is known.",
+      "reason": "Section 17.4 makes target_room_interval a member of the feasible-entry intersection, so selecting the target after the entry geometry exists would be circular; resolving it by code precedence would hide an authority decision inside an implementation.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A2-02",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§17.2",
+        "§17.4",
+        "§11.1",
+        "§11.2"
+      ],
+      "base_behavior": "Section 17.2 requires the nearest structural target that is also not yet passed at decision time, but never states what nearest is measured from.",
+      "amended_behavior": "Origin is decision_price: the latest authoritative non-future price observation valid at the canonical decision_time, from strategy-side closed-price authority. Live broker quotes, future candle data, eventual fill prices, route-derived entry prices and RR-chosen reference prices are forbidden as origin. BUY eligible iff target_price > decision_price with distance target_price - decision_price; SELL eligible iff target_price < decision_price with distance decision_price - target_price. Not-passed is a pre-filter, not a tie-breaker. Zone comparison boundaries must be declared by the amendment that introduces a zone representation.",
+      "reason": "Measuring from the entry interval is circular with section 17.4.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A2-03",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§17.2",
+        "§11.6"
+      ],
+      "base_behavior": "Section 17.2 requires fresh and never defines it; Audit/Replay v3 section 18.3 stores a freshness status and a tested count without transitions; section 11.6 forbids wall-clock age from being authority.",
+      "amended_behavior": "Freshness is a structural/source-policy state, not a clock. A wall-clock TTL is not canonical freshness authority and valid_until is reclassified NON_CANONICAL / ADVISORY_ONLY. The canonical selector predicate is freshness_status == FRESH. tested_count is evidence and implies no universal threshold. Each source class may form freshness differently provided the policy is explicit, deterministic, versioned, non-future and authority-approved, and the record carries a freshness_policy_id with its version. Freshness is not consumption. Literal field names are not mandated where equivalent provenance already exists, but the semantics of freshness_status, tested_count and the policy identity/version must not be lost.",
+      "reason": "A TTL cannot express tested-and-still-fresh, and a universal tested-count threshold would reintroduce the magic number A1-11 removed.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A2-04",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§17.2",
+        "§21.6",
+        "§13"
+      ],
+      "base_behavior": "Section 17.2 requires unconsumed, section 18.3 stores consumed_at and invalidated_at and section 21.6 has TARGET_CONSUMED, but nothing states what consumes a target.",
+      "amended_behavior": "Consumption is market-evidence truth: the authoritative price path satisfied the target's canonical completion condition. It is never ExecutionBox creation, TradePlanCandidate creation, risk approval, order submission, a broker fill or a position, and ExecutionBox.CONSUMED must not be imported. TEST is price interaction without completion and changes tested_count and possibly freshness, never consumption. For point targets consumed_at is the first authoritative target-completion evidence, with the completion rule source-policy-bound under the A2-03 discipline; this amendment fixes NO candle field as the criterion, so whether completion is a wick touch, a close through, a bid touch or an ask touch is NOT_DEFINED_BY_AUTHORITY and must not be chosen in an adapter. Zone target runtime semantics are NOT_ACTIVE because the canonical contract has no zone representation. The section 13 liquidity FSM is authority for the LIQUIDITY source only.",
+      "reason": "Without this separation a touch would silently consume a target and trade-lifecycle events would leak into market-evidence truth.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A2-05",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§17.2",
+        "§17.3"
+      ],
+      "base_behavior": "Section 17.2 states the predicate in prose; read literally it is six conditions, not the four commonly quoted, because the quoted set omits authoritative, in-thesis-direction and not-passed-at-decision-time.",
+      "amended_behavior": "Canonical eligibility surface: STRUCTURAL and AUTHORITATIVE and IN THESIS DIRECTION and FRESH and UNCONSUMED and NOT PASSED AT decision_time. nearest is applied after all six filters and is never one of them. A farther target stays forbidden while a nearer one is active. Target selection never reads RR; an RR failure rejects the setup rather than selecting the next target.",
+      "reason": "The four-word shorthand loses three conditions that section 17.2 states explicitly.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A2-06",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§17.2",
+        "§17.3"
+      ],
+      "base_behavior": "Authority requires the nearest target but says nothing about two eligible targets at equal distance.",
+      "amended_behavior": "Frozen from the existing selector rather than invented: primary key is the minimum positive directional distance from decision_price, secondary key is ascending target_id. formed_at is EXCLUDED because it would silently create an older-preferred or newer-preferred market semantics that no authority states. TargetSource precedence, RR precedence, timeframe precedence and any source-quality score are likewise excluded unless a later amendment authorises them. target_id carries no structural claim and must be stable, deterministic and independent of deployment, request or worker randomness; a non-deterministic target_id is a separate identity gap and must not be patched with formed_at.",
+      "reason": "Determinism must come from authority, not from an implementation detail.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A2-07",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_clause": [
+        "§15.1",
+        "§21.6",
+        "§17.2"
+      ],
+      "base_behavior": "Section 15.1 lists target-map revision as a material re-evaluation trigger and section 21.6 supplies target reason codes, but no clause says what kind of target revision occurred, so downstream geometry has no authority-defined signal for when the target side changed.",
+      "amended_behavior": "Closed revision-fact vocabulary of exactly four values comparing the previous canonical selected target with the current canonical target selection. TARGET_UNCHANGED: same stable target_id, geometry-relevant canonical material unchanged, all six A2-05 predicates still hold; no target-side re-evaluation. TARGET_MATERIAL_CHANGE: the selected-target result changed materially without invalidation or ineligibility as cause, covering (A) same target_id with changed geometry-relevant material and (B) a different target_id because the eligible set or nearest solution changed; target-side re-evaluation required, no ExecutionBox revision by itself. TARGET_INVALIDATED: the source's authoritative structural policy explicitly invalidates the previously selected target. TARGET_NO_LONGER_ELIGIBLE: the previously selected target stays a known record but fails one or more A2-05 predicates; staleness, consumption, being passed, direction change and authority loss are this value, never TARGET_INVALIDATED unless the source also explicitly invalidates. Precedence frozen: TARGET_INVALIDATED > TARGET_NO_LONGER_ELIGIBLE > TARGET_MATERIAL_CHANGE > TARGET_UNCHANGED; one classification reports one value. Section 21.6 reason codes are unchanged. No mapping from a target fact to any ExecutionBox FSM state or revision effect is encoded; that is 12C authority. No target_id formula and no material field list is fixed.",
+      "reason": "12C will consume these facts to decide when downstream geometry must re-evaluate, so they must be durable authority rather than a GO directive, and without precedence one revision could report several contradictory facts.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    }
+  ],
+  "ratification": {
+    "ratified_draft_sha256": "4780c8989bfad0f6322ff3543774cc637f3e32c68d0e5747670fe18267608815",
+    "ratified_draft_blob_id": "d8433a126c689fea3ea6f859cddeacdd4a4ed1c9",
+    "ratified_on": "2026-09-21",
+    "ratified_by": "OWNER",
+    "method": "independent byte verification by the owner (Get-FileHash + git rev-parse)",
+    "approved_entries": [
+      "A2-01",
+      "A2-02",
+      "A2-03",
+      "A2-04",
+      "A2-05",
+      "A2-06"
+    ]
+  },
+  "draft_revision": {
+    "base_approved_document_sha256": "9ca93cca0f10fb2de30e858f978b2b0b4908fda5ed9eb9d9ad597990fe6165e7",
+    "base_approved_blob_id": "cf07bd46b4b54edbc0f6fa6b69b6d5a99fd34184",
+    "approved_entries_span_sha256": "cb82a987ac2b22f5c8da83348f11175676fdae92b63251bdbfc0590e2a88891f",
+    "pending_entries": []
+  },
+  "ratification_a2_07": {
+    "ratified_draft_sha256": "01e9c76d71229a29a370acd023e45566329f1b7805140b4533ce7c0932253ba6",
+    "ratified_draft_blob_id": "39d380d394c47a6701871a2c9fa5b27b5f71a7dd",
+    "ratified_on": "2026-09-21",
+    "ratified_by": "OWNER",
+    "method": "independent byte verification by the owner (Get-FileHash + git rev-parse)",
+    "approved_entries": [
+      "A2-07"
+    ],
+    "a2_07_normative_span_sha256": "e96a0294b5eab21a13d6a4b6586299d91e444ca684facee93938555867dc6b03"
+  }
+}
