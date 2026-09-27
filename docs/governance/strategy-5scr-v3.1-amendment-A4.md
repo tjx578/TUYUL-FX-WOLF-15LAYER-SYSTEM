@@ -3,6 +3,13 @@
 ```yaml
 amendment_id: WOLF15-5SCR-SSOT-V3.1-A4
 status: DRAFT_NOT_APPROVED
+content_review:
+  decided_by: OWNER
+  decided_on: 2026-09-27
+  content_status: APPROVED_PENDING_BYTE_RATIFICATION
+  predecessor_draft_sha256: ab5ceb24012d7bfa87f942a2cb49b981f5a6bbc95f28a7203c950e089bec9a44
+  predecessor_draft_blob_id: 0ad47194b52f56fcc33f530ec4957acbd5a7e4fd
+  questions_resolved: [Q-A4-1, Q-A4-2, Q-A4-3, Q-A4-4]
 content_source:
   decided_by: OWNER
   decided_on: 2026-09-22
@@ -45,8 +52,9 @@ A4 grants **no** runtime activation and does not modify any base document. Entry
 `CONFLICT_OVERRIDE` (contradicts and replaces a clause) and `GAP_FILL` (the authority is silent).
 
 **Specification approval is not runtime approval.** Every entry may be ratified as specification while
-`runtime_activation` stays `EXPLICIT_ONLY`. The structural SL anchor rule is new strategy behavior: it requires
-replay and shadow evidence, and OOS evidence before canonical runtime activation.
+`runtime_activation` stays `EXPLICIT_ONLY`. Evidence flags follow the owner matrix (Q-A4-4): OOS only for market or
+numeric semantics that can change a setup outcome; shadow for behavior that must be shown on natural market
+progression; replay for deterministic lineage and geometry behavior that must reproduce.
 
 Source: the 12D audit (`GAP12D_STRUCTURAL_GEOMETRY_AUDIT.md`) and owner decisions OD-1 … OD-16 (2026-09-22).
 
@@ -115,7 +123,7 @@ net_rr            = computed AFTER broker/cost adaptation, never by A4
 
   Flow: StructuralGeometry → gross RR observation → Broker/Cost Adaptation → net RR → net RR ≥ 1.5.
 - A historical gross threshold of 2.0 is `LEGACY / NOT_CANONICAL_AUTHORITY`. A4 creates no gross threshold.
-- **shadow_required:** true · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+- **shadow_required:** true · **replay_required:** true · **oos_required:** true · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-04 · CONFLICT_OVERRIDE · No minimum target distance in strategy geometry
 
@@ -151,7 +159,7 @@ SELL rr_reference_entry = box_low
   `rr_reference_entry` is the worst-case strategy entry inside the interval, used only for the conservative gross RR.
   It is **not** an actual order price, a market order, a limit order or a stop order. Order type and order price
   belong to G4.
-- **shadow_required:** true · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+- **shadow_required:** true · **replay_required:** true · **oos_required:** true · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-06 · GAP_FILL · Entry interval identity is the box revision
 
@@ -166,7 +174,7 @@ entry interval identity = (execution_box_id, box_version)
 ```
 
   No `entry_interval_id` is created. When the box revision changes, the entry interval revision changes with it.
-- **shadow_required:** false · **replay_required:** false · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+- **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-07 · CONFLICT_OVERRIDE · Broker boundary
 
@@ -184,6 +192,17 @@ G4 / Broker   : bid/ask · spread · drift · tick size · tick value · stops l
 
   `broker_constraint_interval` is not evaluated in A4. The A3-05 prohibition extends from the box to SL, TP1 and
   the entry reference: **no tick-size quantization in A4.**
+- **Executable order placement is restricted in G4, never in A4 (Q-A4-1).** G4 forms the executable entry domain
+  from the unclamped A4 geometry and then intersects it with broker constraints:
+
+```text
+BUY  : ExecutionBox ∩ (structural_sl, TP1) ∩ broker constraints
+SELL : ExecutionBox ∩ (TP1, structural_sl) ∩ broker constraints
+empty intersection → NO EXECUTABLE ENTRY
+```
+
+  An empty domain never moves the SL, moves TP1, expands the box or selects a farther target. **A4 geometry
+  remains immutable.**
 - **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-08 · GAP_FILL · No cost model in A4
@@ -210,7 +229,7 @@ TP1 = selected StructuralTarget.price   (A2-05 selection, status SELECTED)
 
   Forbidden: TP1 ± ticks · TP1 ± spread · TP1 haircut · farther target selection. If the target is not
   economically feasible, the setup fails downstream; TP1 is never moved.
-- **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+- **shadow_required:** true · **replay_required:** true · **oos_required:** true · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-10 · GAP_FILL · Three revision domains and the geometry material projection
 
@@ -238,7 +257,7 @@ material_geometry_hash = canonical sha256 of GEOMETRY_MATERIAL, prices as A3-05 
   does **not** force `box_version` to increment. A target can change and cause a TradePlanCandidate revision while
   the box stays identical. The previous TradePlanCandidate is append-only and superseded, never mutated
   retroactively. `gross_rr` is derived from the projection and is not an extra material field.
-- **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+- **shadow_required:** true · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-11 · GAP_FILL · Exact numeric representation and the gross RR formula
 
@@ -253,11 +272,17 @@ BUY  : risk = rr_reference_entry − structural_sl   reward = TP1 − rr_referen
 SELL : risk = structural_sl − rr_reference_entry   reward = rr_reference_entry − TP1
 gross_rr = reward / risk
 required : risk > 0 and reward > 0, otherwise ROUTE_NO_VALID_ENTRY_DOMAIN
+cause    : mandatory canonical field when ROUTE_NO_VALID_ENTRY_DOMAIN is emitted here:
+           STRUCTURAL_RISK_NON_POSITIVE   if risk <= 0
+           STRUCTURAL_REWARD_NON_POSITIVE if risk > 0 and reward <= 0
 ```
+
+  The status names the category and `cause` names the specific failure (Q-A4-2); risk is evaluated first, so a
+  setup failing both carries `STRUCTURAL_RISK_NON_POSITIVE`.
 
   `gross_rr` is serialized as an exact reduced rational (integer numerator, positive integer denominator); no binary
   float, no quantum, no rounding mode.
-- **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+- **shadow_required:** true · **replay_required:** true · **oos_required:** true · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-12 · GAP_FILL · Box invalidation, thesis invalidation and broker SL stay separate
 
@@ -274,7 +299,7 @@ required : risk > 0 and reward > 0, otherwise ROUTE_NO_VALID_ENTRY_DOMAIN
 box invalidation  ≠  thesis invalidation  ≠  broker SL trigger
 ```
 
-- **shadow_required:** false · **replay_required:** false · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+- **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-13 · GAP_FILL · Closed geometry reason vocabulary
 
@@ -295,9 +320,10 @@ EXECUTION_BOX_NOT_FROZEN
 GEOMETRY_POLICY_UNKNOWN
 ```
 
-  Net RR status carried downstream: `NET_RR_NOT_EVALUATED`. A4 never emits `RR_FAIL`, `RR_BELOW_MINIMUM`,
+  `EXECUTION_BOX_NOT_FROZEN` and `GEOMETRY_POLICY_UNKNOWN` are A4 prerequisite and policy failures only, with no
+  broker or risk semantics (Q-A4-3). Net RR status carried downstream: `NET_RR_NOT_EVALUATED`. A4 never emits `RR_FAIL`, `RR_BELOW_MINIMUM`,
   `COST_FLOOR_FAILED`, `TARGET_BELOW_EXECUTION_FLOOR` or any broker reason.
-- **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+- **shadow_required:** false · **replay_required:** false · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-14 · GAP_FILL · Versioned geometry policy registry
 
@@ -325,7 +351,7 @@ resulting geometry material changed          → new TradePlanCandidate revision
 
   Risk handoff is for the latest canonical candidate only, and every handoff references an exact TradePlanCandidate
   revision. An old risk reservation is never silently rebound to a new revision.
-- **shadow_required:** false · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
+- **shadow_required:** true · **replay_required:** true · **oos_required:** false · **runtime_activation:** EXPLICIT_ONLY.
 
 ### A4-16 · GAP_FILL · Packaging
 
@@ -378,24 +404,23 @@ The other four A3 routes have no box policy and therefore no geometry policy.
 Non-normative note: A4 does not re-order Audit/Replay v3 §20.2. The SL anchor comes from R and does not depend on
 any entry choice, so no SL-after-entry ordering question arises inside A4.
 
-### Open questions (recorded for the owner; A4 does not decide them)
+### Resolved questions (owner, 2026-09-27)
 
 ```text
-Q-A4-1  OPEN — BREAK_RETEST box can reach the SL side: BUY box_low = C.low may be <= R.low (SELL box_high = C.high
-        may be >= R.high). The RR reference entry stays valid, but part of the entry interval then lies at or
-        beyond structural_sl. A4 adds no rule; whether G4 must restrict order placement to (SL, TP1) is not decided.
-Q-A4-2  OPEN — OD-11 names ROUTE_NO_VALID_ENTRY_DOMAIN for risk <= 0 or reward <= 0, and OD-13 lists
-        STRUCTURAL_RISK_NON_POSITIVE / STRUCTURAL_REWARD_NON_POSITIVE. This draft emits
-        ROUTE_NO_VALID_ENTRY_DOMAIN with the specific code as its cause. Owner confirmation required.
-Q-A4-3  OPEN — EXECUTION_BOX_NOT_FROZEN and GEOMETRY_POLICY_UNKNOWN extend the OD-13 minimum vocabulary.
-        Owner confirmation required.
-Q-A4-4  OPEN — shadow/replay/OOS flags outside A4-01 and A4-02 are the coordinator's proposal, not owner decisions.
+Q-A4-1  CLOSED — G4 restricts executable order placement to ExecutionBox ∩ (SL, TP1) for BUY and
+        ExecutionBox ∩ (TP1, SL) for SELL, intersected with broker constraints; empty → NO EXECUTABLE ENTRY.
+        A4 geometry remains immutable (A4-07).
+Q-A4-2  CLOSED — status ROUTE_NO_VALID_ENTRY_DOMAIN with a mandatory canonical cause
+        STRUCTURAL_RISK_NON_POSITIVE or STRUCTURAL_REWARD_NON_POSITIVE (A4-11).
+Q-A4-3  CLOSED — EXECUTION_BOX_NOT_FROZEN and GEOMETRY_POLICY_UNKNOWN approved (A4-13).
+Q-A4-4  CLOSED — per-entry shadow/replay/OOS flags fixed by the owner matrix (each entry above).
 ```
 
 ## 4. Approval
 
-**Not approved.** This is a draft encoding owner decisions OD-1 … OD-16 (2026-09-22). No entry is approved until the
-owner ratifies these exact bytes. Approval would grant no runtime activation and no implementation authority:
+**Not approved.** This draft encodes owner decisions OD-1 … OD-16 (2026-09-22) and the owner's answers to Q-A4-1 …
+Q-A4-4 (2026-09-27) as a successor of the draft bytes `sha256 ab5ceb24…9a44` (git blob `0ad47194…e4fd`, pinned in
+`content_review`). The content is approved; no entry is approved until the owner ratifies these exact bytes. Approval would grant no runtime activation and no implementation authority:
 
 ```text
 A4 APPROVED  ≠  StructuralGeometryV31 implementation authorized

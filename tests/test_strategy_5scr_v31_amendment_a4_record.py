@@ -339,10 +339,80 @@ def test_geometry_policies_match_the_record_and_the_a3_boxes():
     assert "The other four A3 routes have no box policy and therefore no geometry policy." in document
 
 
-def test_open_questions_stay_open_and_are_not_silently_decided():
+def test_every_question_is_resolved_and_none_left_open():
     record = _record()
-    assert record["open_questions"] == ["Q-A4-1", "Q-A4-2", "Q-A4-3", "Q-A4-4"]
+    assert "open_questions" not in record
+    assert sorted(record["resolved_questions"]) == ["Q-A4-1", "Q-A4-2", "Q-A4-3", "Q-A4-4"]
     document = _document()
-    for question in record["open_questions"]:
-        assert f"\n{question}  OPEN" in document, question
-    assert "A4 adds no rule" in document
+    for question in record["resolved_questions"]:
+        assert f"\n{question}  CLOSED" in document, question
+    assert "  OPEN" not in document
+
+
+# Owner matrix Q-A4-4 (2026-09-27): OOS only for market/numeric semantics that can change a setup outcome.
+EVIDENCE_MATRIX = {
+    "A4-01": (True, True, True),
+    "A4-02": (True, True, True),
+    "A4-03": (True, True, True),
+    "A4-04": (True, True, True),
+    "A4-05": (True, True, True),
+    "A4-06": (False, True, False),
+    "A4-07": (False, True, False),
+    "A4-08": (False, False, False),
+    "A4-09": (True, True, True),
+    "A4-10": (True, True, False),
+    "A4-11": (True, True, True),
+    "A4-12": (False, True, False),
+    "A4-13": (False, False, False),
+    "A4-14": (False, True, False),
+    "A4-15": (True, True, False),
+    "A4-16": (False, False, False),
+}
+
+
+def test_q_a4_4_evidence_flags_follow_the_owner_matrix_exactly():
+    assert {e["entry_id"]: _flags(e["entry_id"]) for e in _record()["entries"]} == EVIDENCE_MATRIX
+    assert "Evidence flags follow the owner matrix (Q-A4-4)" in _document()
+
+
+def test_q_a4_1_g4_restricts_placement_and_a4_geometry_stays_immutable():
+    text = _entry("A4-07")
+    assert "**Executable order placement is restricted in G4, never in A4 (Q-A4-1).**" in text
+    assert "BUY  : ExecutionBox ∩ (structural_sl, TP1) ∩ broker constraints" in text
+    assert "SELL : ExecutionBox ∩ (TP1, structural_sl) ∩ broker constraints" in text
+    assert "empty intersection → NO EXECUTABLE ENTRY" in text
+    assert "An empty domain never moves the SL, moves TP1, expands the box or selects a farther target." in text
+    assert "**A4 geometry\n  remains immutable.**" in text
+
+
+def test_q_a4_2_no_valid_entry_domain_carries_a_mandatory_cause():
+    assert _record()["no_valid_entry_domain_causes"] == [
+        "STRUCTURAL_RISK_NON_POSITIVE",
+        "STRUCTURAL_REWARD_NON_POSITIVE",
+    ]
+    text = _entry("A4-11")
+    assert "cause    : mandatory canonical field when ROUTE_NO_VALID_ENTRY_DOMAIN is emitted here:" in text
+    assert "STRUCTURAL_RISK_NON_POSITIVE   if risk <= 0" in text
+    assert "STRUCTURAL_REWARD_NON_POSITIVE if risk > 0 and reward <= 0" in text
+    assert "risk is evaluated first" in text
+    codes = set(_record()["reason_codes"])
+    assert set(_record()["no_valid_entry_domain_causes"]) <= codes
+
+
+def test_q_a4_3_extra_codes_are_prerequisite_failures_only():
+    text = _entry("A4-13")
+    assert (
+        "`EXECUTION_BOX_NOT_FROZEN` and `GEOMETRY_POLICY_UNKNOWN` are A4 prerequisite and policy failures only" in text
+    )
+    assert "broker or risk semantics (Q-A4-3)" in text
+
+
+def test_the_successor_pins_the_predecessor_draft_and_is_still_unratified():
+    review = _record()["content_review"]
+    assert review["predecessor_draft_sha256"] == "ab5ceb24012d7bfa87f942a2cb49b981f5a6bbc95f28a7203c950e089bec9a44"
+    assert review["predecessor_draft_blob_id"] == "0ad47194b52f56fcc33f530ec4957acbd5a7e4fd"
+    assert review["content_status"] == "APPROVED_PENDING_BYTE_RATIFICATION"
+    document = _document()
+    assert review["predecessor_draft_sha256"] in document
+    assert "The content is approved; no entry is approved until the owner ratifies these exact bytes." in document
+    assert _record()["status"] == "DRAFT_NOT_APPROVED"

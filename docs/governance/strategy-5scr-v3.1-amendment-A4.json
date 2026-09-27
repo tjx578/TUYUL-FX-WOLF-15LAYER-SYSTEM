@@ -5,7 +5,7 @@
   "final_approver": "OWNER",
   "document": {
     "path": "docs/governance/strategy-5scr-v3.1-amendment-A4.md",
-    "sha256": "ab5ceb24012d7bfa87f942a2cb49b981f5a6bbc95f28a7203c950e089bec9a44"
+    "sha256": "3afd4339f3c4d330aa12af5b16da98dbfba6b54fade0a517bb3f3f9d0d48ff02"
   },
   "base_ssot": {
     "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
@@ -174,7 +174,7 @@
       "reason": "T10 resolved without inventing a gross threshold.",
       "shadow_required": true,
       "replay_required": true,
-      "oos_required": false,
+      "oos_required": true,
       "runtime_activation": "EXPLICIT_ONLY",
       "approval": "PENDING"
     },
@@ -221,7 +221,7 @@
       "reason": "RR must not depend on an unauthorized entry choice.",
       "shadow_required": true,
       "replay_required": true,
-      "oos_required": false,
+      "oos_required": true,
       "runtime_activation": "EXPLICIT_ONLY",
       "approval": "PENDING"
     },
@@ -241,7 +241,7 @@
       "amended_behavior": "Both intervals are the frozen box interval; entry interval identity = (execution_box_id, box_version); no entry_interval_id.",
       "reason": "A second identity for the same interval would be dual authority.",
       "shadow_required": false,
-      "replay_required": false,
+      "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
       "approval": "PENDING"
@@ -262,7 +262,7 @@
         "§4.2"
       ],
       "base_behavior": "SSOT section 17.4 places broker_constraint_interval in Strategy Core; Audit/Replay v3 section 4.2 places it in Replay B.",
-      "amended_behavior": "A4 holds canonical Decimal entry interval, SL, TP1 and gross RR; bid/ask, spread, drift, tick size and value, stops and freeze level, order price, volume and margin are G4. No tick quantization in A4.",
+      "amended_behavior": "A4 holds canonical Decimal entry interval, SL, TP1 and gross RR; bid/ask, spread, drift, tick size and value, stops and freeze level, order price, volume and margin are G4. No tick quantization in A4. G4 restricts executable placement to box ∩ (SL, TP1) for BUY / box ∩ (TP1, SL) for SELL ∩ broker constraints; empty → no executable entry; A4 geometry stays immutable (Q-A4-1).",
       "reason": "One authority boundary per object.",
       "shadow_required": false,
       "replay_required": true,
@@ -307,9 +307,9 @@
       "base_behavior": "No clause fixes TP1 relative to the target price.",
       "amended_behavior": "TP1 = selected StructuralTarget.price exactly; no tick, spread or haircut offset and no farther target. An infeasible target fails the setup downstream.",
       "reason": "TP1 must stay the structural target A2 selected.",
-      "shadow_required": false,
+      "shadow_required": true,
       "replay_required": true,
-      "oos_required": false,
+      "oos_required": true,
       "runtime_activation": "EXPLICIT_ONLY",
       "approval": "PENDING"
     },
@@ -331,7 +331,7 @@
       "base_behavior": "A target change can leave box_version unchanged while TP1 and RR change; no geometry revision rule exists.",
       "amended_behavior": "Box, geometry and TradePlanCandidate revisions are separate domains. No structural_geometry_id. Material projection: box revision, SL anchor, SL, TP1 target material (target_id, tp1), rr_reference_entry, geometry policy id/version. A projection change creates a new TradePlanCandidate revision, never box_version++; old candidates stay append-only.",
       "reason": "Every revision needs a named material cause in its own domain.",
-      "shadow_required": false,
+      "shadow_required": true,
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
@@ -351,11 +351,11 @@
         "§17.7"
       ],
       "base_behavior": "Proof prices are float; implementations disagree on representation.",
-      "amended_behavior": "No float. Exact Decimal or rational arithmetic. BUY risk = ref − SL, reward = TP1 − ref; SELL mirrored; gross_rr = reward / risk; risk > 0 and reward > 0 else ROUTE_NO_VALID_ENTRY_DOMAIN. gross_rr is serialized as an exact reduced rational.",
+      "amended_behavior": "No float. Exact Decimal or rational arithmetic. BUY risk = ref − SL, reward = TP1 − ref; SELL mirrored; gross_rr = reward / risk; risk > 0 and reward > 0 else ROUTE_NO_VALID_ENTRY_DOMAIN with mandatory cause STRUCTURAL_RISK_NON_POSITIVE (evaluated first) or STRUCTURAL_REWARD_NON_POSITIVE (Q-A4-2). gross_rr is serialized as an exact reduced rational.",
       "reason": "Float artifacts must never decide a setup.",
-      "shadow_required": false,
+      "shadow_required": true,
       "replay_required": true,
-      "oos_required": false,
+      "oos_required": true,
       "runtime_activation": "EXPLICIT_ONLY",
       "approval": "PENDING"
     },
@@ -375,7 +375,7 @@
       "amended_behavior": "A1-07 is not ratified here. A3 stays authoritative for the box; R.low / R.high is an SL boundary price only; broker trigger semantics are not A4. Box invalidation, thesis invalidation and broker SL trigger stay separate.",
       "reason": "A geometry amendment must not settle a pending thesis rule.",
       "shadow_required": false,
-      "replay_required": false,
+      "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
       "approval": "PENDING"
@@ -393,10 +393,10 @@
         "§23.14"
       ],
       "base_behavior": "SSOT sections 21.6 and 23.14 disagree on floor code names; code uses free strings.",
-      "amended_behavior": "Closed A4 reason vocabulary; net RR status NET_RR_NOT_EVALUATED; no RR_FAIL, cost, floor or broker reasons.",
+      "amended_behavior": "Closed A4 reason vocabulary incl. EXECUTION_BOX_NOT_FROZEN and GEOMETRY_POLICY_UNKNOWN (Q-A4-3); net RR status NET_RR_NOT_EVALUATED; no RR_FAIL, cost, floor or broker reasons.",
       "reason": "A reason code must name only what A4 evaluated.",
       "shadow_required": false,
-      "replay_required": true,
+      "replay_required": false,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
       "approval": "PENDING"
@@ -438,7 +438,7 @@
       "base_behavior": "The handoff is bound to the legacy TargetUniverseV31; no rebinding rule.",
       "amended_behavior": "Upstream box/target/SL change triggers geometry re-evaluation; a geometry material change creates a new TradePlanCandidate revision. Risk handoff only for the latest canonical candidate by exact revision; no silent rebinding of an old reservation.",
       "reason": "A reservation must never follow a plan it was not sized for.",
-      "shadow_required": false,
+      "shadow_required": true,
       "replay_required": true,
       "oos_required": false,
       "runtime_activation": "EXPLICIT_ONLY",
@@ -511,10 +511,21 @@
       "approval": "PENDING"
     }
   ],
-  "open_questions": [
-    "Q-A4-1",
-    "Q-A4-2",
-    "Q-A4-3",
-    "Q-A4-4"
+  "content_review": {
+    "decided_by": "OWNER",
+    "decided_on": "2026-09-27",
+    "content_status": "APPROVED_PENDING_BYTE_RATIFICATION",
+    "predecessor_draft_sha256": "ab5ceb24012d7bfa87f942a2cb49b981f5a6bbc95f28a7203c950e089bec9a44",
+    "predecessor_draft_blob_id": "0ad47194b52f56fcc33f530ec4957acbd5a7e4fd"
+  },
+  "resolved_questions": {
+    "Q-A4-1": "G4_RESTRICTS_EXECUTABLE_PLACEMENT_A4_GEOMETRY_IMMUTABLE",
+    "Q-A4-2": "STATUS_ROUTE_NO_VALID_ENTRY_DOMAIN_WITH_MANDATORY_CAUSE",
+    "Q-A4-3": "EXTRA_PREREQUISITE_AND_POLICY_CODES_APPROVED",
+    "Q-A4-4": "OWNER_EVIDENCE_FLAG_MATRIX"
+  },
+  "no_valid_entry_domain_causes": [
+    "STRUCTURAL_RISK_NON_POSITIVE",
+    "STRUCTURAL_REWARD_NON_POSITIVE"
   ]
 }
