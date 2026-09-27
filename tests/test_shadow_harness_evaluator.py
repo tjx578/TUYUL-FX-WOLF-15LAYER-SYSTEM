@@ -1,0 +1,309 @@
+"""Acceptance evaluation, CLI and isolation boundary of the offline shadow harness."""
+
+from __future__ import annotations
+
+import ast
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from tests.shadow_harness_helpers import (
+    POLICY_PATH,
+    REPO_ROOT,
+    broker_dry_run,
+    bundle,
+    candidate,
+    encode,
+    evaluate,
+    load_pin,
+    load_real,
+    natural_chain,
+    risk_dry_run,
+    tradeplan,
+)
+from tools.shadow_harness.cli import EXIT_GATE_FAILED, EXIT_GATE_PASSED, EXIT_INPUT_REJECTED, main
+from tools.shadow_harness.evaluator import evaluate_bundle_bytes
+from tools.shadow_harness.manifest import HarnessInputError
+
+ACCEPTANCE_KEYS = {
+    "30_PAIR_EVALUATED",
+    "OPERATOR_PAIR_SELECTION",
+    "OPERATOR_DIRECTION_SELECTION",
+    "CROSS_PAIR_CONTAMINATION",
+    "BROKER_SUBMIT",
+}
+NATURAL = ("EURUSD", "GBPJPY", "XAUUSD")
+
+
+def test_thirty_pair_natural_run_passes_with_wait_for_the_rest() -> None:
+    loaded, universe = load_real()
+    report = evaluate(
+        bundle(loaded, universe, {symbol: natural_chain(symbol, universe) for symbol in NATURAL}), loaded, universe
+    )
+    acceptance = report.to_json_dict()["acceptance"]
+    assert acceptance == {
+        "30_PAIR_EVALUATED": True,
+        "OPERATOR_PAIR_SELECTION": False,
+        "OPERATOR_DIRECTION_SELECTION": False,
+        "CROSS_PAIR_CONTAMINATION": 0,
+        "BROKER_SUBMIT": 0,
+    }
+    assert report.gate_passed and report.gate_failures == ()
+    statuses = {item.symbol: item.status for item in report.symbols}
+    assert len(statuses) == 30
+    assert {symbol for symbol, status in statuses.items() if status == "CANDIDATE"} == set(NATURAL)
+    assert sum(status == "WAIT" for status in statuses.values()) == 27
+    wait = next(item for item in report.symbols if item.status == "WAIT")
+    assert (wait.candidate_count, wait.candidate_ids, wait.capture_counts) == (0, (), {})
+
+
+def test_zero_candidates_is_thirty_wait_and_still_evaluated() -> None:
+    loaded, universe = load_real()
+    report = evaluate(bundle(loaded, universe), loaded, universe)
+    assert report.acceptance.pair_30_evaluated is True
+    assert {item.status for item in report.symbols} == {"WAIT"}
+    assert report.gate_passed
+
+
+def test_multiple_natural_candidates_per_symbol_are_counted() -> None:
+    loaded, universe = load_real()
+    chains = natural_chain("EURUSD", universe, 1) + natural_chain("EURUSD", universe, 2)
+    report = evaluate(bundle(loaded, universe, {"EURUSD": chains}), loaded, universe)
+    eur = next(item for item in report.symbols if item.symbol == "EURUSD")
+    assert eur.candidate_count == 2
+    assert eur.capture_counts["TRADEPLAN"] == 2
+    assert report.gate_passed
+
+
+def test_twenty_nine_pairs_is_not_thirty_pair_evaluated() -> None:
+    loaded, universe = load_real()
+    report = evaluate(bundle(loaded, universe, symbols=universe.symbols[:-1]), loaded, universe)
+    assert report.acceptance.pair_30_evaluated is False
+    assert report.gate_failures == ("30_PAIR_EVALUATED",)
+    assert report.symbols[-1].status == "NOT_EVALUATED"
+
+
+def test_duplicate_pair_key_in_bundle_is_rejected() -> None:
+    loaded, universe = load_real()
+    raw = encode(bundle(loaded, universe)).replace(b'"AUDCAD": []', b'"AUDCAD": [], "AUDCAD": []', 1)
+    with pytest.raises(HarnessInputError) as info:
+        evaluate_bundle_bytes(
+            raw, loaded, universe, r9_envelope_pin=load_pin(loaded), r9_envelope=None, r9_artifact=None
+        )
+    assert info.value.code == "DUPLICATE_JSON_KEY"
+
+
+def test_operator_selected_pair_on_candidate_fails() -> None:
+    loaded, universe = load_real()
+    chosen = candidate("EURUSD", pair_selection_source="OPERATOR")
+    report = evaluate(bundle(loaded, universe, {"EURUSD": [chosen]}), loaded, universe)
+    assert report.acceptance.operator_pair_selection is True
+    assert not report.gate_passed
+
+
+def test_operator_direction_selection_fails_from_candidate_or_tradeplan() -> None:
+    loaded, universe = load_real()
+    by_candidate = evaluate(
+        bundle(loaded, universe, {"EURUSD": [candidate("EURUSD", direction_selection_source="OPERATOR")]}),
+        loaded,
+        universe,
+    )
+    assert by_candidate.acceptance.operator_direction_selection is True
+    chain = natural_chain("EURUSD", universe)
+    chain[2] = tradeplan("EURUSD", direction_selection_source="OPERATOR")
+    by_record = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe)
+    assert by_record.acceptance.operator_direction_selection is True
+    assert by_record.acceptance.operator_pair_selection is False
+    assert by_record.gate_failures == ("OPERATOR_DIRECTION_SELECTION",)
+
+
+def test_broker_submit_is_counted_and_fails() -> None:
+    loaded, universe = load_real()
+    chain = natural_chain("EURUSD", universe)
+    chain[3] = broker_dry_run("EURUSD", universe, broker_submit_attempted=True)
+    chain[4] = risk_dry_run("EURUSD", broker_submit_attempted=True)
+    report = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe)
+    assert report.acceptance.broker_submit == 2
+    assert report.gate_failures == ("BROKER_SUBMIT",)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["configuration_digest", "manifest_hash"],
+)
+def test_bundle_bound_to_another_policy_is_rejected(field: str) -> None:
+    loaded, universe = load_real()
+    with pytest.raises(HarnessInputError) as info:
+        evaluate(bundle(loaded, universe, header_overrides={field: "0" * 64}), loaded, universe)
+    assert info.value.code == "HEADER_BINDING_MISMATCH"
+
+
+def test_operator_attestation_fields_are_required_not_defaulted() -> None:
+    loaded, universe = load_real()
+    record = candidate("EURUSD")
+    del record["pair_selection_source"]
+    payload = bundle(loaded, universe, {"EURUSD": [record]})
+    with pytest.raises(HarnessInputError) as info:
+        evaluate(payload, loaded, universe)
+    assert info.value.code == "BUNDLE_SCHEMA_INVALID"
+
+
+def test_report_is_deterministic_and_has_exact_acceptance_keys() -> None:
+    loaded, universe = load_real()
+    payload = bundle(loaded, universe, {"EURUSD": natural_chain("EURUSD", universe)})
+    first = evaluate(payload, loaded, universe).to_json_dict()
+    second = evaluate(payload, loaded, universe).to_json_dict()
+    assert first == second
+    assert set(first["acceptance"]) == ACCEPTANCE_KEYS
+    assert first["provenance"]["policy_sha256"] == loaded.policy_sha256
+
+
+def test_cli_writes_report_and_refuses_overwrite(tmp_path: Path) -> None:
+    loaded, universe = load_real()
+    bundle_path = tmp_path / "bundle.json"
+    bundle_path.write_bytes(encode(bundle(loaded, universe, {"EURUSD": natural_chain("EURUSD", universe)})))
+    out = tmp_path / "report.json"
+    assert main(["--policy", str(POLICY_PATH), "--bundle", str(bundle_path), "--out", str(out)]) == EXIT_GATE_PASSED
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["status"] == "EVALUATED" and report["gate_passed"] is True
+    with pytest.raises(SystemExit):
+        main(["--policy", str(POLICY_PATH), "--bundle", str(bundle_path), "--out", str(out)])
+
+
+def test_cli_gate_failure_and_rejection_exit_codes(tmp_path: Path) -> None:
+    loaded, universe = load_real()
+    failing = tmp_path / "failing.json"
+    failing.write_bytes(encode(bundle(loaded, universe, symbols=universe.symbols[:29])))
+    out_fail = tmp_path / "fail.json"
+    assert main(["--policy", str(POLICY_PATH), "--bundle", str(failing), "--out", str(out_fail)]) == EXIT_GATE_FAILED
+    rejected = tmp_path / "rejected.json"
+    rejected.write_bytes(b"{not json")
+    out_rej = tmp_path / "rejected-report.json"
+    code = main(["--policy", str(POLICY_PATH), "--bundle", str(rejected), "--out", str(out_rej)])
+    assert code == EXIT_INPUT_REJECTED
+    payload = json.loads(out_rej.read_text(encoding="utf-8"))
+    assert (payload["status"], payload["rejection_code"], payload["gate_passed"]) == (
+        "INPUT_REJECTED",
+        "INVALID_JSON",
+        False,
+    )
+
+
+PACKAGE_DIR = REPO_ROOT / "tools" / "shadow_harness"
+ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "argparse",
+    "collections",
+    "csv",
+    "datetime",
+    "decimal",
+    "hashlib",
+    "io",
+    "json",
+    "pathlib",
+    "re",
+    "typing",
+    "pydantic",
+    "tools",
+}
+
+
+# The one import from outside the package: the owner-frozen R9 envelope contract (stdlib + pydantic only).
+ALLOWED_EXTERNAL_MODULES = {"contracts.r9_envelope_v1"}
+
+
+def test_package_imports_only_stdlib_pydantic_itself_and_the_frozen_r9_contract() -> None:
+    for path in sorted(PACKAGE_DIR.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            for name in names:
+                if name in ALLOWED_EXTERNAL_MODULES:
+                    continue
+                root = name.split(".")[0]
+                assert root in ALLOWED_IMPORT_ROOTS, f"{path.name} imports {name}"
+                if root == "tools":
+                    assert name.startswith("tools.shadow_harness"), f"{path.name} imports {name}"
+
+
+def test_frozen_r9_contract_itself_imports_only_stdlib_and_pydantic() -> None:
+    tree = ast.parse((REPO_ROOT / "contracts" / "r9_envelope_v1.py").read_text(encoding="utf-8"))
+    roots = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            roots.add((node.module or "").split(".")[0])
+    assert roots <= {"__future__", "collections", "datetime", "hashlib", "typing", "uuid", "pydantic"}
+
+
+def test_nothing_outside_the_package_and_its_tests_imports_it() -> None:
+    listed = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "*.py"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout.decode("utf-8")
+    offenders = []
+    for name in filter(None, listed.split("\0")):
+        path = Path(name)
+        if path.parts[:2] == ("tools", "shadow_harness") or (
+            path.parts[0] == "tests" and path.name.startswith(("test_shadow_harness_", "shadow_harness_"))
+        ):
+            continue
+        source = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
+        # Import-aware (owner D2): a path mention in a string, e.g. the R9 guard's offline-importer allowlist, is not
+        # an import. Dynamic importlib/__import__ calls with a literal name still count.
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            offenders.append(name)
+            continue
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module)
+                imported.update(f"{node.module}.{alias.name}" for alias in node.names)
+            elif isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant):
+                func = node.func
+                called = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+                if called in {"import_module", "__import__"} and isinstance(node.args[0].value, str):
+                    imported.add(node.args[0].value)
+        if any(module == "tools.shadow_harness" or module.startswith("tools.shadow_harness.") for module in imported):
+            offenders.append(name)
+    assert offenders == []
+
+
+def test_cli_module_runs_as_a_subprocess(tmp_path: Path) -> None:
+    loaded, universe = load_real()
+    bundle_path = tmp_path / "bundle.json"
+    bundle_path.write_bytes(encode(bundle(loaded, universe)))
+    out = tmp_path / "report.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "tools.shadow_harness.cli",
+            "--policy",
+            str(POLICY_PATH),
+            "--bundle",
+            str(bundle_path),
+            "--out",
+            str(out),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == EXIT_GATE_PASSED
+    assert json.loads(out.read_text(encoding="utf-8"))["acceptance"]["30_PAIR_EVALUATED"] is True
