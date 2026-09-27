@@ -25,8 +25,9 @@ asyncpg==0.30.0
 psycopg[binary]==3.2.4
 psycopg2-binary>=2.9.9,<3.0
 alembic==1.14.1
-# SQLAlchemy 2.1 no longer installs greenlet by default; pin the reviewed freeze (2.0.52) with the asyncio extra.
-SQLAlchemy[asyncio]==2.0.52
+# Exact pins from the reviewed dependency freeze: SQLAlchemy 2.1 no longer installs greenlet by default.
+SQLAlchemy==2.0.52
+greenlet==3.5.5
 
 # Logging / CLI UX
 loguru==0.7.2
