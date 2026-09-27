@@ -260,7 +260,26 @@ def test_nothing_outside_the_package_and_its_tests_imports_it() -> None:
         ):
             continue
         source = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
-        if "tools.shadow_harness" in source or "tools/shadow_harness" in source:
+        # Import-aware (owner D2): a path mention in a string, e.g. the R9 guard's offline-importer allowlist, is not
+        # an import. Dynamic importlib/__import__ calls with a literal name still count.
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            offenders.append(name)
+            continue
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module)
+                imported.update(f"{node.module}.{alias.name}" for alias in node.names)
+            elif isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant):
+                func = node.func
+                called = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+                if called in {"import_module", "__import__"} and isinstance(node.args[0].value, str):
+                    imported.add(node.args[0].value)
+        if any(module == "tools.shadow_harness" or module.startswith("tools.shadow_harness.") for module in imported):
             offenders.append(name)
     assert offenders == []
 
