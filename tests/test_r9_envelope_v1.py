@@ -1,0 +1,539 @@
+"""R9EnvelopeV1: derived exact-S acceptance, fail-closed schema, doc/contract equality, reused names."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import re
+from pathlib import Path
+from typing import Any, get_args
+
+import pytest
+from pydantic import ValidationError
+
+from contracts.direct_broker_reconciliation import DirectBrokerReconciliationReceipt
+from contracts.mt5_execution_protocol import AccountSnapshotV1, SymbolCapability
+from contracts.r9_envelope_v1 import (
+    R9_FAILURE_REASONS_V1,
+    R9EnvelopeV1,
+    R9FailureReason,
+    r9_envelope_failures_v1,
+    r9_envelope_field_paths_v1,
+    verify_r9_envelope_v1,
+)
+from execution.broker_reconciliation_evidence import ReconciliationAttestation
+from ops.mt5_mcp.reconcile import MEASURED_STATES
+
+ROOT = Path(__file__).resolve().parents[1]
+DOC = ROOT / "docs" / "governance" / "r9-envelope-v1.md"
+ARTIFACT = b'{"run_id":"C2_RECONCILIATION_R9","status":"PASS_CLOSED"}\n'
+S_ID = "snap-f1dd1f76"
+S_SHA = "a" * 64
+OTHER_SHA = "b" * 64
+EVIDENCE_ID = "4a46f1fd-54e3-4241-9c03-8e0fa385a02d"
+PAYLOAD_SHA = "e" * 64
+RECEIPT_ID = "11111111-2222-4333-8444-555555555555"
+RECEIPT_SHA = "sha256:" + "c" * 64
+COMPONENT_IDENTITY_PATHS = {
+    "collect": ("collect", "attested_snapshot_identity", "COLLECT_SNAPSHOT_IDENTITY_MISMATCH"),
+    "import": ("import", "imported_snapshot_identity", "IMPORT_SNAPSHOT_IDENTITY_MISMATCH"),
+    "active_readback": (
+        "active_readback",
+        "readback_snapshot_identity",
+        "ACTIVE_READBACK_SNAPSHOT_IDENTITY_MISMATCH",
+    ),
+    "capability": ("capability", "snapshot_identity", "CAPABILITY_SNAPSHOT_IDENTITY_MISMATCH"),
+    "direct_receipt": ("direct_receipt", "snapshot_identity", "DIRECT_RECEIPT_SNAPSHOT_IDENTITY_MISMATCH"),
+}
+
+
+def _s() -> dict[str, str]:
+    return {"snapshot_id": S_ID, "snapshot_sha256": S_SHA}
+
+
+def _envelope(**receipt: Any) -> dict[str, Any]:
+    return {
+        "schema_id": "wolf15.r9-envelope",
+        "schema_version": "v1",
+        "source_artifact": "R9",
+        "artifact_sha256": hashlib.sha256(ARTIFACT).hexdigest(),
+        "snapshot_s": _s(),
+        "collect": {
+            "status": "MATCHED_FLAT_DEMO",
+            "attested_snapshot_identity": _s(),
+            "evidence_id": EVIDENCE_ID,
+            "report_sha256": "d" * 64,
+        },
+        "import": {
+            "status": "STORED",
+            "imported_snapshot_identity": _s(),
+            "evidence_id": EVIDENCE_ID,
+            "payload_sha256": PAYLOAD_SHA,
+        },
+        "active_readback": {
+            "status": "ACTIVE",
+            "readback_snapshot_identity": _s(),
+            "evidence_id": EVIDENCE_ID,
+            "payload_sha256": PAYLOAD_SHA,
+        },
+        "capability": {
+            "status": "MEASURED",
+            "snapshot_identity": _s(),
+            "canonical_symbol": "EURUSD",
+            "broker_symbol": "EURUSD",
+            "volume_min": 0.01,
+            "volume_step": 0.01,
+        },
+        "direct_receipt": {
+            "status": "ABSENT",
+            "snapshot_identity": _s(),
+            "reconciliation_id": None,
+            "receipt_sha256": None,
+            **receipt,
+        },
+        "created_at": "2026-09-27T00:00:00Z",
+    }
+
+
+def _present() -> dict[str, Any]:
+    return _envelope(status="PRESENT", reconciliation_id=RECEIPT_ID, receipt_sha256=RECEIPT_SHA)
+
+
+def _reasons(raw: dict[str, Any], artifact: bytes | None = ARTIFACT) -> tuple[str, ...]:
+    return verify_r9_envelope_v1(raw, artifact).failure_reasons
+
+
+def _block(name: str) -> list[str]:
+    text = DOC.read_text(encoding="utf-8")
+    match = re.search(rf"<!-- {name}:begin -->\n```text\n(.*?)\n```\n<!-- {name}:end -->", text, re.S)
+    assert match, name
+    return match.group(1).split("\n")
+
+
+# --- positive -----------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("builder", [_envelope, _present], ids=["receipt_absent", "receipt_present_bound"])
+def test_exact_s_accepted(builder):
+    raw = builder()
+    verdict = verify_r9_envelope_v1(raw, ARTIFACT)
+    assert verdict.exact_s_accepted is True
+    assert verdict.failure_reasons == ()
+    assert verdict.artifact_bytes_verified is True
+    model = R9EnvelopeV1.model_validate(raw)
+    assert model.exact_s_accepted is True
+    assert verify_r9_envelope_v1(model, ARTIFACT) == verdict
+
+
+def test_without_artifact_bytes_only_format_is_enforced_and_reported():
+    verdict = verify_r9_envelope_v1(_envelope(), None)
+    assert verdict.exact_s_accepted is True
+    assert verdict.artifact_bytes_verified is False
+
+
+# --- identity mismatches (each individually, each half of the pair) ---------------------------------------
+
+
+@pytest.mark.parametrize("component", sorted(COMPONENT_IDENTITY_PATHS))
+@pytest.mark.parametrize("part", ["snapshot_id", "snapshot_sha256"])
+def test_each_identity_mismatch_alone_rejects(component, part):
+    for builder in (_envelope, _present):
+        raw = builder()
+        section, key, reason = COMPONENT_IDENTITY_PATHS[component]
+        raw[section][key][part] = "snap-S1" if part == "snapshot_id" else OTHER_SHA
+        verdict = verify_r9_envelope_v1(raw, ARTIFACT)
+        assert verdict.exact_s_accepted is False
+        assert verdict.failure_reasons == (reason,)
+
+
+@pytest.mark.parametrize("part", ["snapshot_id", "snapshot_sha256"])
+def test_snapshot_s_differing_from_every_component_rejects_all(part):
+    raw = _envelope()
+    raw["snapshot_s"][part] = "snap-S1" if part == "snapshot_id" else OTHER_SHA
+    assert _reasons(raw) == tuple(
+        reason
+        for _, _, reason in sorted(COMPONENT_IDENTITY_PATHS.values(), key=lambda v: R9_FAILURE_REASONS_V1.index(v[2]))
+    )
+
+
+def test_latest_snapshot_never_substitutes_for_s():
+    raw = _envelope()
+    newer = {"snapshot_id": "snap-S2", "snapshot_sha256": OTHER_SHA}
+    for section, key, _ in COMPONENT_IDENTITY_PATHS.values():
+        raw[section][key] = dict(newer)
+    reasons = _reasons(raw)
+    assert len(reasons) == 5 and all(reason.endswith("SNAPSHOT_IDENTITY_MISMATCH") for reason in reasons)
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value", "reason"),
+    [
+        ("import", "evidence_id", RECEIPT_ID, ("IMPORT_EVIDENCE_ID_MISMATCH", "ACTIVE_READBACK_EVIDENCE_ID_MISMATCH")),
+        ("active_readback", "evidence_id", RECEIPT_ID, ("ACTIVE_READBACK_EVIDENCE_ID_MISMATCH",)),
+        ("active_readback", "payload_sha256", OTHER_SHA, ("ACTIVE_READBACK_PAYLOAD_SHA256_MISMATCH",)),
+    ],
+)
+def test_evidence_chain_mismatch_rejects(section, field, value, reason):
+    raw = _envelope()
+    raw[section][field] = value
+    assert _reasons(raw) == reason
+
+
+def test_collect_evidence_id_change_breaks_import_link():
+    raw = _envelope()
+    raw["collect"]["evidence_id"] = RECEIPT_ID
+    assert _reasons(raw) == ("IMPORT_EVIDENCE_ID_MISMATCH",)
+
+
+def test_import_payload_change_breaks_readback_link():
+    raw = _envelope()
+    raw["import"]["payload_sha256"] = OTHER_SHA
+    assert _reasons(raw) == ("ACTIVE_READBACK_PAYLOAD_SHA256_MISMATCH",)
+
+
+# --- statuses ------------------------------------------------------------------------------------------------
+
+
+def test_readback_revoked_rejects():
+    raw = _envelope()
+    raw["active_readback"]["status"] = "REVOKED"
+    assert _reasons(raw) == ("ACTIVE_READBACK_STATUS_NOT_ACTIVE",)
+
+
+@pytest.mark.parametrize("status", ["MEASURED_EMPTY", "NOT_MEASURED"])
+def test_capability_not_measured_rejects(status):
+    raw = _envelope()
+    raw["capability"]["status"] = status
+    assert _reasons(raw) == ("CAPABILITY_STATUS_NOT_MEASURED",)
+
+
+@pytest.mark.parametrize("field", ["canonical_symbol", "broker_symbol", "volume_min", "volume_step"])
+def test_capability_evidence_missing_rejects(field):
+    raw = _envelope()
+    raw["capability"][field] = None
+    assert _reasons(raw) == ("CAPABILITY_EVIDENCE_MISSING",)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"), [("volume_min", 0), ("volume_step", 0), ("volume_min", -0.01), ("canonical_symbol", "EU")]
+)
+def test_capability_evidence_reuses_symbol_capability_bounds(field, value):
+    raw = _envelope()
+    raw["capability"][field] = value
+    assert _reasons(raw) == ("ENVELOPE_SCHEMA_INVALID",)
+
+
+@pytest.mark.parametrize(
+    ("section", "value"),
+    [
+        ("collect", "NOT_MATCHED"),
+        ("collect", "matched_flat_demo"),
+        ("import", "ACTIVE"),
+        ("import", "FAILED"),
+        ("active_readback", "STORED"),
+        ("active_readback", "active"),
+        ("capability", "MEASURABLE"),
+        ("capability", "NOT_MEASURABLE_READ_ONLY"),
+        ("direct_receipt", "UNKNOWN"),
+        ("direct_receipt", "NOT_MEASURED"),
+    ],
+)
+def test_status_outside_reused_vocabulary_is_schema_invalid(section, value):
+    raw = _envelope()
+    raw[section]["status"] = value
+    assert _reasons(raw) == ("ENVELOPE_SCHEMA_INVALID",)
+
+
+# --- source artifact and artifact hash ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", ["R8", "r9", "R9 ", "C2_RECONCILIATION_R9"])
+def test_source_artifact_must_be_r9(value):
+    raw = _envelope()
+    raw["source_artifact"] = value
+    assert _reasons(raw) == ("SOURCE_ARTIFACT_NOT_R9",)
+
+
+@pytest.mark.parametrize("value", ["A" * 64, "a" * 63, "a" * 65, "sha256:" + "a" * 64, "", "g" * 64])
+def test_bad_artifact_sha256_format_is_schema_invalid(value):
+    raw = _envelope()
+    raw["artifact_sha256"] = value
+    assert _reasons(raw) == ("ENVELOPE_SCHEMA_INVALID",)
+
+
+@pytest.mark.parametrize("artifact", [ARTIFACT + b" ", b"", ARTIFACT.upper()])
+def test_artifact_bytes_mismatch_rejects(artifact):
+    verdict = verify_r9_envelope_v1(_envelope(), artifact)
+    assert verdict.failure_reasons == ("ARTIFACT_SHA256_MISMATCH",)
+    assert verdict.exact_s_accepted is False and verdict.artifact_bytes_verified is False
+
+
+def test_artifact_bytes_must_be_bytes():
+    verdict = verify_r9_envelope_v1(_envelope(), ARTIFACT.decode())  # type: ignore[arg-type]
+    assert verdict.failure_reasons == ("ARTIFACT_SHA256_MISMATCH",)
+
+
+def test_envelope_hash_is_not_the_artifact_hash():
+    """No circular hashing: hashing the envelope itself never satisfies artifact_sha256."""
+    raw = _envelope()
+    envelope_bytes = R9EnvelopeV1.model_validate(raw).model_dump_json(by_alias=True).encode()
+    assert verify_r9_envelope_v1(raw, envelope_bytes).failure_reasons == ("ARTIFACT_SHA256_MISMATCH",)
+
+
+# --- direct receipt -------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [{"reconciliation_id": None}, {"receipt_sha256": None}, {"reconciliation_id": None, "receipt_sha256": None}],
+)
+def test_present_without_receipt_identity_rejects(missing):
+    raw = _present()
+    raw["direct_receipt"].update(missing)
+    assert _reasons(raw) == ("DIRECT_RECEIPT_PRESENT_WITHOUT_RECEIPT_IDENTITY",)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"reconciliation_id": RECEIPT_ID},
+        {"receipt_sha256": RECEIPT_SHA},
+        {"reconciliation_id": RECEIPT_ID, "receipt_sha256": RECEIPT_SHA},
+    ],
+)
+def test_absent_with_receipt_identity_rejects(extra):
+    raw = _envelope(**extra)
+    assert _reasons(raw) == ("DIRECT_RECEIPT_ABSENT_WITH_RECEIPT_IDENTITY",)
+
+
+@pytest.mark.parametrize("value", ["c" * 64, "sha256:" + "C" * 64, "sha256:" + "c" * 63])
+def test_receipt_sha256_must_use_existing_prefixed_format(value):
+    raw = _present()
+    raw["direct_receipt"]["receipt_sha256"] = value
+    assert _reasons(raw) == ("ENVELOPE_SCHEMA_INVALID",)
+
+
+# --- derived field and strict schema ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("supplied", [True, False, None, "true"])
+def test_supplied_exact_s_accepted_is_rejected_even_when_correct(supplied):
+    raw = _envelope()
+    raw["exact_s_accepted"] = supplied
+    verdict = verify_r9_envelope_v1(raw, ARTIFACT)
+    assert verdict.exact_s_accepted is False
+    assert verdict.failure_reasons == ("EXACT_S_ACCEPTED_SUPPLIED_BY_INPUT",)
+    with pytest.raises(ValidationError):
+        R9EnvelopeV1.model_validate(raw)
+
+
+def test_exact_s_accepted_is_never_serialized():
+    dumped = R9EnvelopeV1.model_validate(_envelope()).model_dump(mode="json", by_alias=True)
+    assert "exact_s_accepted" not in dumped
+    assert verify_r9_envelope_v1(dumped, ARTIFACT).exact_s_accepted is True
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        (),
+        ("collect",),
+        ("import",),
+        ("active_readback",),
+        ("capability",),
+        ("direct_receipt",),
+        ("snapshot_s",),
+    ],
+)
+def test_extra_field_rejected(path):
+    raw = _envelope()
+    target = raw
+    for key in path:
+        target = target[key]
+    target["latest_snapshot_id"] = "snap-S2"
+    assert _reasons(raw) == ("ENVELOPE_SCHEMA_INVALID",)
+    with pytest.raises(ValidationError):
+        R9EnvelopeV1.model_validate(raw)
+
+
+def test_python_attribute_name_import_underscore_is_not_a_wire_key():
+    raw = _envelope()
+    raw["import_"] = raw.pop("import")
+    assert _reasons(raw) == ("ENVELOPE_SCHEMA_INVALID",)
+
+
+def _leaf_paths(raw: dict[str, Any], prefix: str = "") -> list[str]:
+    paths: list[str] = []
+    for key, value in raw.items():
+        if isinstance(value, dict):
+            paths.extend(_leaf_paths(value, prefix + key + "."))
+        else:
+            paths.append(prefix + key)
+    return paths
+
+
+@pytest.mark.parametrize(
+    "path",
+    _leaf_paths(_envelope()) + ["collect", "import", "active_readback", "capability", "direct_receipt", "snapshot_s"],
+)
+def test_missing_field_or_component_fails_closed(path):
+    raw = _envelope()
+    *parents, leaf = path.split(".")
+    target = raw
+    for key in parents:
+        target = target[key]
+    del target[leaf]
+    assert _reasons(raw) == ("ENVELOPE_SCHEMA_INVALID",)
+
+
+@pytest.mark.parametrize("value", ["2026-09-27T00:00:00", "2026-09-27T08:00:00+08:00"])
+def test_created_at_must_be_utc(value):
+    raw = _envelope()
+    raw["created_at"] = value
+    assert _reasons(raw) == ("ENVELOPE_SCHEMA_INVALID",)
+
+
+@pytest.mark.parametrize("envelope", [None, [], "{}", b"{}"])
+def test_non_mapping_input_is_schema_invalid(envelope):
+    assert verify_r9_envelope_v1(envelope, ARTIFACT).failure_reasons == ("ENVELOPE_SCHEMA_INVALID",)
+
+
+def test_models_are_frozen():
+    model = R9EnvelopeV1.model_validate(_envelope())
+    with pytest.raises(ValidationError):
+        model.source_artifact = "R8"
+
+
+def test_failure_reasons_are_deterministic_and_canonically_ordered():
+    raw = _present()
+    raw["source_artifact"] = "R8"
+    raw["direct_receipt"]["receipt_sha256"] = None
+    raw["direct_receipt"]["snapshot_identity"]["snapshot_id"] = "snap-S1"
+    raw["capability"]["status"] = "NOT_MEASURED"
+    raw["capability"]["volume_min"] = None
+    raw["active_readback"]["status"] = "REVOKED"
+    raw["import"]["imported_snapshot_identity"]["snapshot_sha256"] = OTHER_SHA
+    expected = (
+        "SOURCE_ARTIFACT_NOT_R9",
+        "ARTIFACT_SHA256_MISMATCH",
+        "IMPORT_SNAPSHOT_IDENTITY_MISMATCH",
+        "ACTIVE_READBACK_STATUS_NOT_ACTIVE",
+        "CAPABILITY_STATUS_NOT_MEASURED",
+        "CAPABILITY_EVIDENCE_MISSING",
+        "DIRECT_RECEIPT_SNAPSHOT_IDENTITY_MISMATCH",
+        "DIRECT_RECEIPT_PRESENT_WITHOUT_RECEIPT_IDENTITY",
+    )
+    for _ in range(3):
+        assert _reasons(copy.deepcopy(raw), b"other") == expected
+    model = R9EnvelopeV1.model_validate(raw)
+    assert r9_envelope_failures_v1(model) == tuple(r for r in expected if r != "ARTIFACT_SHA256_MISMATCH")
+    assert model.exact_s_accepted is False
+
+
+def test_every_intrinsic_reason_is_reachable_and_in_vocabulary():
+    assert tuple(get_args(R9FailureReason)) == R9_FAILURE_REASONS_V1
+    assert len(set(R9_FAILURE_REASONS_V1)) == len(R9_FAILURE_REASONS_V1)
+
+
+# --- doc / contract consistency -------------------------------------------------------------------------------
+
+
+def test_doc_field_list_equals_contract():
+    assert _block("r9-envelope-fields") == list(r9_envelope_field_paths_v1())
+    assert set(_leaf_paths(_envelope())) | {"exact_s_accepted"} == set(r9_envelope_field_paths_v1())
+
+
+def test_doc_failure_vocabulary_equals_contract():
+    assert _block("r9-envelope-failure-reasons") == list(R9_FAILURE_REASONS_V1)
+
+
+def test_doc_declares_draft_and_inactive():
+    text = DOC.read_text(encoding="utf-8")
+    assert "- status: DRAFT_FOR_OWNER_FREEZE\n" in text
+    assert "- runtime_activation: false " in text
+    assert "- envelope_status: NOT_FROZEN " in text
+
+
+def test_doc_is_stored_byte_exact():
+    attributes = (ROOT / "docs" / "governance" / ".gitattributes").read_bytes().splitlines()
+    assert b"r9-envelope-v1.md -text -diff" in attributes
+
+
+def test_doc_citations_point_at_existing_lines():
+    text = DOC.read_text(encoding="utf-8")
+    cited = re.findall(r"`((?:contracts|execution|ops|storage)/[\w./]+\.py):(\d+)(?:-(\d+))?`", text)
+    assert len(cited) >= 20
+    for path, start, end in cited:
+        lines = (ROOT / path).read_text(encoding="utf-8").splitlines()
+        assert 1 <= int(start) <= int(end or start) <= len(lines), (path, start, end)
+
+
+# --- reused existing names ------------------------------------------------------------------------------------
+
+
+def _schema(model: Any, field: str) -> dict[str, Any]:
+    prop = model.model_json_schema()["properties"][field]
+    non_null = [branch for branch in prop.get("anyOf", [prop]) if branch.get("type") != "null"]
+    assert len(non_null) == 1
+    return {k: v for k, v in non_null[0].items() if k not in {"title", "description", "default"}}
+
+
+def test_snapshot_identity_reuses_existing_names_and_constraints():
+    from contracts.r9_envelope_v1 import R9SnapshotIdentityV1
+
+    assert set(R9SnapshotIdentityV1.model_fields) == {"snapshot_id", "snapshot_sha256"}
+    assert set(R9SnapshotIdentityV1.model_fields) <= set(ReconciliationAttestation.model_fields)
+    assert _schema(R9SnapshotIdentityV1, "snapshot_id") == _schema(AccountSnapshotV1, "snapshot_id")
+    assert _schema(R9SnapshotIdentityV1, "snapshot_sha256") == _schema(ReconciliationAttestation, "snapshot_sha256")
+
+
+def test_collect_import_readback_reuse_attestation_and_evidence_row_names():
+    from contracts.r9_envelope_v1 import R9ActiveReadbackV1, R9CollectV1, R9ImportV1
+
+    assert _schema(R9CollectV1, "status") == _schema(ReconciliationAttestation, "status")
+    for field in ("evidence_id", "report_sha256"):
+        assert _schema(R9CollectV1, field) == _schema(ReconciliationAttestation, field)
+    for model in (R9ImportV1, R9ActiveReadbackV1):
+        assert _schema(model, "evidence_id") == _schema(ReconciliationAttestation, "evidence_id")
+        assert _schema(model, "payload_sha256") == _schema(ReconciliationAttestation, "snapshot_sha256")
+    migration = (ROOT / "storage/migrations/versions/20260910_02_reconciliation_evidence.py").read_text("utf-8")
+    assert "payload_sha256 varchar(64) NOT NULL" in migration
+    assert "CHECK (status IN ('ACTIVE', 'REVOKED'))" in migration
+    assert set(_schema(R9ActiveReadbackV1, "status")["enum"]) == {"ACTIVE", "REVOKED"}
+
+
+def test_capability_reuses_symbol_capability_names_and_measurement_states():
+    from contracts.r9_envelope_v1 import R9CapabilityV1
+
+    for field in ("canonical_symbol", "broker_symbol", "volume_min", "volume_step"):
+        assert _schema(R9CapabilityV1, field) == _schema(SymbolCapability, field)
+    assert set(_schema(R9CapabilityV1, "status")["enum"]) == set(MEASURED_STATES) | {"NOT_MEASURED"}
+    view = (ROOT / "storage/migrations/versions/20260919_01_d0_canary_predicate_audit_views.py").read_text("utf-8")
+    for column in ("snapshot_id", "canonical_symbol", "broker_symbol", "volume_min", "volume_step"):
+        assert re.search(rf"\b{column}\b", view.split("RECONCILIATION_RECEIPT_SQL")[0]), column
+
+
+def test_direct_receipt_reuses_direct_broker_receipt_names():
+    from contracts.r9_envelope_v1 import R9DirectReceiptV1
+
+    assert _schema(R9DirectReceiptV1, "reconciliation_id") == _schema(
+        DirectBrokerReconciliationReceipt, "reconciliation_id"
+    )
+    assert _schema(R9DirectReceiptV1, "receipt_sha256") == _schema(DirectBrokerReconciliationReceipt, "receipt_sha256")
+    view = (ROOT / "storage/migrations/versions/20260919_01_d0_canary_predicate_audit_views.py").read_text("utf-8")
+    receipt_sql = view.split("RECONCILIATION_RECEIPT_SQL = ")[1]
+    for column in ("r.reconciliation_id", "r.source_snapshot_id", "r.receipt_sha256"):
+        assert column in receipt_sql
+
+
+def test_contract_has_no_runtime_importer_and_no_execution_dependency():
+    source = (ROOT / "contracts" / "r9_envelope_v1.py").read_text("utf-8")
+    assert "from execution" not in source and "import execution" not in source
+    importers = [
+        path
+        for folder in ("api", "execution", "services", "storage", "ops", "core", "engine", "pipeline")
+        if (ROOT / folder).is_dir()
+        for path in (ROOT / folder).rglob("*.py")
+        if "r9_envelope_v1" in path.read_text("utf-8", errors="ignore")
+    ]
+    assert importers == []
