@@ -7,9 +7,13 @@ Owner decisions (2026-09-27):
   tradeplan candidate id + revision, risk decision id, risk reservation id, exact-S (only from an R9
   artifact), the adapted-command provenance digest, command id, EA receipt ref, and MT5 broker-truth refs.
   Absent exact-S is ``NOT_MEASURED``; it never passes and blocks broker-truth reconciliation.
-- Exact-S basis: ``source_artifact == "R9"`` plus the exact R9 artifact hash, fail-closed. No frozen R9
-  artifact envelope exists yet (its schema is deliberately not defined here), so ``R9_ENVELOPE_STATUS``
-  is ``NOT_FROZEN`` and :func:`g6_readiness` never qualifies exact-S for G6 (``R9_ENVELOPE_NOT_FROZEN``).
+- Exact-S basis (R9EnvelopeV1, owner FROZEN 2026-09-28, ``contracts.r9_envelope_v1``): exact-S is
+  ``MEASURED`` only when ``verify_r9_envelope_v1(envelope, artifact_bytes).exact_s_accepted`` (the sole final
+  authority; the R9 artifact bytes are required) AND the ledger's ``exact_s_id``/``exact_s_sha256`` equal the
+  envelope's ``snapshot_s`` and its ``r9_artifact_sha256`` equals ``envelope.artifact_sha256``. A hash alone
+  never passes. ``R9_ENVELOPE_STATUS`` is ``FROZEN``, pinned to the frozen schema sha256; the pin is
+  re-verified against ``docs/governance/r9-envelope-v1.md`` at every use (fail closed), and
+  :func:`g6_readiness` is ready only for FROZEN + a holding pin + an accepted verdict + broker truth reconciled.
 - B5: bounded volume-min canary, never increase risk. ``canonical_sized_volume < volume_min`` is
   ``NO_SUBMIT``; otherwise the DEMO submitted volume is exactly the broker ``volume_min``. Volumes are
   ``Decimal`` (floats via ``Decimal(str(x))``), never rounded or quantized, and ``volume_min`` only ever
@@ -24,12 +28,21 @@ ledger is evidence, never submit authority.
 
 from __future__ import annotations
 
+import hashlib
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Annotated, Any, Final, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError
 
 from contracts.mt5_execution_protocol import AccountSnapshotV1, CommandGuards, CommandSource, ExecutionCommandV1
+from contracts.r9_envelope_v1 import (
+    R9EnvelopeV1,
+    R9EnvelopeVerdictV1,
+    Sha256Hex,
+    SnapshotId,
+    verify_r9_envelope_v1,
+)
 from ops.mt5_mcp.report_integrity import evidence_digest
 
 SIDE_LEDGER_SCHEMA: Final = "wolf15.demo-canary.v31-side-ledger.v1"
@@ -40,10 +53,19 @@ EXACT_S_NOT_MEASURED: Final = "NOT_MEASURED"
 NO_SUBMIT: Final = "NO_SUBMIT"
 SUBMIT_VOLUME_MIN: Final = "SUBMIT_VOLUME_MIN"
 R9_ENVELOPE_NOT_FROZEN: Final = "NOT_FROZEN"
-# No frozen R9 artifact envelope exists yet; its schema is deliberately not invented here.
-R9_ENVELOPE_STATUS: Final = R9_ENVELOPE_NOT_FROZEN
+R9_ENVELOPE_FROZEN: Final = "FROZEN"
+# Owner FREEZE 2026-09-28 of R9EnvelopeV1 (docs/governance/r9-envelope-v1.md section 8).
+R9_ENVELOPE_STATUS: Final = R9_ENVELOPE_FROZEN
+R9_ENVELOPE_FROZEN_SCHEMA_SHA256: Final = "10732eebab7e8a3a9270be6d378689e6160bd7a8087520ee2d86bf156e7588a2"
+# The freeze record's own pin of sections 1-7 (from "## 1. Purpose" up to "\n## 8. Freeze record").
+R9_ENVELOPE_FROZEN_NORMATIVE_SPAN_SHA256: Final = "c9663fa7a752baa8f8723ef0241980d7fc9a55938ff480dc5703564e4e31b96f"
+R9_ENVELOPE_DOC_PATH: Path = Path(__file__).resolve().parents[2] / "docs" / "governance" / "r9-envelope-v1.md"
+G6_READY_REASON: Final = "READY"
 G6_NOT_READY_R9_ENVELOPE: Final = "R9_ENVELOPE_NOT_FROZEN"
 G6_NOT_READY_R9_ENVELOPE_UNRECOGNIZED: Final = "R9_ENVELOPE_STATUS_UNRECOGNIZED"
+G6_NOT_READY_R9_FROZEN_PIN: Final = "R9_ENVELOPE_FROZEN_PIN_MISMATCH"
+G6_NOT_READY_R9_EXACT_S: Final = "R9_EXACT_S_NOT_ACCEPTED"
+G6_NOT_READY_BROKER_TRUTH: Final = "BROKER_TRUTH_NOT_RECONCILED"
 CLAIM_BOUNDARY: Final = {
     "PATH_LABEL": DEMO_PATH_LABEL,
     "EA_NATIVE_V31_SCORECARD": "NOT_PROVEN",
@@ -85,12 +107,13 @@ class _Strict(BaseModel):
 
 
 class ExactSRefV1(_Strict):
-    """Exact-S identity. Valid only when it was produced by an R9 artifact."""
+    """Exact-S identity, reusing the frozen R9EnvelopeV1 types: ``exact_s_id``/``exact_s_sha256`` are the envelope's
+    ``snapshot_s.snapshot_id``/``snapshot_sha256`` and ``r9_artifact_sha256`` is its ``artifact_sha256``."""
 
     source_artifact: Literal["R9"]
-    r9_artifact_sha256: str = Field(pattern=_SHA256)
-    exact_s_id: str = Field(min_length=3, max_length=200)
-    exact_s_sha256: str = Field(pattern=_SHA256)
+    r9_artifact_sha256: Sha256Hex
+    exact_s_id: SnapshotId
+    exact_s_sha256: Sha256Hex
 
 
 class BrokerTruthRefsV1(_Strict):
@@ -130,19 +153,82 @@ def adapted_command_provenance_digest(command: ExecutionCommandV1) -> str:
     return evidence_digest(command.model_dump(mode="json", exclude={"signature"}))
 
 
-def exact_s_state(ledger: V31SideLedgerV1 | None) -> str:
-    return EXACT_S_MEASURED if ledger is not None and ledger.exact_s is not None else EXACT_S_NOT_MEASURED
+def check_exact_s_binding(exact_s: ExactSRefV1, envelope: R9EnvelopeV1, refusals: set[str]) -> None:
+    """The ledger's exact-S is the envelope's S and R9 artifact, reused exactly; never a separate identity."""
+
+    if exact_s.exact_s_id != envelope.snapshot_s.snapshot_id:
+        refusals.add("V31_LEDGER_EXACT_S_ID_MISMATCH")
+    if exact_s.exact_s_sha256 != envelope.snapshot_s.snapshot_sha256:
+        refusals.add("V31_LEDGER_EXACT_S_SHA256_MISMATCH")
+    if exact_s.r9_artifact_sha256 != envelope.artifact_sha256:
+        refusals.add("V31_LEDGER_R9_ARTIFACT_SHA256_MISMATCH")
 
 
-def g6_readiness(r9_envelope_status: str) -> tuple[bool, str]:
-    """Exact-S G6 qualification, fail-closed: never ready while no frozen R9 artifact envelope exists.
+def verify_exact_s(
+    ledger: V31SideLedgerV1 | None, r9_envelope: Any, r9_artifact_bytes: bytes | None
+) -> tuple[str, R9EnvelopeVerdictV1 | None, set[str]]:
+    """Exact-S decision: ``(state, R9 verdict, ledger binding refusals)``. Fail closed.
 
-    No FROZEN state is defined yet, so every status (``NOT_FROZEN`` or unrecognized) is not ready.
+    ``MEASURED`` only when the R9 verifier verdict accepts (``verify_r9_envelope_v1`` with the artifact bytes, the
+    only final authority) and the ledger's exact-S binds that envelope exactly. No envelope means no verdict.
+    """
+
+    refusals: set[str] = set()
+    if r9_envelope is None:
+        return EXACT_S_NOT_MEASURED, None, refusals
+    verdict = verify_r9_envelope_v1(r9_envelope, r9_artifact_bytes)
+    exact_s = ledger.exact_s if ledger is not None else None
+    if exact_s is not None:
+        try:
+            model = R9EnvelopeV1.model_validate(r9_envelope)
+        except ValidationError:
+            model = None
+        if model is not None:
+            check_exact_s_binding(exact_s, model, refusals)
+    measured = exact_s is not None and verdict.exact_s_accepted is True and not refusals
+    return (EXACT_S_MEASURED if measured else EXACT_S_NOT_MEASURED), verdict, refusals
+
+
+def r9_envelope_frozen_pin_holds(path: Path | None = None) -> bool:
+    """Re-verify at use that the R9 schema document carries the owner freeze record for the pinned schema sha256.
+
+    Fail closed: an unreadable document, a missing ``frozen_schema_sha256``/``envelope_status`` line, or sections 1-7
+    that differ from the frozen normative span all mean the pin does not hold.
+    """
+
+    try:
+        raw = (R9_ENVELOPE_DOC_PATH if path is None else path).read_bytes()
+        text = raw.decode("utf-8")
+        span = raw[raw.index(b"## 1. Purpose") : raw.index(b"\n## 8. Freeze record")]
+    except (OSError, UnicodeDecodeError, ValueError):
+        return False
+    return (
+        f"\nfrozen_schema_sha256           = {R9_ENVELOPE_FROZEN_SCHEMA_SHA256}\n" in text
+        and "\nenvelope_status                = FROZEN\n" in text
+        and hashlib.sha256(span).hexdigest() == R9_ENVELOPE_FROZEN_NORMATIVE_SPAN_SHA256
+    )
+
+
+def g6_readiness(
+    r9_envelope_status: str, *, frozen_pin_holds: bool, exact_s_accepted: bool, broker_truth_reconciled: bool
+) -> tuple[bool, str]:
+    """Exact-S G6 qualification, fail-closed.
+
+    Ready only for ``FROZEN`` with a holding frozen pin, an accepted R9 verifier verdict, and broker truth
+    reconciled. The first failing condition is the reason.
     """
 
     if r9_envelope_status == R9_ENVELOPE_NOT_FROZEN:
         return False, G6_NOT_READY_R9_ENVELOPE
-    return False, G6_NOT_READY_R9_ENVELOPE_UNRECOGNIZED
+    if r9_envelope_status != R9_ENVELOPE_FROZEN:
+        return False, G6_NOT_READY_R9_ENVELOPE_UNRECOGNIZED
+    if frozen_pin_holds is not True:
+        return False, G6_NOT_READY_R9_FROZEN_PIN
+    if exact_s_accepted is not True:
+        return False, G6_NOT_READY_R9_EXACT_S
+    if broker_truth_reconciled is not True:
+        return False, G6_NOT_READY_BROKER_TRUTH
+    return True, G6_READY_REASON
 
 
 def bounded_canary_volume(canonical_sized_volume: Decimal, volume_min: Decimal) -> tuple[str, Decimal | None]:
@@ -211,22 +297,33 @@ __all__ = [
     "DEMO_PATH_LABEL",
     "EXACT_S_MEASURED",
     "EXACT_S_NOT_MEASURED",
+    "G6_NOT_READY_BROKER_TRUTH",
     "G6_NOT_READY_R9_ENVELOPE",
     "G6_NOT_READY_R9_ENVELOPE_UNRECOGNIZED",
+    "G6_NOT_READY_R9_EXACT_S",
+    "G6_NOT_READY_R9_FROZEN_PIN",
+    "G6_READY_REASON",
     "NO_SUBMIT",
+    "R9_ENVELOPE_DOC_PATH",
+    "R9_ENVELOPE_FROZEN",
+    "R9_ENVELOPE_FROZEN_NORMATIVE_SPAN_SHA256",
+    "R9_ENVELOPE_FROZEN_SCHEMA_SHA256",
     "R9_ENVELOPE_NOT_FROZEN",
     "R9_ENVELOPE_STATUS",
     "SIDE_LEDGER_SCHEMA",
     "SUBMIT_VOLUME_MIN",
     "BrokerTruthRefsV1",
     "ExactSRefV1",
+    "R9EnvelopeVerdictV1",
     "V31SideLedgerV1",
     "adapted_command_provenance_digest",
     "bounded_canary_volume",
     "check_bounded_volume",
+    "check_exact_s_binding",
     "check_ledger_command_binding",
     "evidence_decimal",
     "evidence_volume_min",
-    "exact_s_state",
     "g6_readiness",
+    "r9_envelope_frozen_pin_holds",
+    "verify_exact_s",
 ]

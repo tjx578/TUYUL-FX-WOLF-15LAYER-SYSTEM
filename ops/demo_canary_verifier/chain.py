@@ -32,10 +32,13 @@ report id, broker-truth ticket fingerprints). A missing ledger is ``NOT_EXECUTED
 a mismatch is a ``V31_LEDGER_*`` break, and absent exact-S is ``NOT_MEASURED``: none of them pass.
 The bounded volume-min canary is re-verified against the pinned snapshot's ``volume_min`` and the
 broker-truth order volume. The report's claim boundary is fixed: ``EA_NATIVE_V31_SCORECARD`` is
-``NOT_PROVEN`` and ``PRODUCTION_READY`` is ``False``. Exact-S stays fail-closed on ``source_artifact == "R9"``
-plus the exact artifact hash; the report carries ``r9_envelope_status`` (``NOT_FROZEN`` until a frozen R9
-artifact envelope exists) and ``G6_READY = False`` with ``G6_READY_REASON = "R9_ENVELOPE_NOT_FROZEN"``
-while it is not frozen; ``BROKER_TRUTH_RECONCILED`` semantics are independent of it.
+``NOT_PROVEN`` and ``PRODUCTION_READY`` is ``False``. Exact-S is accepted ONLY by the frozen R9EnvelopeV1
+verifier: the evidence carries the envelope (``r9_envelope``) and the R9 artifact bytes (``r9_artifact_b64``,
+base64), the verifier verdict over both must accept, and the ledger's exact-S must be the envelope's S and artifact
+hash (``side_ledger.verify_exact_s``, the only module that calls the R9 verifier). A missing envelope or missing bytes is
+``NOT_EXECUTED``/``NOT_MEASURED``; a rejected verdict is an ``R9_EXACT_S_NOT_ACCEPTED`` break. ``G6_READY`` is
+``True`` only for ``r9_envelope_status == "FROZEN"`` with the frozen pin re-verified against the schema
+document, an accepted verdict, and ``BROKER_TRUTH_RECONCILED``; ``G6_READY_REASON`` names the first failure.
 
 Missing evidence never passes: any absent section yields ``NOT_EXECUTED`` values and
 ``BROKER_TRUTH_RECONCILED = False``.
@@ -43,6 +46,8 @@ Missing evidence never passes: any absent section yields ``NOT_EXECUTED`` values
 
 from __future__ import annotations
 
+import base64
+import binascii
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from datetime import datetime
@@ -68,16 +73,19 @@ from ops.demo_canary_verifier.side_ledger import (
     CLAIM_BOUNDARY,
     DEMO_PATH_LABEL,
     EXACT_S_MEASURED,
+    R9_ENVELOPE_FROZEN_SCHEMA_SHA256,
     R9_ENVELOPE_STATUS,
     BrokerTruthRefsV1,
+    R9EnvelopeVerdictV1,
     V31SideLedgerV1,
     bounded_canary_volume,
     check_bounded_volume,
     check_ledger_command_binding,
     evidence_decimal,
     evidence_volume_min,
-    exact_s_state,
     g6_readiness,
+    r9_envelope_frozen_pin_holds,
+    verify_exact_s,
 )
 from ops.mt5_mcp.reconcile import _fingerprint, _measurement_summary, _record_time
 from ops.mt5_mcp.report_integrity import evidence_digest
@@ -107,8 +115,11 @@ REQUIRED_SECTIONS: Final = (
     "broker",
     "pinned_snapshot",
     "v31_side_ledger",
+    "r9_envelope",
+    "r9_artifact_b64",
 )
 EXACT_S_MISSING: Final = "v31_side_ledger.exact_s"
+R9_ARTIFACT_BYTES_REQUIRED: Final = "ARTIFACT_BYTES_REQUIRED"
 
 
 class _Strict(BaseModel):
@@ -546,7 +557,8 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
                 breaks.add("POSITION_VOLUME_EXCEEDS_COMMAND", "POSITION", ref)
         chains.append({"command_id": ref, "hops": hops})
 
-    side_ledger, ledger_report = _reconcile_side_ledger(
+    r9_artifact_bytes = _r9_artifact_bytes(evidence.get("r9_artifact_b64"), breaks)
+    side_ledger, ledger_report, exact_s, r9_verdict = _reconcile_side_ledger(
         evidence,
         by_command=by_command,
         tradeplans=tradeplans,
@@ -557,10 +569,15 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
         deals_by_order=deals_by_order,
         joined_positions=joined_positions,
         broker_measured=broker_measured,
+        r9_artifact_bytes=r9_artifact_bytes,
         breaks=breaks,
     )
-    exact_s = exact_s_state(side_ledger)
-    if exact_s != EXACT_S_MEASURED:
+    if r9_verdict is not None:
+        for reason in r9_verdict.failure_reasons:
+            if reason == R9_ARTIFACT_BYTES_REQUIRED and "r9_artifact_b64" in missing:
+                continue  # absent bytes are missing evidence (NOT_EXECUTED), not a rejected artifact
+            breaks.add("R9_EXACT_S_NOT_ACCEPTED", "R9_ENVELOPE", reason)
+    if exact_s != EXACT_S_MEASURED and (side_ledger is None or side_ledger.exact_s is None):
         missing.append(EXACT_S_MISSING)
     ledger_joined: bool | str = NOT_EXECUTED if "v31_side_ledger" in missing else ledger_report["status"] == "JOINED"
 
@@ -589,7 +606,13 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
         and exact_s == EXACT_S_MEASURED
     )
     status = NOT_EXECUTED if missing else ("RECONCILED" if reconciled else "NOT_RECONCILED")
-    g6_ready, g6_reason = g6_readiness(R9_ENVELOPE_STATUS)
+    frozen_pin_holds = r9_envelope_frozen_pin_holds()
+    g6_ready, g6_reason = g6_readiness(
+        R9_ENVELOPE_STATUS,
+        frozen_pin_holds=frozen_pin_holds,
+        exact_s_accepted=r9_verdict is not None and r9_verdict.exact_s_accepted,
+        broker_truth_reconciled=reconciled,
+    )
     return {
         "schema_version": CHAIN_REPORT_SCHEMA,
         "envelope_sha256": pinned_envelope,
@@ -609,6 +632,11 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
             "G6_READY_REASON": g6_reason,
         },
         "r9_envelope_status": R9_ENVELOPE_STATUS,
+        "r9_exact_s": {
+            "frozen_schema_sha256": R9_ENVELOPE_FROZEN_SCHEMA_SHA256,
+            "frozen_pin_holds": frozen_pin_holds,
+            "verdict": None if r9_verdict is None else r9_verdict.model_dump(mode="json"),
+        },
         "v31_side_ledger": ledger_report,
         "missing_evidence": missing,
         "breaks": breaks.as_list(),
@@ -634,6 +662,20 @@ def _single_ref(entity: str, values: set[int]) -> str | None:
     return _ticket_ref(entity, next(iter(values))) if len(values) == 1 else None
 
 
+def _r9_artifact_bytes(raw: Any, breaks: _Breaks) -> bytes | None:
+    """Strict base64 of the R9 source artifact bytes; absent is ``None``, malformed is a break and ``None``."""
+
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        try:
+            return base64.b64decode(raw, validate=True)
+        except (binascii.Error, ValueError):
+            pass
+    breaks.add("R9_ARTIFACT_BYTES_INVALID", "R9_ENVELOPE")
+    return None
+
+
 def _reconcile_side_ledger(
     evidence: Mapping[str, Any],
     *,
@@ -646,11 +688,17 @@ def _reconcile_side_ledger(
     deals_by_order: Mapping[int, list[Mapping[str, Any]]],
     joined_positions: Mapping[str, set[int]],
     broker_measured: bool,
+    r9_artifact_bytes: bytes | None,
     breaks: _Breaks,
-) -> tuple[V31SideLedgerV1 | None, dict[str, Any]]:
-    """B1: the side ledger joins the chain by explicit identifiers. B5: bounded volume-min canary."""
+) -> tuple[V31SideLedgerV1 | None, dict[str, Any], str, R9EnvelopeVerdictV1 | None]:
+    """B1: the side ledger joins the chain by explicit identifiers. B5: bounded volume-min canary.
+
+    Exact-S comes only from :func:`verify_exact_s` (the frozen R9 verifier verdict over the envelope and its artifact
+    bytes, plus the ledger's exact binding to that envelope). Returns ``(ledger, report, exact_s, r9_verdict)``.
+    """
 
     report: dict[str, Any] = {"status": NOT_EXECUTED, "ledger_sha256": None, "volume_decision": None}
+    r9_envelope = evidence.get("r9_envelope")
     snapshot: AccountSnapshotV1 | None = None
     raw_snapshot = evidence.get("pinned_snapshot")
     if raw_snapshot is not None:
@@ -660,15 +708,17 @@ def _reconcile_side_ledger(
             breaks.add("RECORD_INVALID", "PINNED_SNAPSHOT")
     raw = evidence.get("v31_side_ledger")
     if raw is None:
-        return None, report
+        state, verdict, _ = verify_exact_s(None, r9_envelope, r9_artifact_bytes)
+        return None, report, state, verdict
     try:
         ledger = V31SideLedgerV1.model_validate(raw)
     except ValidationError:
         breaks.add("V31_SIDE_LEDGER_INVALID", "V31_SIDE_LEDGER")
         report["status"] = "INVALID"
-        return None, report
+        state, verdict, _ = verify_exact_s(None, r9_envelope, r9_artifact_bytes)
+        return None, report, state, verdict
 
-    found: set[str] = set()
+    exact_s, r9_verdict, found = verify_exact_s(ledger, r9_envelope, r9_artifact_bytes)
     command = by_command.get(ledger.command_id)
     ref = ledger.command_id
     if command is None:
@@ -730,7 +780,7 @@ def _reconcile_side_ledger(
             "volume_reason": ledger.volume_reason,
         }
     )
-    return ledger, report
+    return ledger, report, exact_s, r9_verdict
 
 
 def _safe_digest(value: Mapping[str, Any]) -> str | None:

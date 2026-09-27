@@ -4,8 +4,10 @@ Usage::
 
     python -m ops.demo_canary_verifier envelope --bundle presubmit.json --out decision.json
     python -m ops.demo_canary_verifier reconcile --evidence chain.json --out report.json \
-        [--ea-ledger-csv demo-ledger.csv]
+        [--ea-ledger-csv demo-ledger.csv] [--r9-envelope r9-envelope.json --r9-artifact r9-artifact.bin]
 
+``--r9-envelope`` supplies the R9EnvelopeV1 JSON object (evidence ``r9_envelope``) and ``--r9-artifact`` the exact
+R9 source artifact bytes (evidence ``r9_artifact_b64``, base64 of the file bytes); each may be supplied once.
 Reports are written with exclusive create; an existing report is never overwritten.
 Exit codes reuse ``ops.mt5_mcp.reconcile``: 0 pass, 2 not executed (missing evidence),
 3 refused / not reconciled, 5 configuration error.
@@ -14,6 +16,7 @@ Exit codes reuse ``ops.mt5_mcp.reconcile``: 0 pass, 2 not executed (missing evid
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import sys
 from collections.abc import Sequence
@@ -59,6 +62,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     reconcile_cmd = commands.add_parser("reconcile", help="reconcile an exported command chain")
     reconcile_cmd.add_argument("--evidence", type=Path, required=True)
     reconcile_cmd.add_argument("--ea-ledger-csv", type=Path)
+    reconcile_cmd.add_argument("--r9-envelope", type=Path)
+    reconcile_cmd.add_argument("--r9-artifact", type=Path)
     reconcile_cmd.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
 
@@ -73,6 +78,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             if evidence.get("ea_ledger") is not None:
                 raise ValueError("EA_LEDGER_SUPPLIED_TWICE")
             evidence["ea_ledger"] = parse_ea_ledger_csv(_decode_ledger(args.ea_ledger_csv.read_bytes()))
+        if args.r9_envelope is not None:
+            if evidence.get("r9_envelope") is not None:
+                raise ValueError("R9_ENVELOPE_SUPPLIED_TWICE")
+            evidence["r9_envelope"] = _read_json(args.r9_envelope)
+        if args.r9_artifact is not None:
+            if evidence.get("r9_artifact_b64") is not None:
+                raise ValueError("R9_ARTIFACT_SUPPLIED_TWICE")
+            evidence["r9_artifact_b64"] = base64.b64encode(args.r9_artifact.read_bytes()).decode("ascii")
         report = reconcile_chain(evidence, envelope=envelope)
         _write(args.out, report)
     except (EnvelopeError, OSError, ValueError) as exc:

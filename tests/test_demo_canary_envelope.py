@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import copy
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -174,11 +176,67 @@ PENDING_ORDER = {
     "magic": MAGIC,
 }
 
+# Fixture R9 evidence: the source artifact bytes and a frozen-schema R9EnvelopeV1 over them for exact S.
+R9_ARTIFACT = b'{"run_id":"C2_RECONCILIATION_R9","status":"PASS_CLOSED","snapshot_id":"snapshot-pinned-001"}\n'
+R9_ARTIFACT_SHA256 = hashlib.sha256(R9_ARTIFACT).hexdigest()
+R9_ARTIFACT_B64 = base64.b64encode(R9_ARTIFACT).decode("ascii")
+EXACT_S_SNAPSHOT_SHA256 = "5" * 64
+R9_EVIDENCE_ID = "4a46f1fd-54e3-4241-9c03-8e0fa385a02d"
+
+
+def r9_envelope(**overrides: Any) -> dict[str, Any]:
+    identity = {"snapshot_id": SNAPSHOT_ID, "snapshot_sha256": EXACT_S_SNAPSHOT_SHA256}
+    payload: dict[str, Any] = {
+        "schema_id": "wolf15.r9-envelope",
+        "schema_version": "v1",
+        "source_artifact": "R9",
+        "artifact_sha256": R9_ARTIFACT_SHA256,
+        "snapshot_s": dict(identity),
+        "collect": {
+            "status": "MATCHED_FLAT_DEMO",
+            "attested_snapshot_identity": dict(identity),
+            "evidence_id": R9_EVIDENCE_ID,
+            "report_sha256": "d" * 64,
+        },
+        "import": {
+            "status": "STORED",
+            "imported_snapshot_identity": dict(identity),
+            "evidence_id": R9_EVIDENCE_ID,
+            "payload_sha256": "e" * 64,
+        },
+        "active_readback": {
+            "status": "ACTIVE",
+            "readback_snapshot_identity": dict(identity),
+            "evidence_id": R9_EVIDENCE_ID,
+            "payload_sha256": "e" * 64,
+        },
+        "capability": {
+            "status": "MEASURED",
+            "snapshot_id": SNAPSHOT_ID,
+            "canonical_symbol": "EURUSD",
+            "broker_symbol": BROKER_SYMBOL,
+            "volume_min": 0.01,
+            "volume_step": 0.01,
+        },
+        "direct_receipt": {
+            "status": "ABSENT",
+            "snapshot_id": SNAPSHOT_ID,
+            "reconciliation_id": None,
+            "receipt_sha256": None,
+            "broker_ledger_reconciled": None,
+        },
+        "created_at": "2026-09-22T08:00:30Z",
+    }
+    payload.update(overrides)
+    return payload
+
+
+# The ledger's exact-S reuses the envelope's S and artifact hash exactly.
 EXACT_S = {
     "source_artifact": "R9",
-    "r9_artifact_sha256": "sha256:" + "9" * 64,
-    "exact_s_id": "exact-s:EURUSD:001",
-    "exact_s_sha256": "sha256:" + "5" * 64,
+    "r9_artifact_sha256": R9_ARTIFACT_SHA256,
+    "exact_s_id": SNAPSHOT_ID,
+    "exact_s_sha256": EXACT_S_SNAPSHOT_SHA256,
 }
 
 

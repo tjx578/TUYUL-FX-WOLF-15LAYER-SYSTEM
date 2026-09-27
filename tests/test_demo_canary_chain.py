@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+import base64
 import copy
+import hashlib
 import json
 from datetime import timedelta
 from decimal import Decimal
@@ -24,6 +26,8 @@ from ops.demo_canary_verifier.chain import (
 from ops.demo_canary_verifier.envelope import ENVELOPE_V1_SHA256, load_envelope
 from ops.demo_canary_verifier.side_ledger import (
     NO_SUBMIT,
+    R9_ENVELOPE_DOC_PATH,
+    R9_ENVELOPE_FROZEN_SCHEMA_SHA256,
     R9_ENVELOPE_STATUS,
     SUBMIT_VOLUME_MIN,
     BrokerTruthRefsV1,
@@ -32,22 +36,30 @@ from ops.demo_canary_verifier.side_ledger import (
     bounded_canary_volume,
     evidence_decimal,
     g6_readiness,
+    r9_envelope_frozen_pin_holds,
 )
 from ops.mt5_mcp.reconcile import _fingerprint
 from tests.test_demo_canary_envelope import (
     ACCOUNT_ID,
     BROKER_SYMBOL,
     COMMAND_ID,
+    EXACT_S,
     EXECUTOR_ID,
     MAGIC,
+    R9_ARTIFACT,
+    R9_ARTIFACT_B64,
+    R9_ARTIFACT_SHA256,
     RISK_DECISION_ID,
+    SNAPSHOT_ID,
     T0,
     TRADEPLAN_ID,
     command,
     iso,
+    r9_envelope,
     side_ledger,
     snapshot,
 )
+from tests.test_r9_envelope_v1 import FROZEN_SCHEMA_SHA256
 
 WINDOW_FROM = T0 - timedelta(minutes=1)
 WINDOW_TO = T0 + timedelta(minutes=10)
@@ -218,6 +230,8 @@ def evidence(**overrides: Any) -> dict[str, Any]:
         "broker": broker(),
         "pinned_snapshot": snapshot(),
         "v31_side_ledger": chain_ledger(),
+        "r9_envelope": r9_envelope(),
+        "r9_artifact_b64": R9_ARTIFACT_B64,
     }
     payload.update(overrides)
     return payload
@@ -245,10 +259,17 @@ def test_fully_joined_chain_reconciles() -> None:
         "V31_SIDE_LEDGER_JOINED": True,
         "V31_EXACT_S": "MEASURED",
         "BROKER_TRUTH_RECONCILED": True,
-        "G6_READY": False,
-        "G6_READY_REASON": "R9_ENVELOPE_NOT_FROZEN",
+        "G6_READY": True,
+        "G6_READY_REASON": "READY",
     }
-    assert report["r9_envelope_status"] == "NOT_FROZEN"
+    assert report["r9_envelope_status"] == "FROZEN"
+    assert report["r9_exact_s"] == {
+        "frozen_schema_sha256": FROZEN_SCHEMA_SHA256,
+        "frozen_pin_holds": True,
+        "verdict": {"exact_s_accepted": True, "failure_reasons": [], "artifact_bytes_verified": True},
+    }
+    assert report["PRODUCTION_READY"] is False
+    assert report["EA_NATIVE_V31_SCORECARD"] == "NOT_PROVEN"
     assert report["v31_side_ledger"]["status"] == "JOINED"
     assert report["v31_side_ledger"]["canonical_sized_volume"] == "0.03"
     assert report["v31_side_ledger"]["demo_submitted_volume"] == "0.01"
@@ -488,7 +509,18 @@ def test_strategy_lineage_break_is_reported(overrides: dict[str, Any], code: str
 
 @pytest.mark.parametrize(
     "section",
-    ["broker", "ea_ledger", "commands", "ea_receipts", "window", "tradeplans", "pinned_snapshot", "v31_side_ledger"],
+    [
+        "broker",
+        "ea_ledger",
+        "commands",
+        "ea_receipts",
+        "window",
+        "tradeplans",
+        "pinned_snapshot",
+        "v31_side_ledger",
+        "r9_envelope",
+        "r9_artifact_b64",
+    ],
 )
 def test_missing_evidence_is_not_executed_never_pass(section: str) -> None:
     payload = evidence()
@@ -497,6 +529,11 @@ def test_missing_evidence_is_not_executed_never_pass(section: str) -> None:
     assert report["status"] == NOT_EXECUTED
     assert section in report["missing_evidence"]
     assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert report["acceptance"]["G6_READY"] is False
+    if section in {"r9_envelope", "r9_artifact_b64"}:
+        assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+        assert report["acceptance"]["G6_READY_REASON"] == "R9_EXACT_S_NOT_ACCEPTED"
+        assert report["breaks"] == []
     if section in {"broker", "window"}:
         for name in ("DUPLICATE_ORDER", "UNKNOWN_POSITION", "ORPHAN_ORDER", "UNACCOUNTED_BROKER_FILL"):
             assert report["acceptance"][name] == NOT_EXECUTED
@@ -570,20 +607,58 @@ def test_ea_ledger_csv_parser_matches_append_ledger_format() -> None:
 def test_cli_writes_report_once_with_reused_exit_codes(tmp_path: Path) -> None:
     payload = evidence()
     ledger = payload.pop("ea_ledger")
+    envelope_file = tmp_path / "r9-envelope.json"
+    envelope_file.write_text(json.dumps(payload.pop("r9_envelope")), encoding="utf-8")
+    del payload["r9_artifact_b64"]
+    artifact_file = tmp_path / "r9-artifact.bin"
+    artifact_file.write_bytes(R9_ARTIFACT)
     source = tmp_path / "chain.json"
     source.write_text(json.dumps(payload), encoding="utf-8")
     csv = tmp_path / "demo-ledger.csv"
     csv.write_bytes(
         "".join(f"{r['timestamp_utc']};{r['command_id']};{r['state']};{r['detail']}\n" for r in ledger).encode("utf-16")
     )
+    r9_args = ["--r9-envelope", str(envelope_file), "--r9-artifact", str(artifact_file)]
     out = tmp_path / "report.json"
-    assert main(["reconcile", "--evidence", str(source), "--ea-ledger-csv", str(csv), "--out", str(out)]) == 0
-    assert json.loads(out.read_text(encoding="utf-8"))["acceptance"]["BROKER_TRUTH_RECONCILED"] is True
+    assert main(["reconcile", "--evidence", str(source), "--ea-ledger-csv", str(csv), *r9_args, "--out", str(out)]) == 0
+    acceptance = json.loads(out.read_text(encoding="utf-8"))["acceptance"]
+    assert acceptance["BROKER_TRUTH_RECONCILED"] is True
+    assert acceptance["G6_READY"] is True
     assert main(["reconcile", "--evidence", str(source), "--out", str(out)]) == 5  # never overwrites
+
+    # Without the R9 envelope or the R9 artifact bytes exact-S is not accepted: not executed, never G6.
+    for index, partial in enumerate((r9_args[:2], r9_args[2:])):
+        partial_out = tmp_path / f"partial-{index}.json"
+        argv = [
+            "reconcile",
+            "--evidence",
+            str(source),
+            "--ea-ledger-csv",
+            str(csv),
+            *partial,
+            "--out",
+            str(partial_out),
+        ]
+        assert main(argv) == 2
+        partial_acceptance = json.loads(partial_out.read_text(encoding="utf-8"))["acceptance"]
+        assert partial_acceptance["BROKER_TRUTH_RECONCILED"] is False
+        assert partial_acceptance["G6_READY"] is False
+
+    # Wrong artifact bytes: the verifier rejects, so the chain is refused.
+    wrong = tmp_path / "wrong-artifact.bin"
+    wrong.write_bytes(R9_ARTIFACT + b" ")
+    argv = ["reconcile", "--evidence", str(source), "--ea-ledger-csv", str(csv), "--r9-envelope", str(envelope_file)]
+    assert main([*argv, "--r9-artifact", str(wrong), "--out", str(tmp_path / "wrong.json")]) == 3
+
+    both = tmp_path / "both.json"
+    both.write_text(json.dumps(evidence()), encoding="utf-8")
+    for extra in (r9_args[:2], r9_args[2:]):
+        assert main(["reconcile", "--evidence", str(both), *extra, "--out", str(tmp_path / "twice.json")]) == 5
+    assert not (tmp_path / "twice.json").exists()
 
     missing = tmp_path / "missing.json"
     missing.write_text(json.dumps(payload), encoding="utf-8")
-    assert main(["reconcile", "--evidence", str(missing), "--out", str(tmp_path / "r2.json")]) == 2
+    assert main(["reconcile", "--evidence", str(missing), *r9_args, "--out", str(tmp_path / "r2.json")]) == 2
 
 
 def test_cli_envelope_mode_refuses_with_blocked_exit(tmp_path: Path) -> None:
@@ -649,27 +724,219 @@ def test_no_field_or_report_key_is_named_broker_adaptation_digest() -> None:
     )
 
 
-def test_r9_envelope_not_frozen_blocks_g6_for_every_report() -> None:
-    assert R9_ENVELOPE_STATUS == "NOT_FROZEN"
-    reports = (
-        run(evidence()),
-        run(evidence(v31_side_ledger=None)),
-        run(evidence(v31_side_ledger=chain_ledger(exact_s=None))),
+# ---- R9EnvelopeV1 (owner FROZEN 2026-09-28): verifier-only exact-S and the G6 gate --------------------------------
+
+
+def test_r9_envelope_status_is_frozen_and_pinned_to_the_owner_freeze_record() -> None:
+    assert R9_ENVELOPE_STATUS == "FROZEN"
+    assert R9_ENVELOPE_FROZEN_SCHEMA_SHA256 == FROZEN_SCHEMA_SHA256
+    text = R9_ENVELOPE_DOC_PATH.read_text(encoding="utf-8")
+    assert f"\nfrozen_schema_sha256           = {FROZEN_SCHEMA_SHA256}\n" in text
+    assert "\nenvelope_status                = FROZEN\n" in text
+    assert r9_envelope_frozen_pin_holds() is True
+    assert r9_envelope_frozen_pin_holds(R9_ENVELOPE_DOC_PATH) is True
+
+
+def _doc_variant(tmp_path: Path, old: bytes, new: bytes) -> Path:
+    raw = R9_ENVELOPE_DOC_PATH.read_bytes()
+    assert raw.count(old) >= 1, old
+    path = tmp_path / "r9-envelope-v1.md"
+    path.write_bytes(raw.replace(old, new, 1))
+    return path
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (b"envelope_status                = FROZEN", b"envelope_status                = DRAFT"),
+        (b"frozen_schema_sha256           = 10732eeb", b"frozen_schema_sha256           = 00000000"),
+        (b"frozen_schema_sha256           = ", b"frozen_schema_sha256_old       = "),
+        (b"## 2.", b"## 2 ."),  # sections 1-7 differ from the frozen normative span
+        (b"## 1. Purpose", b"## 1. Scope"),  # span anchor missing
+        (b"\n## 8. Freeze record", b"\n## 8. Record"),  # span anchor missing
+    ],
+)
+def test_frozen_pin_fails_closed_on_a_changed_schema_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, old: bytes, new: bytes
+) -> None:
+    variant = _doc_variant(tmp_path, old, new)
+    assert r9_envelope_frozen_pin_holds(variant) is False
+    monkeypatch.setattr(side_ledger_module, "R9_ENVELOPE_DOC_PATH", variant)
+    report = run(evidence())
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is True
+    assert report["r9_exact_s"]["frozen_pin_holds"] is False
+    assert report["acceptance"]["G6_READY"] is False
+    assert report["acceptance"]["G6_READY_REASON"] == "R9_ENVELOPE_FROZEN_PIN_MISMATCH"
+
+
+@pytest.mark.parametrize("content", [None, b"\xff\xfe not utf-8 \xff"])
+def test_frozen_pin_fails_closed_on_missing_or_unreadable_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: bytes | None
+) -> None:
+    path = tmp_path / "r9-envelope-v1.md"
+    if content is not None:
+        path.write_bytes(content)
+    assert r9_envelope_frozen_pin_holds(path) is False
+    monkeypatch.setattr(side_ledger_module, "R9_ENVELOPE_DOC_PATH", path)
+    report = run(evidence())
+    assert report["acceptance"]["G6_READY"] is False
+    assert report["acceptance"]["G6_READY_REASON"] == "R9_ENVELOPE_FROZEN_PIN_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    ("status", "pin", "accepted", "reconciled", "expected"),
+    [
+        ("FROZEN", True, True, True, (True, "READY")),
+        ("NOT_FROZEN", True, True, True, (False, "R9_ENVELOPE_NOT_FROZEN")),
+        ("", True, True, True, (False, "R9_ENVELOPE_STATUS_UNRECOGNIZED")),
+        ("frozen", True, True, True, (False, "R9_ENVELOPE_STATUS_UNRECOGNIZED")),
+        ("FROZEN", False, True, True, (False, "R9_ENVELOPE_FROZEN_PIN_MISMATCH")),
+        ("FROZEN", True, False, True, (False, "R9_EXACT_S_NOT_ACCEPTED")),
+        ("FROZEN", True, True, False, (False, "BROKER_TRUTH_NOT_RECONCILED")),
+        ("FROZEN", False, False, False, (False, "R9_ENVELOPE_FROZEN_PIN_MISMATCH")),
+    ],
+)
+def test_g6_readiness_requires_frozen_pin_verdict_and_broker_truth(
+    status: str, pin: bool, accepted: bool, reconciled: bool, expected: tuple[bool, str]
+) -> None:
+    result = g6_readiness(status, frozen_pin_holds=pin, exact_s_accepted=accepted, broker_truth_reconciled=reconciled)
+    assert result == expected
+
+
+def test_missing_r9_artifact_bytes_are_not_executed_and_never_g6() -> None:
+    report = run(evidence(r9_artifact_b64=None))
+    assert report["status"] == NOT_EXECUTED
+    assert report["missing_evidence"] == ["r9_artifact_b64"]
+    assert report["breaks"] == []
+    assert report["r9_exact_s"]["verdict"] == {
+        "exact_s_accepted": False,
+        "failure_reasons": ["ARTIFACT_BYTES_REQUIRED"],
+        "artifact_bytes_verified": False,
+    }
+    assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert (report["acceptance"]["G6_READY"], report["acceptance"]["G6_READY_REASON"]) == (
+        False,
+        "R9_EXACT_S_NOT_ACCEPTED",
     )
-    assert reports[0]["acceptance"]["BROKER_TRUTH_RECONCILED"] is True
-    assert reports[0]["acceptance"]["V31_EXACT_S"] == "MEASURED"
-    for report in reports:
-        assert report["r9_envelope_status"] == "NOT_FROZEN"
-        assert report["acceptance"]["G6_READY"] is False
-        assert report["acceptance"]["G6_READY_REASON"] == "R9_ENVELOPE_NOT_FROZEN"
 
 
-@pytest.mark.parametrize("status", ["NOT_FROZEN", "FROZEN", "", "frozen"])
-def test_g6_readiness_fails_closed_for_every_status(status: str) -> None:
-    ready, reason = g6_readiness(status)
-    assert ready is False
-    expected = "R9_ENVELOPE_NOT_FROZEN" if status == "NOT_FROZEN" else "R9_ENVELOPE_STATUS_UNRECOGNIZED"
-    assert reason == expected
+def test_missing_r9_envelope_has_no_verdict_and_hash_only_exact_s_never_passes() -> None:
+    """The ledger's exact-S alone (R9 label + hashes, the old hash-only basis) is never accepted."""
+
+    report = run(evidence(r9_envelope=None))
+    assert report["missing_evidence"] == ["r9_envelope"]
+    assert report["r9_exact_s"]["verdict"] is None
+    assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert report["acceptance"]["G6_READY"] is False
+
+
+@pytest.mark.parametrize(
+    "artifact_b64",
+    [
+        base64.b64encode(R9_ARTIFACT + b" ").decode("ascii"),
+        base64.b64encode(b"").decode("ascii"),
+        base64.b64encode(R9_ARTIFACT_SHA256.encode("ascii")).decode("ascii"),  # the hash is not the artifact
+    ],
+)
+def test_wrong_r9_artifact_bytes_are_rejected_by_the_verifier(artifact_b64: str) -> None:
+    report = run(evidence(r9_artifact_b64=artifact_b64))
+    assert codes(report) == {"R9_EXACT_S_NOT_ACCEPTED"}
+    assert report["breaks"] == [
+        {"code": "R9_EXACT_S_NOT_ACCEPTED", "hop": "R9_ENVELOPE", "ref": "ARTIFACT_SHA256_MISMATCH"}
+    ]
+    assert report["status"] == "NOT_RECONCILED"
+    assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert report["acceptance"]["G6_READY"] is False
+    assert report["acceptance"]["G6_READY_REASON"] == "R9_EXACT_S_NOT_ACCEPTED"
+
+
+@pytest.mark.parametrize("artifact_b64", ["!" + R9_ARTIFACT_B64, R9_ARTIFACT_B64[:-1], 12, ["x"], "é"])
+def test_malformed_r9_artifact_encoding_is_a_break(artifact_b64: object) -> None:
+    report = run(evidence(r9_artifact_b64=artifact_b64))
+    assert {"R9_ARTIFACT_BYTES_INVALID", "R9_EXACT_S_NOT_ACCEPTED"} == codes(report)
+    assert report["r9_exact_s"]["verdict"]["failure_reasons"] == ["ARTIFACT_BYTES_REQUIRED"]
+    assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert report["acceptance"]["G6_READY"] is False
+
+
+def _with(section: str, **fields: Any) -> dict[str, Any]:
+    envelope = r9_envelope()
+    envelope[section] = {**envelope[section], **fields}
+    return envelope
+
+
+@pytest.mark.parametrize(
+    ("envelope", "reason"),
+    [
+        (_with("active_readback", status="REVOKED"), "ACTIVE_READBACK_STATUS_NOT_ACTIVE"),
+        (_with("capability", status="NOT_MEASURED"), "CAPABILITY_STATUS_NOT_MEASURED"),
+        (_with("import", evidence_id="5a46f1fd-54e3-4241-9c03-8e0fa385a02d"), "IMPORT_EVIDENCE_ID_MISMATCH"),
+        (r9_envelope(source_artifact="R8"), "SOURCE_ARTIFACT_NOT_R9"),
+        ({**r9_envelope(), "exact_s_accepted": True}, "EXACT_S_ACCEPTED_SUPPLIED_BY_INPUT"),
+        (r9_envelope(schema_version="v2"), "ENVELOPE_SCHEMA_INVALID"),
+        (["not", "a", "mapping"], "ENVELOPE_SCHEMA_INVALID"),
+    ],
+)
+def test_r9_verdict_rejection_blocks_exact_s(envelope: Any, reason: str) -> None:
+    report = run(evidence(r9_envelope=envelope))
+    assert ("R9_EXACT_S_NOT_ACCEPTED", "R9_ENVELOPE", reason) in {
+        (item["code"], item["hop"], item["ref"]) for item in report["breaks"]
+    }
+    assert report["r9_exact_s"]["verdict"]["exact_s_accepted"] is False
+    assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert report["status"] == "NOT_RECONCILED"
+    assert report["acceptance"]["G6_READY"] is False
+    assert report["acceptance"]["G6_READY_REASON"] == "R9_EXACT_S_NOT_ACCEPTED"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "code"),
+    [
+        ("exact_s_id", "snapshot-other-002", "V31_LEDGER_EXACT_S_ID_MISMATCH"),
+        ("exact_s_sha256", "6" * 64, "V31_LEDGER_EXACT_S_SHA256_MISMATCH"),
+        ("r9_artifact_sha256", "9" * 64, "V31_LEDGER_R9_ARTIFACT_SHA256_MISMATCH"),
+    ],
+)
+def test_ledger_exact_s_must_be_the_accepted_envelope_s(field: str, value: str, code: str) -> None:
+    report = run(evidence(v31_side_ledger=chain_ledger(exact_s={**EXACT_S, field: value})))
+    assert report["r9_exact_s"]["verdict"]["exact_s_accepted"] is True
+    assert codes(report) == {code}
+    assert report["v31_side_ledger"]["status"] == "BROKEN"
+    assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert report["status"] == "NOT_RECONCILED"
+    assert (report["acceptance"]["G6_READY"], report["acceptance"]["G6_READY_REASON"]) == (
+        False,
+        "BROKER_TRUTH_NOT_RECONCILED",
+    )
+
+
+def test_exact_s_binding_is_checked_even_when_the_verdict_rejects() -> None:
+    ledger = chain_ledger(exact_s={**EXACT_S, "exact_s_id": "snapshot-other-002"})
+    report = run(evidence(v31_side_ledger=ledger, r9_artifact_b64=base64.b64encode(b"x").decode("ascii")))
+    assert {"R9_EXACT_S_NOT_ACCEPTED", "V31_LEDGER_EXACT_S_ID_MISMATCH"} == codes(report)
+
+
+def test_a_different_consistent_r9_artifact_is_accepted_by_its_own_bytes() -> None:
+    """Acceptance follows the verifier over the supplied bytes, not a hard-coded artifact."""
+
+    artifact = b'{"run_id":"C2_RECONCILIATION_R9","attempt":2}\n'
+    digest = hashlib.sha256(artifact).hexdigest()
+    report = run(
+        evidence(
+            r9_envelope=r9_envelope(artifact_sha256=digest),
+            r9_artifact_b64=base64.b64encode(artifact).decode("ascii"),
+            v31_side_ledger=chain_ledger(exact_s={**EXACT_S, "r9_artifact_sha256": digest}),
+        )
+    )
+    assert report["status"] == "RECONCILED", report["breaks"]
+    assert report["acceptance"]["G6_READY"] is True
+    assert EXACT_S["exact_s_id"] == SNAPSHOT_ID
 
 
 def test_missing_exact_s_is_not_measured_and_blocks_reconciliation() -> None:
@@ -685,19 +952,14 @@ def test_missing_exact_s_is_not_measured_and_blocks_reconciliation() -> None:
 @pytest.mark.parametrize(
     "exact_s",
     [
-        {
-            "source_artifact": "R8",
-            "r9_artifact_sha256": "sha256:" + "9" * 64,
-            "exact_s_id": "x-001",
-            "exact_s_sha256": "sha256:" + "5" * 64,
-        },
-        {"source_artifact": "R9", "exact_s_id": "x-001", "exact_s_sha256": "sha256:" + "5" * 64},
-        {
-            "source_artifact": "R9",
-            "r9_artifact_sha256": "sha256:" + "9" * 64,
-            "exact_s_id": "x-001",
-            "exact_s_sha256": "not-a-digest",
-        },
+        {**EXACT_S, "source_artifact": "R8"},
+        {key: value for key, value in EXACT_S.items() if key != "r9_artifact_sha256"},
+        {**EXACT_S, "exact_s_sha256": "not-a-digest"},
+        # The frozen R9EnvelopeV1 sha256 format is reused exactly: no "sha256:" prefix, lowercase hex only.
+        {**EXACT_S, "exact_s_sha256": "sha256:" + EXACT_S["exact_s_sha256"]},
+        {**EXACT_S, "r9_artifact_sha256": "sha256:" + EXACT_S["r9_artifact_sha256"]},
+        {**EXACT_S, "r9_artifact_sha256": EXACT_S["r9_artifact_sha256"].upper()},
+        {**EXACT_S, "exact_s_id": "S"},
     ],
 )
 def test_exact_s_not_from_an_r9_artifact_never_passes(exact_s: dict[str, Any]) -> None:
