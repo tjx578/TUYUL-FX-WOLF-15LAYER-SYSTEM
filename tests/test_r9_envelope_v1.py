@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import re
@@ -633,14 +634,96 @@ def test_direct_receipt_reuses_direct_broker_receipt_names():
         assert column in receipt_sql
 
 
+# INTEGRATION_GOVERNANCE_GUARD_CHANGE (owner D2, 2026-09-28): an import-aware (AST) guard over every production
+# folder including tools/. Only these OFFLINE evidence verifiers may import the contract; any other importer is a
+# runtime activation and fails. A mention in a docstring or string is not an import and is not allowlisted.
+R9_CONTRACT_MODULE = "contracts.r9_envelope_v1"
+R9_GUARDED_FOLDERS = ("api", "execution", "services", "storage", "ops", "core", "engine", "pipeline", "tools")
+OFFLINE_R9_IMPORTERS = frozenset({"ops/demo_canary_verifier/side_ledger.py", "tools/shadow_harness/evaluator.py"})
+# An offline importer may read evidence/schema files, never reach a network, DB, broker, MT5 or runtime service.
+OFFLINE_FORBIDDEN_IMPORT_PREFIXES = (
+    "requests",
+    "httpx",
+    "aiohttp",
+    "socket",
+    "urllib.request",
+    "http.client",
+    "websockets",
+    "sqlalchemy",
+    "asyncpg",
+    "psycopg",
+    "psycopg2",
+    "redis",
+    "MetaTrader5",
+    "fastapi",
+    "starlette",
+    "uvicorn",
+    "execution",
+    "services",
+    "api",
+    "storage",
+    "ea_interface",
+    "ops.mt5_mcp.server",
+)
+
+
+def _imported_modules(source: str) -> set[str]:
+    """Every module a source imports, including ``from contracts import r9_envelope_v1`` and dynamic
+    ``importlib.import_module("...")`` / ``__import__("...")`` calls with a literal name."""
+
+    modules: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+            modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+        elif isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant):
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+            if name in {"import_module", "__import__"} and isinstance(node.args[0].value, str):
+                modules.add(node.args[0].value)
+    return modules
+
+
+def _imports_r9_contract(source: str) -> bool:
+    return R9_CONTRACT_MODULE in _imported_modules(source)
+
+
+def test_the_import_scanner_catches_every_import_form_and_ignores_mentions():
+    for evasion in (
+        "import contracts.r9_envelope_v1\n",
+        "from contracts.r9_envelope_v1 import verify_r9_envelope_v1\n",
+        "from contracts import r9_envelope_v1\n",
+        "import importlib\nimportlib.import_module('contracts.r9_envelope_v1')\n",
+        "__import__('contracts.r9_envelope_v1')\n",
+    ):
+        assert _imports_r9_contract(evasion), evasion
+    for mention in ('"""Uses contracts.r9_envelope_v1 verdicts."""\n', "NAME = 'contracts.r9_envelope_v1'\n"):
+        assert not _imports_r9_contract(mention), mention
+
+
 def test_contract_has_no_runtime_importer_and_no_execution_dependency():
-    source = (ROOT / "contracts" / "r9_envelope_v1.py").read_text("utf-8")
-    assert "from execution" not in source and "import execution" not in source
-    importers = [
-        path
-        for folder in ("api", "execution", "services", "storage", "ops", "core", "engine", "pipeline")
+    contract = (ROOT / "contracts" / "r9_envelope_v1.py").read_text("utf-8")
+    assert not any(
+        module == prefix or module.startswith(prefix + ".")
+        for module in _imported_modules(contract)
+        for prefix in ("execution", "services", "api", "storage", "ops", "tools")
+    )
+    importers = sorted(
+        path.relative_to(ROOT).as_posix()
+        for folder in R9_GUARDED_FOLDERS
         if (ROOT / folder).is_dir()
         for path in (ROOT / folder).rglob("*.py")
-        if "r9_envelope_v1" in path.read_text("utf-8", errors="ignore")
-    ]
-    assert importers == []
+        if _imports_r9_contract(path.read_text("utf-8", errors="ignore"))
+    )
+    assert sorted(set(importers) - OFFLINE_R9_IMPORTERS) == []
+    for relative in importers:
+        imported = _imported_modules((ROOT / relative).read_text("utf-8"))
+        offending = sorted(
+            module
+            for module in imported
+            for prefix in OFFLINE_FORBIDDEN_IMPORT_PREFIXES
+            if module == prefix or module.startswith(prefix + ".")
+        )
+        assert offending == [], (relative, offending)
