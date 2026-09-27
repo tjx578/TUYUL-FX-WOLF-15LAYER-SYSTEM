@@ -18,12 +18,44 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 CANONICAL_SYMBOL_PATTERN: Final = r"^[A-Z]{6}$"
 BROKER_SYMBOL_PATTERN: Final = r"^[A-Za-z0-9._#-]{1,32}$"
 SHA256_PATTERN: Final = r"^[0-9a-f]{64}$"
 _SYMBOL_MAP_HEADER: Final = ("canonical_symbol", "broker_symbol")
+
+CAPTURE_KINDS: Final[tuple[str, ...]] = (
+    "BROKER_ADAPTATION_DRY_RUN",
+    "CANDIDATE",
+    "EXACT_S",
+    "RISK_DRY_RUN",
+    "TRADEPLAN",
+)
+"""Every capture kind of ``wolf15.shadow-harness.capture.v1`` (sorted)."""
+
+GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS: Final[tuple[str, ...]] = ()
+"""Explicit allow-list of capture kinds that MAY declare ``evidence_scope = "GLOBAL"``. No default.
+
+GLOBAL is reserved for system/global authority evidence with no pair-specific
+strategy conclusion (R9 envelope, global safety state, governance authority
+hash, policy registry, deployment/source binding, system-level reconciliation
+capability). None of the existing capture kinds is such a kind: every one is
+symbol-bound and lineage-bearing. The allow-list is therefore empty and GLOBAL
+is allowed for no capture kind.
+"""
+
+GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS: Final[tuple[str, ...]] = CAPTURE_KINDS
+"""Pair-specific strategy kinds (candidate/thesis/proof/box/target/lineage-bearing): GLOBAL rejects the bundle.
+
+Must stay disjoint from :data:`GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS`.
+"""
+
+PAIR_BINDING_REQUIRED_CAPTURE_KINDS: Final[tuple[str, ...]] = ("CANDIDATE", "TRADEPLAN")
+"""PAIR-scoped kinds that must bind canonical symbol + strategy lifecycle id + candidate/tradeplan revision identity."""
+
+if set(GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS) & set(GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS):  # pragma: no cover
+    raise RuntimeError("a pair-specific strategy capture kind can never be GLOBAL-allowed")
 
 
 class HarnessInputError(ValueError):
@@ -103,6 +135,13 @@ class HarnessPolicyV1(BaseModel):
     capture_schema_version: Literal["wolf15.shadow-harness.capture.v1"]
     contamination_rule: Literal["LINEAGE_IDENTITY"]
     evidence_scope_rule: Literal["EXPLICIT_REQUIRED"]
+    pair_scope_binding_rule: Literal["EXACT_CANONICAL_SYMBOL_AND_LIFECYCLE_AND_REVISION"]
+    """PAIR: capture symbol == its bundle key; CANDIDATE/TRADEPLAN also bind lifecycle id + revision identity."""
+    pair_binding_required_capture_kinds: list[str]
+    global_scope_allowed_capture_kinds: list[str]
+    """Explicit GLOBAL allow-list; must equal :data:`GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS` (currently empty)."""
+    global_scope_forbidden_capture_kinds: list[str]
+    global_scope_violation: Literal["REJECT_BUNDLE"]
     pair_scoped_evidence_reuse: Literal["CROSS_PAIR_CONTAMINATION"]
     global_scoped_evidence_reuse: Literal["DIAGNOSTIC_ONLY"]
     price_vector_overlap: Literal["DIAGNOSTIC_ONLY"]
@@ -115,6 +154,27 @@ class HarnessPolicyV1(BaseModel):
     operator_pair_selection_allowed: Literal[False]
     operator_direction_selection_allowed: Literal[False]
     no_candidate_status: Literal["WAIT"]
+
+    @model_validator(mode="after")
+    def _scope_kind_lists_pinned(self) -> HarnessPolicyV1:
+        pinned = {
+            "pair_binding_required_capture_kinds": (
+                self.pair_binding_required_capture_kinds,
+                PAIR_BINDING_REQUIRED_CAPTURE_KINDS,
+            ),
+            "global_scope_allowed_capture_kinds": (
+                self.global_scope_allowed_capture_kinds,
+                GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS,
+            ),
+            "global_scope_forbidden_capture_kinds": (
+                self.global_scope_forbidden_capture_kinds,
+                GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS,
+            ),
+        }
+        drifted = sorted(name for name, (actual, expected) in pinned.items() if tuple(actual) != expected)
+        if drifted:
+            raise ValueError(f"evidence-scope kind lists must equal the enforced code lists: {', '.join(drifted)}")
+        return self
 
 
 class LoadedPolicy(BaseModel):
@@ -249,6 +309,10 @@ def summarise_validation_error(exc: ValidationError) -> str:
 
 __all__ = [
     "CANONICAL_SYMBOL_PATTERN",
+    "CAPTURE_KINDS",
+    "GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS",
+    "GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS",
+    "PAIR_BINDING_REQUIRED_CAPTURE_KINDS",
     "SHA256_PATTERN",
     "HarnessInputError",
     "HarnessPolicyV1",

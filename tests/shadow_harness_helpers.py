@@ -79,6 +79,7 @@ def candidate(symbol: str, n: int = 1, **overrides: Any) -> dict[str, Any]:
     record = _base(symbol, n, "CANDIDATE", _pick(symbol, n, "lifecycle_id", "thesis_id"))
     record |= {
         "candidate_id": f"cand-{symbol}-{n}",
+        "candidate_revision": 1,
         "direction": "BUY",
         "pair_selection_source": "STRATEGY",
         "direction_selection_source": "STRATEGY",

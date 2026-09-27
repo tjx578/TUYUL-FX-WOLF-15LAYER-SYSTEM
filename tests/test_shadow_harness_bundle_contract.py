@@ -370,7 +370,7 @@ def test_report_rejects_inconsistent_gate(mutation: dict[str, Any]) -> None:
 def test_shadow_acceptance_truth_table_with_a_frozen_envelope(
     gate_passed: bool, exact_s_accepted: bool, expected_blockers: tuple[str, ...]
 ) -> None:
-    # A frozen envelope is not producible under policy 1.2.0; this exercises the pure derivation only.
+    # A frozen envelope is not producible under policy 1.3.0; this exercises the pure derivation only.
     blockers = derive_shadow_acceptance_blockers(
         gate_passed=gate_passed, exact_s_accepted=exact_s_accepted, r9_envelope_frozen=True
     )

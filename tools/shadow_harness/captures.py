@@ -26,9 +26,16 @@ from typing import Annotated, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from tools.shadow_harness.manifest import CANONICAL_SYMBOL_PATTERN, SHA256_PATTERN
+from tools.shadow_harness.manifest import (
+    CANONICAL_SYMBOL_PATTERN,
+    GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS,
+    GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS,
+    PAIR_BINDING_REQUIRED_CAPTURE_KINDS,
+    SHA256_PATTERN,
+)
 
 EvidenceId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]{2,127}$")]
+Revision = Annotated[int, Field(ge=1, strict=True)]
 Sha256Hex = Annotated[str, Field(pattern=SHA256_PATTERN)]
 GitObjectId = Annotated[str, Field(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")]
 CanonicalSymbol = Annotated[str, Field(pattern=CANONICAL_SYMBOL_PATTERN)]
@@ -39,10 +46,16 @@ ExactSStatus = Literal["MEASURED", "NOT_MEASURED"]
 EvidenceScope = Literal["PAIR", "GLOBAL"]
 """Scope of a capture's evidence ids/digests. Required on every capture, never defaulted.
 
-``PAIR``: the evidence belongs to one pair; reuse under another pair is CROSS_PAIR_CONTAMINATION.
-``GLOBAL``: the evidence is legitimately shared (e.g. one market-wide snapshot); reuse under another
-pair is reported DIAGNOSTIC_ONLY. A missing or unknown scope rejects the capture (fail closed); it is
-never treated as ``GLOBAL``. Lineage ids are always pair-bound and are not affected by this scope.
+``PAIR``: the evidence belongs to exactly one pair. The capture's ``symbol`` must equal the canonical
+symbol key it is filed under, and PAIR-scoped CANDIDATE / TRADEPLAN captures must bind the strategy
+lifecycle id and their revision identity (see :func:`evidence_scope_violations`); otherwise the bundle
+is rejected. Reuse under another pair is CROSS_PAIR_CONTAMINATION.
+``GLOBAL``: only for system/global authority evidence carrying no pair-specific strategy conclusion,
+and only for kinds on the explicit allow-list ``GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS`` (policy 1.3.0).
+That list is currently empty: every existing kind is pair-specific, so GLOBAL on any capture rejects
+the bundle. Reuse of GLOBAL evidence under another pair would be DIAGNOSTIC_ONLY.
+A missing or unknown scope rejects the capture (fail closed); it is never treated as ``GLOBAL``.
+Lineage ids are always pair-bound and are not affected by this scope.
 """
 
 BUNDLE_SCHEMA_VERSION: Final = "shadow_capture_bundle/v1"
@@ -160,6 +173,7 @@ class CandidateCapture(_CaptureBase):
 
     capture_kind: Literal["CANDIDATE"]
     candidate_id: EvidenceId
+    candidate_revision: Revision
     direction: Direction
     pair_selection_source: SelectionSource
     direction_selection_source: SelectionSource
@@ -203,7 +217,7 @@ class ExactSCapture(_CaptureBase):
 
 class TradeplanCapture(_CaptureBase):
     capture_kind: Literal["TRADEPLAN"]
-    tradeplan_revision: int = Field(..., ge=1)
+    tradeplan_revision: Revision
     direction: Direction
     direction_selection_source: SelectionSource
     prices: tuple[PricePoint, ...] = Field(..., min_length=1)
@@ -261,6 +275,53 @@ Capture = Annotated[
 DOWNSTREAM_KINDS: frozenset[str] = frozenset({"EXACT_S", "TRADEPLAN", "BROKER_ADAPTATION_DRY_RUN", "RISK_DRY_RUN"})
 
 
+def _pair_binding(capture: Capture) -> dict[str, object]:
+    """Binding identity a PAIR-scoped CANDIDATE / TRADEPLAN must carry; empty for other kinds."""
+
+    if isinstance(capture, CandidateCapture):
+        return {
+            "symbol": capture.symbol,
+            "lineage.lifecycle_id": capture.lineage.lifecycle_id,
+            "candidate_id": capture.candidate_id,
+            "candidate_revision": capture.candidate_revision,
+        }
+    if isinstance(capture, TradeplanCapture):
+        return {
+            "symbol": capture.symbol,
+            "lineage.lifecycle_id": capture.lineage.lifecycle_id,
+            "lineage.tradeplan_candidate_id": capture.lineage.tradeplan_candidate_id,
+            "tradeplan_revision": capture.tradeplan_revision,
+        }
+    return {}
+
+
+def evidence_scope_violations(symbol_key: str, capture: Capture) -> tuple[str, ...]:
+    """Owner-locked evidence-scope rule (policy 1.3.0). Any violation rejects the whole bundle (fail closed).
+
+    * GLOBAL: only kinds on ``GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS`` (currently none); a pair-specific
+      strategy kind (``GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS``) declaring GLOBAL is always rejected.
+    * PAIR: ``symbol`` must equal the canonical symbol key the capture is filed under, and a
+      CANDIDATE / TRADEPLAN must bind symbol + ``lineage.lifecycle_id`` + candidate/tradeplan revision identity.
+    """
+
+    kind = capture.capture_kind
+    where = f"{symbol_key}/{capture.capture_id}"
+    if capture.evidence_scope == "GLOBAL":
+        if kind in GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS:
+            return (f"{where}: {kind} is pair-specific strategy evidence and can never be GLOBAL-scoped",)
+        if kind not in GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS:
+            return (f"{where}: {kind} is not on the GLOBAL-scope allow-list",)
+        return ()
+    violations: list[str] = []
+    if capture.symbol != symbol_key:
+        violations.append(f"{where}: PAIR-scoped capture symbol {capture.symbol} does not match its key")
+    if kind in PAIR_BINDING_REQUIRED_CAPTURE_KINDS:
+        unbound = sorted(name for name, value in _pair_binding(capture).items() if value is None)
+        if unbound:
+            violations.append(f"{where}: PAIR-scoped {kind} must bind {', '.join(unbound)}")
+    return tuple(violations)
+
+
 class BundleHeader(BaseModel):
     """``shadow_capture_bundle/v1`` header. Every key is required; only ``A4_hash`` may be ``null``.
 
@@ -302,6 +363,18 @@ class ShadowCaptureBundle(_Frozen):
     header: BundleHeader
     captures_by_symbol: dict[Annotated[str, Field(min_length=1, max_length=32)], tuple[Capture, ...]]
 
+    @model_validator(mode="after")
+    def _evidence_scope_rule(self) -> ShadowCaptureBundle:
+        violations = [
+            violation
+            for key in sorted(self.captures_by_symbol)
+            for capture in self.captures_by_symbol[key]
+            for violation in evidence_scope_violations(key, capture)
+        ]
+        if violations:
+            raise ValueError("evidence_scope rule violated: " + "; ".join(violations[:5]))
+        return self
+
 
 __all__ = [
     "BUNDLE_HEADER_FIELDS",
@@ -321,4 +394,5 @@ __all__ = [
     "RiskDryRunCapture",
     "ShadowCaptureBundle",
     "TradeplanCapture",
+    "evidence_scope_violations",
 ]

@@ -22,6 +22,15 @@ All are pure functions over an already-parsed :class:`ShadowCaptureBundle`.
     declares ``evidence_scope = "GLOBAL"``.
   The scope is a required capture field; a missing or unknown scope is rejected
   at parse time and is never treated as ``GLOBAL``.
+
+Scope admission (policy 1.3.0) happens before any of this, at parse time
+(:func:`tools.shadow_harness.captures.evidence_scope_violations`): a PAIR
+capture filed under a key other than its own symbol, a PAIR CANDIDATE/TRADEPLAN
+without lifecycle/revision binding, and any GLOBAL capture of a kind not on the
+(currently empty) GLOBAL allow-list reject the whole bundle. The ``SYMBOL``
+contamination finding and the GLOBAL-only diagnostics are therefore
+defense-in-depth for already-parsed bundles; no bundle admitted under policy
+1.3.0 can reach them.
 """
 
 from __future__ import annotations

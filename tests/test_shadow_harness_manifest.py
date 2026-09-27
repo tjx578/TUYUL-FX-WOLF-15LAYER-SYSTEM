@@ -26,6 +26,10 @@ from tools.shadow_harness.captures import (
     TradeplanCapture,
 )
 from tools.shadow_harness.manifest import (
+    CAPTURE_KINDS,
+    GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS,
+    GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS,
+    PAIR_BINDING_REQUIRED_CAPTURE_KINDS,
     HarnessInputError,
     load_policy_bytes,
     load_symbol_universe_bytes,
@@ -112,6 +116,13 @@ def test_edited_map_breaks_the_policy_pin() -> None:
         ({"evidence_scope_rule": "DEFAULT_GLOBAL"}, "POLICY_SCHEMA_INVALID"),
         ({"pair_scoped_evidence_reuse": "DIAGNOSTIC_ONLY"}, "POLICY_SCHEMA_INVALID"),
         ({"global_scoped_evidence_reuse": "IGNORED"}, "POLICY_SCHEMA_INVALID"),
+        ({"pair_scope_binding_rule": "SYMBOL_ONLY"}, "POLICY_SCHEMA_INVALID"),
+        ({"pair_binding_required_capture_kinds": ["CANDIDATE"]}, "POLICY_SCHEMA_INVALID"),
+        ({"global_scope_allowed_capture_kinds": ["CANDIDATE"]}, "POLICY_SCHEMA_INVALID"),
+        ({"global_scope_allowed_capture_kinds": ["TRADEPLAN"]}, "POLICY_SCHEMA_INVALID"),
+        ({"global_scope_allowed_capture_kinds": ["RISK_DRY_RUN"]}, "POLICY_SCHEMA_INVALID"),
+        ({"global_scope_forbidden_capture_kinds": ["CANDIDATE", "TRADEPLAN"]}, "POLICY_SCHEMA_INVALID"),
+        ({"global_scope_violation": "DIAGNOSTIC_ONLY"}, "POLICY_SCHEMA_INVALID"),
     ],
 )
 def test_policy_rejects_changed_or_hidden_values(mutation: dict[str, Any], code: str) -> None:
@@ -121,15 +132,20 @@ def test_policy_rejects_changed_or_hidden_values(mutation: dict[str, Any], code:
     assert info.value.code == code
 
 
-def test_policy_1_2_0_pins_scope_and_final_acceptance_rules() -> None:
+def test_policy_1_3_0_pins_scope_and_final_acceptance_rules() -> None:
     loaded, _ = load_real()
     policy = loaded.policy
-    assert policy.policy_version == "1.2.0"
+    assert policy.policy_version == "1.3.0"
     assert (policy.evidence_scope_rule, policy.pair_scoped_evidence_reuse, policy.global_scoped_evidence_reuse) == (
         "EXPLICIT_REQUIRED",
         "CROSS_PAIR_CONTAMINATION",
         "DIAGNOSTIC_ONLY",
     )
+    assert policy.pair_scope_binding_rule == "EXACT_CANONICAL_SYMBOL_AND_LIFECYCLE_AND_REVISION"
+    assert tuple(policy.pair_binding_required_capture_kinds) == PAIR_BINDING_REQUIRED_CAPTURE_KINDS
+    assert tuple(policy.global_scope_allowed_capture_kinds) == GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS == ()
+    assert tuple(policy.global_scope_forbidden_capture_kinds) == GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS == CAPTURE_KINDS
+    assert policy.global_scope_violation == "REJECT_BUNDLE"
     assert (policy.r9_binding, policy.r9_envelope_status, policy.shadow_acceptance_rule) == (
         "R9_ARTIFACT_SHA256_MATCH_ONLY",
         "NOT_FROZEN",
@@ -146,9 +162,14 @@ def test_policy_1_2_0_pins_scope_and_final_acceptance_rules() -> None:
         "r9_binding",
         "r9_envelope_status",
         "shadow_acceptance_rule",
+        "pair_scope_binding_rule",
+        "pair_binding_required_capture_kinds",
+        "global_scope_allowed_capture_kinds",
+        "global_scope_forbidden_capture_kinds",
+        "global_scope_violation",
     ],
 )
-def test_policy_1_2_0_fields_are_required_not_defaulted(field: str) -> None:
+def test_policy_1_3_0_fields_are_required_not_defaulted(field: str) -> None:
     payload = _policy_payload()
     del payload[field]
     with pytest.raises(HarnessInputError) as info:
