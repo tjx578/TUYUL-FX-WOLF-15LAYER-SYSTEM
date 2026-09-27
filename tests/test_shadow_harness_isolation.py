@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from tests.shadow_harness_helpers import (
     broker_dry_run,
     bundle,
     candidate,
+    digest,
     evaluate,
     exact_s,
     lineage,
@@ -18,9 +21,13 @@ from tools.shadow_harness.captures import LINEAGE_FIELDS, ShadowCaptureBundle
 from tools.shadow_harness.isolation import (
     IsolationFinding,
     detect_cross_pair_contamination,
+    detect_global_evidence_reuse_diagnostics,
     detect_price_overlap_diagnostics,
     validate_symbol_isolation,
 )
+from tools.shadow_harness.manifest import HarnessInputError
+
+MISSING = object()
 
 
 def _codes(findings: tuple[IsolationFinding, ...]) -> list[str]:
@@ -132,15 +139,73 @@ def test_price_overlap_is_detected_after_normalisation_but_stays_diagnostic() ->
     assert report.gate_passed
 
 
-def test_evidence_digest_and_id_reuse_across_pairs_is_secondary_identity_contamination() -> None:
+def test_pair_scoped_evidence_reuse_across_pairs_is_contamination_and_fails() -> None:
     loaded, universe = load_real()
     eur = candidate("EURUSD")
     gbp = candidate("GBPUSD", evidence_sha256=eur["evidence_sha256"], candidate_id=eur["candidate_id"])
     report = evaluate(bundle(loaded, universe, {"EURUSD": [eur], "GBPUSD": [gbp]}), loaded, universe)
     assert sorted(item.kind for item in report.contamination_findings) == ["EVIDENCE_ID", "EVIDENCE_SHA256"]
-    assert {item.detector for item in report.contamination_findings} == {"SECONDARY_EVIDENCE_IDENTITY"}
+    assert {item.detector for item in report.contamination_findings} == {"SECONDARY_PAIR_SCOPED_EVIDENCE"}
+    assert {item.evidence_scopes for item in report.contamination_findings} == {("PAIR",)}
     assert report.acceptance.cross_pair_contamination == 2
-    assert not report.gate_passed
+    assert report.gate_failures == ("CROSS_PAIR_CONTAMINATION",)
+    assert report.diagnostics == ()
+
+
+def test_mixed_scope_reuse_fails_closed_as_contamination() -> None:
+    loaded, universe = load_real()
+    eur = candidate("EURUSD", evidence_scope="GLOBAL")
+    gbp = candidate("GBPUSD", evidence_sha256=eur["evidence_sha256"])  # PAIR-scoped carrier of the same digest
+    report = evaluate(bundle(loaded, universe, {"EURUSD": [eur], "GBPUSD": [gbp]}), loaded, universe)
+    [finding] = report.contamination_findings
+    assert (finding.kind, finding.evidence_scopes) == ("EVIDENCE_SHA256", ("GLOBAL", "PAIR"))
+    assert report.gate_failures == ("CROSS_PAIR_CONTAMINATION",)
+
+
+def test_global_scoped_evidence_reuse_is_diagnostic_only_and_gate_unaffected() -> None:
+    loaded, universe = load_real()
+    shared = digest("market-wide-snapshot")
+    eur = natural_chain("EURUSD", universe)
+    gbp = natural_chain("GBPUSD", universe)
+    eur[1] = eur[1] | {"evidence_scope": "GLOBAL", "evidence_sha256": shared}
+    gbp[1] = gbp[1] | {"evidence_scope": "GLOBAL", "evidence_sha256": shared}
+    report = evaluate(bundle(loaded, universe, {"EURUSD": eur, "GBPUSD": gbp}), loaded, universe)
+    assert report.contamination_findings == ()
+    assert report.acceptance.cross_pair_contamination == 0
+    assert report.gate_passed and report.gate_failures == ()
+    [diagnostic] = report.diagnostics
+    assert (diagnostic.severity, diagnostic.kind, diagnostic.fields, diagnostic.value, diagnostic.symbols) == (
+        "DIAGNOSTIC_ONLY",
+        "GLOBAL_SCOPED_EVIDENCE_SHA256_REUSE",
+        ("evidence_sha256",),
+        shared,
+        ("EURUSD", "GBPUSD"),
+    )
+    parsed = ShadowCaptureBundle.model_validate(bundle(loaded, universe, {"EURUSD": eur, "GBPUSD": gbp}))
+    assert detect_global_evidence_reuse_diagnostics(parsed) == report.diagnostics
+
+
+def test_global_scope_never_excuses_lineage_reuse() -> None:
+    loaded, universe = load_real()
+    eur = candidate("EURUSD", evidence_scope="GLOBAL")
+    eur["lineage"] = eur["lineage"] | {"thesis_id": lineage("GBPUSD", 1)["thesis_id"]}
+    gbp = candidate("GBPUSD", evidence_scope="GLOBAL")
+    report = evaluate(bundle(loaded, universe, {"EURUSD": [eur], "GBPUSD": [gbp]}), loaded, universe)
+    assert [(item.detector, item.kind) for item in report.contamination_findings] == [("PRIMARY_LINEAGE", "LINEAGE_ID")]
+    assert report.gate_failures == ("CROSS_PAIR_CONTAMINATION",)
+
+
+@pytest.mark.parametrize("scope", [MISSING, None, "", "pair", "UNKNOWN", "SYMBOL"])
+def test_missing_or_unknown_evidence_scope_is_rejected_never_global(scope: object) -> None:
+    loaded, universe = load_real()
+    record = candidate("EURUSD")
+    if scope is MISSING:
+        del record["evidence_scope"]
+    else:
+        record["evidence_scope"] = scope
+    with pytest.raises(HarnessInputError) as info:
+        evaluate(bundle(loaded, universe, {"EURUSD": [record]}), loaded, universe)
+    assert info.value.code == "BUNDLE_SCHEMA_INVALID"
 
 
 def test_unknown_symbol_key_is_isolation_violation_and_not_thirty() -> None:

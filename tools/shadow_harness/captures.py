@@ -36,6 +36,14 @@ Direction = Literal["BUY", "SELL"]
 SelectionSource = Literal["STRATEGY", "OPERATOR"]
 PriceName = Literal["ENTRY", "STOP_LOSS", "TAKE_PROFIT"]
 ExactSStatus = Literal["MEASURED", "NOT_MEASURED"]
+EvidenceScope = Literal["PAIR", "GLOBAL"]
+"""Scope of a capture's evidence ids/digests. Required on every capture, never defaulted.
+
+``PAIR``: the evidence belongs to one pair; reuse under another pair is CROSS_PAIR_CONTAMINATION.
+``GLOBAL``: the evidence is legitimately shared (e.g. one market-wide snapshot); reuse under another
+pair is reported DIAGNOSTIC_ONLY. A missing or unknown scope rejects the capture (fail closed); it is
+never treated as ``GLOBAL``. Lineage ids are always pair-bound and are not affected by this scope.
+"""
 
 BUNDLE_SCHEMA_VERSION: Final = "shadow_capture_bundle/v1"
 BUNDLE_MARKING: Final = ("IMPLEMENTATION_ONLY", "NON_CANONICAL")
@@ -52,8 +60,14 @@ BUNDLE_HEADER_FIELDS: Final = (
     "configuration_digest",
     "created_at",
 )
-DERIVED_REPORT_FIELDS: Final = ("gate_failures", "gate_passed")
-"""Report fields that only the evaluator may compute; supplying them in capture input is rejected."""
+DERIVED_REPORT_FIELDS: Final = (
+    "DEMO_PRECONDITION",
+    "gate_failures",
+    "gate_passed",
+    "r9_envelope_status",
+    "shadow_acceptance_passed",
+)
+"""Report fields that only the evaluator may compute; supplying them anywhere in capture input is rejected."""
 
 LINEAGE_FIELDS: tuple[str, ...] = (
     "lifecycle_id",
@@ -113,6 +127,7 @@ class _CaptureBase(_Frozen):
     symbol: CanonicalSymbol
     captured_at_utc: datetime
     evidence_sha256: Sha256Hex
+    evidence_scope: EvidenceScope
     lineage: CaptureLineage
 
     required_lineage: ClassVar[tuple[str, ...]] = ()
@@ -300,6 +315,7 @@ __all__ = [
     "CandidateCapture",
     "Capture",
     "CaptureLineage",
+    "EvidenceScope",
     "ExactSCapture",
     "PricePoint",
     "RiskDryRunCapture",

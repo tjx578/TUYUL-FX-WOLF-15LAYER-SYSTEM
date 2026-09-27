@@ -6,7 +6,9 @@ Usage::
         [--r9-artifact R9_ARTIFACT ...]
 
 Reads local files only and writes exactly one new report file (never
-overwrites). Exit codes: 0 gate passed, 1 gate failed, 2 input rejected.
+overwrites). Exit codes: 0 gate passed, 1 gate failed, 2 input rejected. The exit
+code reflects the five-flag ``gate_passed`` only; exit 0 is NOT final SHADOW
+acceptance - read ``shadow_acceptance_passed`` in the report for that.
 """
 
 from __future__ import annotations
@@ -67,6 +69,7 @@ def run(policy_path: Path, bundle_path: Path, out_path: Path, repo_root: Path, r
                 "harness_version": HARNESS_VERSION,
                 "status": "INPUT_REJECTED",
                 "gate_passed": False,
+                "shadow_acceptance_passed": False,
                 "rejection_code": exc.code,
                 "rejection_detail": exc.message,
             },

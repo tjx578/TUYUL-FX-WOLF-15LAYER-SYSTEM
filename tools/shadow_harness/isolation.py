@@ -10,12 +10,18 @@ All are pure functions over an already-parsed :class:`ShadowCaptureBundle`.
   lineage-based over ``symbol`` and the lineage ids in ``LINEAGE_FIELDS``: a
   record filed under another symbol's key, or any lineage id value observed
   under more than one symbol (e.g. an EURUSD capture carrying a GBPUSD
-  ``thesis_id``). A secondary identity detector flags evidence ids / evidence
-  digests reused across symbols. The count is the number of distinct
+  ``thesis_id``). A secondary, scope-aware detector covers evidence ids /
+  evidence digests reused across symbols: when any capture carrying the reused
+  value declares ``evidence_scope = "PAIR"`` it is contamination
+  (``SECONDARY_PAIR_SCOPED_EVIDENCE``). The count is the number of distinct
   contaminating values.
-* Diagnostics (DIAGNOSTIC_ONLY): identical price vectors across symbols. Two
-  pairs may legitimately share numeric prices, so price overlap is reported but
-  never counted as contamination and never fails the gate.
+* Diagnostics (DIAGNOSTIC_ONLY, never a gate input):
+  - identical price vectors across symbols (two pairs may legitimately share
+    numeric prices);
+  - evidence ids / digests reused across symbols where *every* carrying capture
+    declares ``evidence_scope = "GLOBAL"``.
+  The scope is a required capture field; a missing or unknown scope is rejected
+  at parse time and is never treated as ``GLOBAL``.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ from tools.shadow_harness.captures import (
     BrokerAdaptationDryRunCapture,
     CandidateCapture,
     Capture,
+    EvidenceScope,
     ExactSCapture,
     RiskDryRunCapture,
     ShadowCaptureBundle,
@@ -45,15 +52,16 @@ IsolationCode = Literal[
     "UNANCHORED_LINEAGE",
 ]
 ContaminationKind = Literal["SYMBOL", "LINEAGE_ID", "EVIDENCE_ID", "EVIDENCE_SHA256"]
-ContaminationDetector = Literal["PRIMARY_LINEAGE", "SECONDARY_EVIDENCE_IDENTITY"]
+EvidenceKind = Literal["EVIDENCE_ID", "EVIDENCE_SHA256"]
+ContaminationDetector = Literal["PRIMARY_LINEAGE", "SECONDARY_PAIR_SCOPED_EVIDENCE"]
 ContaminationCode = Literal["CROSS_PAIR_CONTAMINATION"]
-DiagnosticKind = Literal["PRICE_VECTOR_OVERLAP"]
+DiagnosticKind = Literal[
+    "PRICE_VECTOR_OVERLAP", "GLOBAL_SCOPED_EVIDENCE_ID_REUSE", "GLOBAL_SCOPED_EVIDENCE_SHA256_REUSE"
+]
 
-_DETECTOR_BY_KIND: dict[ContaminationKind, ContaminationDetector] = {
-    "SYMBOL": "PRIMARY_LINEAGE",
-    "LINEAGE_ID": "PRIMARY_LINEAGE",
-    "EVIDENCE_ID": "SECONDARY_EVIDENCE_IDENTITY",
-    "EVIDENCE_SHA256": "SECONDARY_EVIDENCE_IDENTITY",
+_GLOBAL_REUSE_KIND: dict[EvidenceKind, DiagnosticKind] = {
+    "EVIDENCE_ID": "GLOBAL_SCOPED_EVIDENCE_ID_REUSE",
+    "EVIDENCE_SHA256": "GLOBAL_SCOPED_EVIDENCE_SHA256_REUSE",
 }
 
 
@@ -81,15 +89,24 @@ class ContaminationFinding(_Frozen):
     fields: tuple[str, ...]
     value: str
     symbols: tuple[str, ...]
+    evidence_scopes: tuple[EvidenceScope, ...]
+    """Declared scopes of the carrying captures (secondary detector); empty for primary lineage findings."""
     captures: tuple[CaptureRef, ...]
 
 
 class DiagnosticFinding(_Frozen):
     severity: Literal["DIAGNOSTIC_ONLY"]
     kind: DiagnosticKind
+    fields: tuple[str, ...]
     value: str
     symbols: tuple[str, ...]
     captures: tuple[CaptureRef, ...]
+
+
+class _EvidenceObservation(_Frozen):
+    field: str
+    ref: CaptureRef
+    scope: EvidenceScope
 
 
 def iter_captures(bundle: ShadowCaptureBundle) -> Iterable[tuple[str, Capture]]:
@@ -140,8 +157,39 @@ def _sorted_refs(refs: Iterable[CaptureRef]) -> tuple[CaptureRef, ...]:
     return tuple(sorted(set(refs), key=lambda ref: (ref.symbol_key, ref.symbol, ref.capture_id)))
 
 
+def _span_symbols(refs: Iterable[CaptureRef]) -> tuple[str, ...]:
+    listed = list(refs)
+    return tuple(sorted({ref.symbol for ref in listed} | {ref.symbol_key for ref in listed}))
+
+
+def _cross_pair_evidence_reuse(
+    bundle: ShadowCaptureBundle,
+) -> list[tuple[EvidenceKind, str, tuple[_EvidenceObservation, ...]]]:
+    """Evidence ids / digests observed under more than one symbol, with every carrying capture's declared scope."""
+
+    index: dict[tuple[EvidenceKind, str], list[_EvidenceObservation]] = defaultdict(list)
+    for key, capture in iter_captures(bundle):
+        ref = _ref(key, capture)
+        entries: list[tuple[EvidenceKind, str, str]] = []
+        entries.extend(("EVIDENCE_ID", field, value) for field, value in _evidence_ids(capture))
+        entries.extend(("EVIDENCE_SHA256", field, value) for field, value in _evidence_digests(capture))
+        for kind, field, value in entries:
+            index[(kind, value)].append(_EvidenceObservation(field=field, ref=ref, scope=capture.evidence_scope))
+    return [
+        (kind, value, tuple(observed))
+        for (kind, value), observed in sorted(index.items())
+        if len({item.ref.symbol for item in observed}) > 1
+    ]
+
+
 def detect_cross_pair_contamination(bundle: ShadowCaptureBundle) -> tuple[ContaminationFinding, ...]:
-    """Identity-based contamination only; numeric price equality is never contamination."""
+    """Identity-based contamination only; numeric price equality is never contamination.
+
+    Primary: lineage ids (always pair-bound) and records filed under another symbol's key.
+    Secondary: evidence ids / digests reused across symbols where any carrying capture is ``PAIR``-scoped.
+    Reuse where every carrying capture is ``GLOBAL``-scoped is not contamination
+    (see :func:`detect_global_evidence_reuse_diagnostics`).
+    """
 
     findings: list[ContaminationFinding] = []
     for key, capture in iter_captures(bundle):
@@ -154,36 +202,68 @@ def detect_cross_pair_contamination(bundle: ShadowCaptureBundle) -> tuple[Contam
                     fields=("symbol",),
                     value=f"{capture.symbol}@{key}",
                     symbols=tuple(sorted({key, capture.symbol})),
+                    evidence_scopes=(),
                     captures=(_ref(key, capture),),
                 )
             )
 
-    index: dict[tuple[ContaminationKind, str], list[tuple[str, CaptureRef]]] = defaultdict(list)
+    lineage_index: dict[str, list[tuple[str, CaptureRef]]] = defaultdict(list)
     for key, capture in iter_captures(bundle):
         ref = _ref(key, capture)
-        entries: list[tuple[ContaminationKind, str, str]] = []
-        entries.extend(("LINEAGE_ID", field, value) for field, value in capture.lineage.present())
-        entries.extend(("EVIDENCE_ID", field, value) for field, value in _evidence_ids(capture))
-        entries.extend(("EVIDENCE_SHA256", field, value) for field, value in _evidence_digests(capture))
-        for kind, field, value in entries:
-            index[(kind, value)].append((field, ref))
-
-    for (kind, value), observed in sorted(index.items()):
+        for field, value in capture.lineage.present():
+            lineage_index[value].append((field, ref))
+    for value, observed in sorted(lineage_index.items()):
         refs = [ref for _field, ref in observed]
-        symbols = tuple(sorted({ref.symbol for ref in refs} | {ref.symbol_key for ref in refs}))
         if len({ref.symbol for ref in refs}) > 1:
             findings.append(
                 ContaminationFinding(
                     code="CROSS_PAIR_CONTAMINATION",
-                    detector=_DETECTOR_BY_KIND[kind],
-                    kind=kind,
+                    detector="PRIMARY_LINEAGE",
+                    kind="LINEAGE_ID",
                     fields=tuple(sorted({field for field, _ref in observed})),
                     value=value,
-                    symbols=symbols,
+                    symbols=_span_symbols(refs),
+                    evidence_scopes=(),
                     captures=_sorted_refs(refs),
                 )
             )
+
+    for kind, value, observations in _cross_pair_evidence_reuse(bundle):
+        declared: set[EvidenceScope] = {item.scope for item in observations}
+        scopes: tuple[EvidenceScope, ...] = tuple(sorted(declared))
+        if "PAIR" in scopes:
+            findings.append(
+                ContaminationFinding(
+                    code="CROSS_PAIR_CONTAMINATION",
+                    detector="SECONDARY_PAIR_SCOPED_EVIDENCE",
+                    kind=kind,
+                    fields=tuple(sorted({item.field for item in observations})),
+                    value=value,
+                    symbols=_span_symbols(item.ref for item in observations),
+                    evidence_scopes=scopes,
+                    captures=_sorted_refs(item.ref for item in observations),
+                )
+            )
     return tuple(sorted(findings, key=lambda item: (item.detector, item.kind, item.value)))
+
+
+def detect_global_evidence_reuse_diagnostics(bundle: ShadowCaptureBundle) -> tuple[DiagnosticFinding, ...]:
+    """Evidence reused across symbols where every carrying capture is ``GLOBAL``-scoped. DIAGNOSTIC_ONLY."""
+
+    findings: list[DiagnosticFinding] = []
+    for kind, value, observations in _cross_pair_evidence_reuse(bundle):
+        if all(item.scope == "GLOBAL" for item in observations):
+            findings.append(
+                DiagnosticFinding(
+                    severity="DIAGNOSTIC_ONLY",
+                    kind=_GLOBAL_REUSE_KIND[kind],
+                    fields=tuple(sorted({item.field for item in observations})),
+                    value=value,
+                    symbols=tuple(sorted({item.ref.symbol for item in observations})),
+                    captures=_sorted_refs(item.ref for item in observations),
+                )
+            )
+    return tuple(findings)
 
 
 def detect_price_overlap_diagnostics(bundle: ShadowCaptureBundle) -> tuple[DiagnosticFinding, ...]:
@@ -202,6 +282,7 @@ def detect_price_overlap_diagnostics(bundle: ShadowCaptureBundle) -> tuple[Diagn
                 DiagnosticFinding(
                     severity="DIAGNOSTIC_ONLY",
                     kind="PRICE_VECTOR_OVERLAP",
+                    fields=("prices",),
                     value=vector,
                     symbols=symbols,
                     captures=_sorted_refs(refs),
@@ -277,6 +358,7 @@ __all__ = [
     "DiagnosticFinding",
     "IsolationFinding",
     "detect_cross_pair_contamination",
+    "detect_global_evidence_reuse_diagnostics",
     "detect_price_overlap_diagnostics",
     "iter_captures",
     "price_vector",

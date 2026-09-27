@@ -106,6 +106,12 @@ def test_edited_map_breaks_the_policy_pin() -> None:
         ({"price_vector_overlap": "FAIL"}, "POLICY_SCHEMA_INVALID"),
         ({"exact_s_acceptance_rule": "ANY"}, "POLICY_SCHEMA_INVALID"),
         ({"bundle_schema": "wolf15.shadow-harness.bundle.v1"}, "POLICY_SCHEMA_INVALID"),
+        ({"r9_envelope_status": "FROZEN"}, "POLICY_SCHEMA_INVALID"),
+        ({"r9_binding": "ANY"}, "POLICY_SCHEMA_INVALID"),
+        ({"shadow_acceptance_rule": "GATE_PASSED_ONLY"}, "POLICY_SCHEMA_INVALID"),
+        ({"evidence_scope_rule": "DEFAULT_GLOBAL"}, "POLICY_SCHEMA_INVALID"),
+        ({"pair_scoped_evidence_reuse": "DIAGNOSTIC_ONLY"}, "POLICY_SCHEMA_INVALID"),
+        ({"global_scoped_evidence_reuse": "IGNORED"}, "POLICY_SCHEMA_INVALID"),
     ],
 )
 def test_policy_rejects_changed_or_hidden_values(mutation: dict[str, Any], code: str) -> None:
@@ -113,6 +119,41 @@ def test_policy_rejects_changed_or_hidden_values(mutation: dict[str, Any], code:
     with pytest.raises(HarnessInputError) as info:
         load_policy_bytes(json.dumps(payload).encode())
     assert info.value.code == code
+
+
+def test_policy_1_2_0_pins_scope_and_final_acceptance_rules() -> None:
+    loaded, _ = load_real()
+    policy = loaded.policy
+    assert policy.policy_version == "1.2.0"
+    assert (policy.evidence_scope_rule, policy.pair_scoped_evidence_reuse, policy.global_scoped_evidence_reuse) == (
+        "EXPLICIT_REQUIRED",
+        "CROSS_PAIR_CONTAMINATION",
+        "DIAGNOSTIC_ONLY",
+    )
+    assert (policy.r9_binding, policy.r9_envelope_status, policy.shadow_acceptance_rule) == (
+        "R9_ARTIFACT_SHA256_MATCH_ONLY",
+        "NOT_FROZEN",
+        "GATE_PASSED_AND_EXACT_S_ACCEPTED_AND_R9_ENVELOPE_FROZEN",
+    )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "evidence_scope_rule",
+        "pair_scoped_evidence_reuse",
+        "global_scoped_evidence_reuse",
+        "r9_binding",
+        "r9_envelope_status",
+        "shadow_acceptance_rule",
+    ],
+)
+def test_policy_1_2_0_fields_are_required_not_defaulted(field: str) -> None:
+    payload = _policy_payload()
+    del payload[field]
+    with pytest.raises(HarnessInputError) as info:
+        load_policy_bytes(json.dumps(payload).encode())
+    assert info.value.code == "POLICY_SCHEMA_INVALID"
 
 
 def test_policy_missing_value_is_rejected_not_defaulted() -> None:

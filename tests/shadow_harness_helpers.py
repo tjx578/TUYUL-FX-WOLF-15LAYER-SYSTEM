@@ -65,6 +65,7 @@ def _base(symbol: str, n: int, kind: str, lineage_ids: dict[str, str]) -> dict[s
         "symbol": symbol,
         "captured_at_utc": CAPTURED_AT,
         "evidence_sha256": digest("evidence", kind, symbol, n),
+        "evidence_scope": "PAIR",
         "lineage": _empty_lineage() | lineage_ids,
     }
 

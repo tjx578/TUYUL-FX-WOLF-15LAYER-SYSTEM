@@ -10,8 +10,8 @@ The acceptance block contains exactly five flags:
 * ``OPERATOR_DIRECTION_SELECTION`` - any candidate/tradeplan attests an
   operator-chosen direction. Must be ``False``.
 * ``CROSS_PAIR_CONTAMINATION`` - number of distinct identity-based (lineage /
-  evidence id) contaminating values. Price-vector overlap is DIAGNOSTIC_ONLY and
-  never counted here.
+  PAIR-scoped evidence id) contaminating values. Price-vector overlap and
+  GLOBAL-scoped evidence reuse are DIAGNOSTIC_ONLY and never counted here.
 * ``BROKER_SUBMIT`` - number of dry-run captures that attempted a broker submit.
 
 ``gate_passed`` and ``gate_failures`` are DERIVED only, from those five flags
@@ -21,7 +21,21 @@ Exact-S is a separate *dependent* acceptance (``EXACT_S_ACCEPTED``): it is true
 only when at least one candidate exists and every candidate has exactly one
 ``MEASURED`` exact-S bound to an R9 artifact actually supplied to this run.
 Absent or ``NOT_MEASURED`` exact-S can never make it true, and the harness never
-fabricates an exact-S.
+fabricates an exact-S. R9 binding is a raw-bytes sha256 match only
+(``R9_BINDING_MODE``).
+
+``shadow_acceptance_passed`` is the integration-level final result
+(``FINAL_NATURAL_SHADOW_ACCEPTANCE`` / ``DEMO_PRECONDITION``), DERIVED only
+(:func:`derive_shadow_acceptance_blockers`) and rejected if supplied::
+
+    shadow_acceptance_passed = gate_passed AND EXACT_S_ACCEPTED AND r9_envelope_frozen
+
+``gate_passed`` keeps its five-flag meaning, so ``gate_passed = true`` with
+``EXACT_S_ACCEPTED = false`` yields ``shadow_acceptance_passed = false``.
+Final SHADOW acceptance additionally requires the frozen R9 artifact envelope
+(``R9_ENVELOPE_REQUIRED_COMPONENTS``). That envelope schema is not frozen yet,
+so the policy pins ``r9_envelope_status = NOT_FROZEN`` and
+``shadow_acceptance_passed`` is false even when the R9 hash matches.
 
 Natural candidates are 0..N per symbol; a symbol without a candidate is
 reported with the policy's no-candidate status (``WAIT``) and nothing is
@@ -56,6 +70,7 @@ from tools.shadow_harness.isolation import (
     DiagnosticFinding,
     IsolationFinding,
     detect_cross_pair_contamination,
+    detect_global_evidence_reuse_diagnostics,
     detect_price_overlap_diagnostics,
     iter_captures,
     validate_symbol_isolation,
@@ -88,6 +103,37 @@ GATE_FLAG_ORDER: Final[tuple[GateFlag, ...]] = (
 )
 ExactSEvaluation = Literal["ABSENT", "NOT_MEASURED", "R9_ARTIFACT_NOT_SUPPLIED", "AMBIGUOUS", "R9_BOUND"]
 
+R9_BINDING_MODE: Final = "R9_ARTIFACT_SHA256_MATCH_ONLY"
+"""Current R9 binding: a MEASURED exact-S binds when its ``r9_artifact_sha256`` equals the raw-bytes sha256
+of an R9 artifact supplied to this run. This is necessary but NOT sufficient for final SHADOW acceptance."""
+
+R9_ENVELOPE_REQUIRED_COMPONENTS: Final[tuple[str, ...]] = (
+    "source_artifact=R9",
+    "artifact_sha256",
+    "snapshot_identity_S",
+    "collect_identity",
+    "import_identity",
+    "ACTIVE_readback_identity",
+    "capability_result",
+    "direct_receipt_result",
+)
+"""Components the frozen R9 artifact envelope must carry before final SHADOW acceptance can pass.
+
+This is a requirement list, not a schema: the harness does not define or parse the envelope. Until the
+envelope schema is frozen, the policy pins ``r9_envelope_status = NOT_FROZEN`` and no status counts as frozen
+(``R9_ENVELOPE_FROZEN_STATUSES`` is empty), so ``shadow_acceptance_passed`` cannot be true."""
+
+R9_ENVELOPE_FROZEN_STATUSES: Final[frozenset[str]] = frozenset()
+"""``r9_envelope_status`` values that count as a frozen envelope. Empty until the envelope schema is frozen."""
+
+R9EnvelopeStatus = Literal["NOT_FROZEN"]
+ShadowAcceptanceBlocker = Literal["GATE_NOT_PASSED", "EXACT_S_NOT_ACCEPTED", "R9_ENVELOPE_NOT_FROZEN"]
+SHADOW_ACCEPTANCE_BLOCKER_ORDER: Final[tuple[ShadowAcceptanceBlocker, ...]] = (
+    "GATE_NOT_PASSED",
+    "EXACT_S_NOT_ACCEPTED",
+    "R9_ENVELOPE_NOT_FROZEN",
+)
+
 
 class _Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -115,6 +161,23 @@ def derive_gate_failures(acceptance: AcceptanceBlock, policy: HarnessPolicyV1) -
         "BROKER_SUBMIT": acceptance.broker_submit == policy.required_broker_submit_count,
     }
     return tuple(flag for flag in GATE_FLAG_ORDER if not passed[flag])
+
+
+def derive_shadow_acceptance_blockers(
+    *, gate_passed: bool, exact_s_accepted: bool, r9_envelope_frozen: bool
+) -> tuple[ShadowAcceptanceBlocker, ...]:
+    """Ordered reasons final SHADOW acceptance fails; ``shadow_acceptance_passed`` is true exactly when empty."""
+
+    passed: dict[ShadowAcceptanceBlocker, bool] = {
+        "GATE_NOT_PASSED": gate_passed,
+        "EXACT_S_NOT_ACCEPTED": exact_s_accepted,
+        "R9_ENVELOPE_NOT_FROZEN": r9_envelope_frozen,
+    }
+    return tuple(item for item in SHADOW_ACCEPTANCE_BLOCKER_ORDER if not passed[item])
+
+
+def r9_envelope_is_frozen(status: str) -> bool:
+    return status in R9_ENVELOPE_FROZEN_STATUSES
 
 
 class CandidateExactS(_Frozen):
@@ -149,6 +212,19 @@ class ExactSDependentAcceptance(BaseModel):
         return self
 
 
+class ShadowAcceptance(BaseModel):
+    """Explicit final-acceptance block. ``DEMO_PRECONDITION`` mirrors ``shadow_acceptance_passed``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+
+    label: Literal["FINAL_NATURAL_SHADOW_ACCEPTANCE"]
+    demo_precondition: bool = Field(..., alias="DEMO_PRECONDITION")
+    rule: Literal["GATE_PASSED_AND_EXACT_S_ACCEPTED_AND_R9_ENVELOPE_FROZEN"]
+    r9_binding: Literal["R9_ARTIFACT_SHA256_MATCH_ONLY"]
+    r9_envelope_required_components: tuple[str, ...]
+    blockers: tuple[ShadowAcceptanceBlocker, ...]
+
+
 class SymbolEvaluation(_Frozen):
     symbol: str
     broker_symbol: str
@@ -179,6 +255,9 @@ class ShadowHarnessReport(_Frozen):
     gate_passed: bool
     gate_failures: tuple[GateFlag, ...]
     dependent_acceptance: ExactSDependentAcceptance
+    r9_envelope_status: R9EnvelopeStatus
+    shadow_acceptance_passed: bool
+    shadow_acceptance: ShadowAcceptance
     symbols: tuple[SymbolEvaluation, ...]
     isolation_findings: tuple[IsolationFinding, ...]
     contamination_findings: tuple[ContaminationFinding, ...]
@@ -191,6 +270,25 @@ class ShadowHarnessReport(_Frozen):
             raise ValueError("gate_failures must be unique and in GATE_FLAG_ORDER")
         if self.gate_passed != (not self.gate_failures):
             raise ValueError("gate_passed is derived: true exactly when gate_failures is empty")
+        return self
+
+    @model_validator(mode="after")
+    def _shadow_acceptance_is_derived(self) -> ShadowHarnessReport:
+        blockers = derive_shadow_acceptance_blockers(
+            gate_passed=self.gate_passed,
+            exact_s_accepted=self.dependent_acceptance.exact_s_accepted,
+            r9_envelope_frozen=r9_envelope_is_frozen(self.r9_envelope_status),
+        )
+        if self.shadow_acceptance.blockers != blockers:
+            raise ValueError("shadow_acceptance.blockers is derived from gate_passed, EXACT_S_ACCEPTED, r9 envelope")
+        if self.shadow_acceptance_passed != (not blockers):
+            raise ValueError(
+                "shadow_acceptance_passed is derived: gate_passed AND EXACT_S_ACCEPTED AND a frozen R9 envelope"
+            )
+        if self.shadow_acceptance.demo_precondition != self.shadow_acceptance_passed:
+            raise ValueError("DEMO_PRECONDITION must equal shadow_acceptance_passed")
+        if self.shadow_acceptance.r9_envelope_required_components != R9_ENVELOPE_REQUIRED_COMPONENTS:
+            raise ValueError("r9_envelope_required_components must be R9_ENVELOPE_REQUIRED_COMPONENTS")
         return self
 
     def to_json_dict(self) -> dict[str, Any]:
@@ -231,7 +329,8 @@ def load_bundle_bytes(raw: bytes, loaded: LoadedPolicy, universe: SymbolUniverse
     if supplied:
         raise HarnessInputError(
             "DERIVED_FIELD_SUPPLIED",
-            f"gate_passed/gate_failures are derived by the harness and must not be supplied: {', '.join(supplied)}",
+            f"{'/'.join(DERIVED_REPORT_FIELDS)} are derived by the harness and must not be supplied: "
+            f"{', '.join(supplied)}",
         )
     _check_header_shape(payload)
     try:
@@ -318,7 +417,7 @@ def evaluate_bundle(
     supplied_r9 = _validated_r9_digests(r9_artifact_sha256s)
     isolation = validate_symbol_isolation(bundle, universe)
     contamination = detect_cross_pair_contamination(bundle)
-    diagnostics = detect_price_overlap_diagnostics(bundle)
+    diagnostics = detect_price_overlap_diagnostics(bundle) + detect_global_evidence_reuse_diagnostics(bundle)
     captures = [capture for _key, capture in iter_captures(bundle)]
 
     keys = set(bundle.captures_by_symbol)
@@ -347,6 +446,12 @@ def evaluate_bundle(
         }
     )
     failures = derive_gate_failures(acceptance, policy)
+    dependent = _exact_s_acceptance(bundle, supplied_r9)
+    blockers = derive_shadow_acceptance_blockers(
+        gate_passed=not failures,
+        exact_s_accepted=dependent.exact_s_accepted,
+        r9_envelope_frozen=r9_envelope_is_frozen(policy.r9_envelope_status),
+    )
 
     return ShadowHarnessReport(
         report_schema=REPORT_SCHEMA,
@@ -366,7 +471,19 @@ def evaluate_bundle(
         acceptance=acceptance,
         gate_passed=not failures,
         gate_failures=failures,
-        dependent_acceptance=_exact_s_acceptance(bundle, supplied_r9),
+        dependent_acceptance=dependent,
+        r9_envelope_status=policy.r9_envelope_status,
+        shadow_acceptance_passed=not blockers,
+        shadow_acceptance=ShadowAcceptance.model_validate(
+            {
+                "label": "FINAL_NATURAL_SHADOW_ACCEPTANCE",
+                "DEMO_PRECONDITION": not blockers,
+                "rule": policy.shadow_acceptance_rule,
+                "r9_binding": policy.r9_binding,
+                "r9_envelope_required_components": R9_ENVELOPE_REQUIRED_COMPONENTS,
+                "blockers": blockers,
+            }
+        ),
         symbols=_symbol_evaluations(bundle, loaded, universe),
         isolation_findings=isolation,
         contamination_findings=contamination,
@@ -423,13 +540,20 @@ def evaluate_bundle_bytes(
 
 __all__ = [
     "GATE_FLAG_ORDER",
+    "R9_BINDING_MODE",
+    "R9_ENVELOPE_FROZEN_STATUSES",
+    "R9_ENVELOPE_REQUIRED_COMPONENTS",
     "REPORT_SCHEMA",
+    "SHADOW_ACCEPTANCE_BLOCKER_ORDER",
     "AcceptanceBlock",
     "CandidateExactS",
     "ExactSDependentAcceptance",
+    "ShadowAcceptance",
     "ShadowHarnessReport",
     "SymbolEvaluation",
     "derive_gate_failures",
+    "derive_shadow_acceptance_blockers",
+    "r9_envelope_is_frozen",
     "evaluate_bundle",
     "evaluate_bundle_bytes",
     "load_bundle_bytes",
