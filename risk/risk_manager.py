@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
+from config.pip_values import get_pip_info
 
 _DEFAULT_MAX_RISK_PCT = 0.02  # 2% static default
 _DEFAULT_MAX_DAILY_LOSS_PCT = 0.05  # 5% daily drawdown limit
@@ -322,11 +322,8 @@ class RiskManager:
         ``{lot_size, risk_amount, pips_at_risk, pip_value}``.
         """
         effective_balance = balance if balance is not None else self._balance
-        try:
-            pip_value, pip_mult = get_pip_info(pair)
-        except PipLookupError:
-            pip_value = DEFAULT_PIP_VALUE
-            pip_mult = 10_000.0
+        # Fail closed: an unconfigured pair raises PipLookupError instead of sizing with a default.
+        pip_value, pip_mult = get_pip_info(pair)
 
         pips_at_risk = abs(entry_price - stop_loss_price) * pip_mult
         risk_amount = effective_balance * risk_percent

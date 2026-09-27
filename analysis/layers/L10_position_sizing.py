@@ -86,42 +86,8 @@ _PIP_MULTIPLIERS: Final[dict[str, float]] = {
 _PIP_MULT_JPY: Final = 100.0
 _PIP_MULT_STANDARD: Final = 10_000.0
 
-# Pip value per standard lot (1.0 lot), USD-denominated accounts.
-# For non-USD accounts the caller must apply a conversion rate.
-
-PIP_VALUES_USD: Final[dict[str, float]] = {
-    # Majors
-    "EURUSD": 10.0,
-    "GBPUSD": 10.0,
-    "AUDUSD": 10.0,
-    "NZDUSD": 10.0,
-    "USDJPY": 6.67,
-    "USDCHF": 10.0,
-    "USDCAD": 7.50,
-    # Crosses
-    "GBPJPY": 6.67,
-    "EURJPY": 6.67,
-    "EURGBP": 12.50,
-    "AUDJPY": 6.67,
-    "NZDJPY": 6.67,
-    "CADJPY": 6.67,
-    "CHFJPY": 6.67,
-    "EURAUD": 6.50,
-    "EURNZD": 6.00,
-    "EURCAD": 7.50,
-    "GBPAUD": 6.50,
-    "GBPNZD": 6.00,
-    "GBPCAD": 7.50,
-    "GBPCHF": 10.0,
-    "AUDNZD": 6.00,
-    "AUDCAD": 7.50,
-    "NZDCAD": 7.50,
-    # Metals
-    "XAUUSD": 10.0,  # 100 oz × $0.10/pip = $10/pip per lot
-    "XAGUSD": 50.0,  # 5000 oz × $0.01/pip = $50/pip per lot
-}
-
-_DEFAULT_PIP_VALUE: Final = 10.0
+# Pip values come from config.pip_values (single source of truth, USD-denominated accounts).
+# An unconfigured pair fails closed; there is no default pip value.
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -176,14 +142,16 @@ def _get_pip_multiplier(pair: str) -> float:
 
 
 def _get_pip_value(pair: str) -> tuple[float, bool]:
-    """Return (pip_value_per_lot, is_approximate).
+    """Return (pip_value_per_lot, missing).
 
-    ``is_approximate=True`` when using fallback default.
+    ``missing=True`` when the pair has no configured pip value; the caller must fail closed.
     """
-    p = pair.upper()
-    if p in PIP_VALUES_USD:
-        return PIP_VALUES_USD[p], False
-    return _DEFAULT_PIP_VALUE, True
+    from config.pip_values import PipLookupError, get_pip_value
+
+    try:
+        return get_pip_value(pair), False
+    except PipLookupError:
+        return 0.0, True
 
 
 def _classify_rr(rr: float) -> str:
@@ -434,10 +402,11 @@ class L10PositionAnalyzer:
         # ── PHASE 3: Pip calculations ────────────────────────────────
 
         pip_mult = _get_pip_multiplier(pair)
-        pip_value, pip_approx = _get_pip_value(pair)
+        pip_value, pip_missing = _get_pip_value(pair)
 
-        if pip_approx:
-            degraded.append("pip_value_approximate")
+        if pip_missing:
+            degraded.append("pip_value_not_configured")
+            warnings.append("PIP_VALUE_NOT_CONFIGURED")
 
         if entry > 0 and sl > 0:
             sl_pips = abs(entry - sl) * pip_mult
@@ -552,7 +521,7 @@ class L10PositionAnalyzer:
             lot_size = _LOT_MIN
         else:
             risk_amount = round(account_balance * (adjusted_risk_pct / 100.0), 2)
-            lot_size = _compute_lot_size(risk_amount, sl_pips, pip_value)
+            lot_size = 0.0 if pip_missing else _compute_lot_size(risk_amount, sl_pips, pip_value)
 
         # ── PHASE 8: Prop firm compliance ────────────────────────────
 
@@ -567,7 +536,7 @@ class L10PositionAnalyzer:
 
         # ── PHASE 9: Final decision gates ────────────────────────────
 
-        valid = sl_pips > 0 and direction is not None
+        valid = sl_pips > 0 and direction is not None and not pip_missing
         geometry_ok = valid and len(geom_warnings) == 0
         risk_ok = adjusted_risk_pct <= _MAX_RISK_PCT and rr_ratio >= _PROP_MIN_RR
         prop_ok = len(prop_violations) == 0

@@ -35,7 +35,7 @@ from accounts.account_model import (
     RiskMode,
     RiskSeverity,
 )
-from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
+from config.pip_values import PipLookupError, get_pip_info
 from propfirm_manager.profile_manager import PropFirmManager
 
 logger = logging.getLogger(__name__)
@@ -116,8 +116,17 @@ class RiskMultiplierAggregator:
         try:
             pip_val, pip_mult = get_pip_info(signal.pair)
         except PipLookupError:
-            pip_val = DEFAULT_PIP_VALUE
-            pip_mult = 10_000.0
+            # Fail closed: never size with a default pip value.
+            return RiskCalculationResult(
+                trade_allowed=False,
+                recommended_lot=0.0,
+                max_safe_lot=0.0,
+                risk_used_percent=0.0,
+                daily_dd_after=account_state.daily_dd_percent,
+                total_dd_after=account_state.total_dd_percent,
+                severity=RiskSeverity.CRITICAL,
+                reason=f"PIP_VALUE_NOT_CONFIGURED: {signal.pair}",
+            )
 
         # ── 2. SL distance ───────────────────────────────────────────────────
         sl_pips = abs(signal.entry - signal.stop_loss) * pip_mult
