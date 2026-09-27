@@ -527,11 +527,38 @@ def test_doc_failure_vocabulary_equals_contract():
     assert _block("r9-envelope-failure-reasons") == list(R9_FAILURE_REASONS_V1)
 
 
-def test_doc_declares_draft_and_inactive():
+FROZEN_SCHEMA_SHA256 = "10732eebab7e8a3a9270be6d378689e6160bd7a8087520ee2d86bf156e7588a2"
+FROZEN_NORMATIVE_SPAN_SHA256 = "c9663fa7a752baa8f8723ef0241980d7fc9a55938ff480dc5703564e4e31b96f"
+
+
+def test_doc_declares_frozen_and_inactive():
     text = DOC.read_text(encoding="utf-8")
-    assert "- status: DRAFT_FOR_OWNER_FREEZE\n" in text
+    assert "- status: FROZEN\n" in text
     assert "- runtime_activation: false " in text
-    assert "- envelope_status: NOT_FROZEN " in text
+    assert "- envelope_status: FROZEN " in text
+    assert "NOT_FROZEN" not in text
+
+
+def test_frozen_sections_are_byte_identical_to_the_owner_frozen_bytes():
+    """The freeze successor changes metadata only; sections 1-7 are pinned by the span of the frozen bytes."""
+
+    raw = DOC.read_bytes()
+    span = raw[raw.index(b"## 1. Purpose") : raw.index(b"\n## 8. Freeze record")]
+    assert hashlib.sha256(span).hexdigest() == FROZEN_NORMATIVE_SPAN_SHA256
+    text = raw.decode("utf-8")
+    for line in (
+        "frozen_schema_head             = 08c2de61d2ffe2da41ae4d04da8255319310c424",
+        "frozen_schema_blob             = 9a895e34cd1547047e76d2646b3633cdac04cd13",
+        f"frozen_schema_sha256           = {FROZEN_SCHEMA_SHA256}",
+        "frozen_schema_bytes            = 13162",
+        f"frozen_normative_span_sha256   = {FROZEN_NORMATIVE_SPAN_SHA256}",
+        "envelope_status                = FROZEN",
+        "exact_s_final_authority        = verify_r9_envelope_v1 verdict ONLY",
+        "artifact_bytes                 = REQUIRED",
+        "latest_snapshot_fallback       = PROHIBITED",
+    ):
+        assert line + "\n" in text, line
+    assert "A frozen schema is not an R9 PASS" in text
 
 
 def test_doc_is_stored_byte_exact():

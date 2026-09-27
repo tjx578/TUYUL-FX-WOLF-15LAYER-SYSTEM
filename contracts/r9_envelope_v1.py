@@ -1,6 +1,6 @@
 """R9EnvelopeV1: strict envelope over one R9 operator evidence artifact for exact snapshot S.
 
-Status: DRAFT_FOR_OWNER_FREEZE, runtime_activation=false. Source/test only; no runtime path imports it.
+Status: FROZEN by the owner 2026-09-28 (schema doc sha256 10732eeb…, blob 9a895e34…, 13162 bytes); runtime_activation=false.
 Schema document: docs/governance/r9-envelope-v1.md (the two must stay equal; see tests/test_r9_envelope_v1.py).
 
 R9 = identity S -> collect -> import -> ACTIVE readback -> capability -> direct receipt. Every identity and

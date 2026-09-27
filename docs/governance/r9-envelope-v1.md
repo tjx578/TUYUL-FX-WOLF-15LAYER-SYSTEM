@@ -1,8 +1,8 @@
 # R9EnvelopeV1 - exact snapshot S evidence envelope
 
-- status: DRAFT_FOR_OWNER_FREEZE
-- envelope_status: NOT_FROZEN (it becomes FROZEN only when the owner freezes these exact bytes, identified by
-  this file's git blob id and sha256; any byte change after that is a new version, never an edit)
+- status: FROZEN
+- envelope_status: FROZEN (owner freeze 2026-09-28 of the exact predecessor bytes recorded in section 8; any
+  byte change to sections 1-7 is a new version and a new freeze, never an edit)
 - runtime_activation: false (source/test only; no runtime path imports `contracts/r9_envelope_v1.py`)
 - contract: `contracts/r9_envelope_v1.py`
 - tests: `tests/test_r9_envelope_v1.py`
@@ -188,3 +188,33 @@ Q4  REQUIRED - artifact bytes are mandatory (ARTIFACT_BYTES_REQUIRED); the verif
 Q5  ACCEPT STORED - explicitly QUALIFIED_C2_WRAPPER_STATUS / R9-normalized import status, not a main
     canonical status; proven again by the main-side ACTIVE readback.
 ```
+
+## 8. Freeze record (owner, 2026-09-28)
+
+The owner verified the exact bytes below against the GitHub head and froze them. This successor changes
+metadata only: the two header status lines and this section. Sections 1-7 are byte-identical to the frozen
+bytes, pinned by `frozen_normative_span_sha256` (from `## 1.` up to the blank line before `## 8.`).
+
+```text
+frozen_schema_head             = 08c2de61d2ffe2da41ae4d04da8255319310c424
+frozen_schema_blob             = 9a895e34cd1547047e76d2646b3633cdac04cd13
+frozen_schema_sha256           = 10732eebab7e8a3a9270be6d378689e6160bd7a8087520ee2d86bf156e7588a2
+frozen_schema_bytes            = 13162
+frozen_normative_span_sha256   = c9663fa7a752baa8f8723ef0241980d7fc9a55938ff480dc5703564e4e31b96f
+frozen_by                      = OWNER
+frozen_on                      = 2026-09-28
+evidence                       = PR #517 head 08c2de61: CI 40/40, Security Gate PASS; 144 targeted, 199 neighbour,
+                                 mutation 46/46; runtime effect 0
+envelope_status                = FROZEN
+decisions_locked               = Q1, Q2, Q3, Q4, Q5 (section 7)
+exact_s_final_authority        = verify_r9_envelope_v1 verdict ONLY
+artifact_bytes                 = REQUIRED
+latest_snapshot_fallback       = PROHIBITED
+runtime_activation             = FALSE
+risk_authority                 = FALSE
+execution_authority            = FALSE
+broker_effect                  = 0
+```
+
+A frozen schema is not an R9 PASS: `exact_s_accepted` stays FALSE until a real R9 artifact is produced and
+verified by `verify_r9_envelope_v1` with its bytes.
