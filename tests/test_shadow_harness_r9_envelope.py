@@ -155,7 +155,7 @@ def test_pin_cannot_carry_another_freeze() -> None:
 
 def test_evaluator_rejects_a_pin_that_does_not_match_the_policy() -> None:
     loaded, universe = load_real()
-    forged = R9EnvelopePin.model_construct(**(load_pin(loaded).model_dump() | {"frozen_schema_sha256": "0" * 64}))
+    forged = load_pin(loaded).model_copy(update={"frozen_schema_sha256": "0" * 64})
     with pytest.raises(HarnessInputError) as info:
         evaluate_bundle_bytes(
             encode(bundle(loaded, universe)),
