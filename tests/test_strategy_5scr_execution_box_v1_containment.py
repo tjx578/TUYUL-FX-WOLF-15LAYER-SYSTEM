@@ -84,7 +84,8 @@ def test_p5_has_no_existing_production_consumer() -> None:
             source = path.read_text(encoding="utf-8")
             if any(name in source for name in module_names):
                 consumers.append(path.relative_to(ROOT).as_posix())
-    assert consumers == [
+    # rglob order follows the filesystem and differs between runners; the gate is about the set of consumers.
+    assert sorted(consumers) == [
         "analysis/strategy_5scr_tradeplan_candidate_v2.py",
         "storage/strategy_5scr_candidate_c2_shadow_v2_repository.py",
         "storage/strategy_5scr_tradeplan_candidate_v2_repository.py",
