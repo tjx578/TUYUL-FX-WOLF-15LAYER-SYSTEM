@@ -13,11 +13,31 @@ Owner decisions (2026-09-27):
   envelope's ``snapshot_s`` and its ``r9_artifact_sha256`` equals ``envelope.artifact_sha256``. A hash alone
   never passes. ``R9_ENVELOPE_STATUS`` is ``FROZEN``, pinned to the frozen schema sha256; the pin is
   re-verified against ``docs/governance/r9-envelope-v1.md`` at every use (fail closed), and
-  :func:`g6_readiness` is ready only for FROZEN + a holding pin + an accepted verdict + broker truth reconciled.
+  :func:`g6_readiness` is ready only for FROZEN + a holding pin + an accepted verdict + the three D3 candidate
+  bindings + broker truth reconciled.
 - B5: bounded volume-min canary, never increase risk. ``canonical_sized_volume < volume_min`` is
   ``NO_SUBMIT``; otherwise the DEMO submitted volume is exactly the broker ``volume_min``. Volumes are
   ``Decimal`` (floats via ``Decimal(str(x))``), never rounded or quantized, and ``volume_min`` only ever
   comes from broker evidence (``SymbolCapability.volume_min`` of the pinned snapshot), never a constant.
+- D3 (owner, 2026-09-28): three candidate bindings are REQUIRED before G6_READY; each mismatch is a break and
+  ``G6_READY = False`` with its reason (:func:`candidate_binding_failures`). All links are anchored on the R9
+  envelope's exact S and capability. S = the immutable command/reconciliation lineage; a newer latest snapshot S+1
+  is veto authority only and never replaces S.
+
+  * ``SNAPSHOT_BINDING_MISMATCH``: ``R9.snapshot_s.snapshot_id == candidate_manifest.pinned_snapshot_id ==
+    v31_side_ledger.exact_s.exact_s_id == command snapshot id == pinned_snapshot.snapshot_id`` and
+    ``R9.snapshot_s.snapshot_sha256 == candidate_manifest.pinned_snapshot_sha256 == exact_s.exact_s_sha256``. The
+    command carries only the snapshot id: ``guards.risk_snapshot_id`` on ``CommandGuards`` (signal_json) or
+    ``guards.account_snapshot_id`` on ``EngineeringDemoCanaryGuards``; the sha256 is bound via R9 + manifest + ledger.
+  * ``CAPABILITY_BINDING_MISMATCH``: ``R9.capability.volume_min == SymbolCapability.volume_min`` of the pinned S ==
+    the B5 ``volume_min`` input, and ``R9.capability.volume_step == SymbolCapability.volume_step`` of the pinned S,
+    compared as ``Decimal(str(value))``.
+  * ``SYMBOL_CAPABILITY_BINDING_MISMATCH``: ``R9.capability.canonical_symbol == candidate_manifest.canonical_symbol ==
+    command.order.canonical_symbol (== command.source.approved_canonical_symbol)`` and ``R9.capability.broker_symbol
+    == command.order.broker_symbol (== command.source.approved_broker_symbol)``. The source symbol link applies to
+    ``EngineeringDemoCanarySource`` (``approved_*``) and ``ShadowAcceptanceSource`` (``canonical_symbol`` /
+    ``broker_symbol``); the signal_json ``CommandSource`` has no symbol field, so for it the link is not applicable.
+    The symbol binding only qualifies the one candidate on the bounded DEMO/G6 path; it never selects a pair.
 
 Newly defined here (no existing contract): the side-ledger model, the adapted-command provenance digest
 (:func:`evidence_digest` of the broker-adapted ``ExecutionCommandV1`` with its signature excluded), and the
@@ -35,7 +55,16 @@ from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError
 
-from contracts.mt5_execution_protocol import AccountSnapshotV1, CommandGuards, CommandSource, ExecutionCommandV1
+from contracts.mt5_execution_protocol import (
+    AccountSnapshotV1,
+    CommandGuards,
+    CommandSource,
+    EngineeringDemoCanaryGuards,
+    EngineeringDemoCanarySource,
+    ExecutionCommandV1,
+    ShadowAcceptanceSource,
+    SymbolCapability,
+)
 from contracts.r9_envelope_v1 import (
     R9EnvelopeV1,
     R9EnvelopeVerdictV1,
@@ -66,6 +95,18 @@ G6_NOT_READY_R9_ENVELOPE_UNRECOGNIZED: Final = "R9_ENVELOPE_STATUS_UNRECOGNIZED"
 G6_NOT_READY_R9_FROZEN_PIN: Final = "R9_ENVELOPE_FROZEN_PIN_MISMATCH"
 G6_NOT_READY_R9_EXACT_S: Final = "R9_EXACT_S_NOT_ACCEPTED"
 G6_NOT_READY_BROKER_TRUTH: Final = "BROKER_TRUTH_NOT_RECONCILED"
+SNAPSHOT_BINDING_MISMATCH: Final = "SNAPSHOT_BINDING_MISMATCH"
+CAPABILITY_BINDING_MISMATCH: Final = "CAPABILITY_BINDING_MISMATCH"
+SYMBOL_CAPABILITY_BINDING_MISMATCH: Final = "SYMBOL_CAPABILITY_BINDING_MISMATCH"
+# D3 bindings in G6 precedence order.
+CANDIDATE_BINDING_REASONS: Final = (
+    SNAPSHOT_BINDING_MISMATCH,
+    CAPABILITY_BINDING_MISMATCH,
+    SYMBOL_CAPABILITY_BINDING_MISMATCH,
+)
+CANDIDATE_MANIFEST_SCHEMA: Final = "wolf15.demo-canary.candidate-manifest.v1"
+RUNTIME_NOT_MEASURED: Final = "NOT_MEASURED"
+RUNTIME_CANDIDATE_BINDING_FIELDS: Final = ("EA_EX5_SHA256", "EA_PRESET_SHA256", "DEMO_ACCOUNT_BINDING")
 CLAIM_BOUNDARY: Final = {
     "PATH_LABEL": DEMO_PATH_LABEL,
     "EA_NATIVE_V31_SCORECARD": "NOT_PROVEN",
@@ -143,6 +184,25 @@ class V31SideLedgerV1(_Strict):
     volume_reason: Literal["BOUNDED_CANARY_DOWNSIZE_TO_VOLUME_MIN"]
 
 
+class CandidateManifestV1(_Strict):
+    """D3-A/C: the candidate's pinned exact S and symbol, reusing the frozen R9EnvelopeV1 id/sha256 types."""
+
+    schema_version: Literal["wolf15.demo-canary.candidate-manifest.v1"]
+    tradeplan_candidate_id: str = Field(min_length=3, max_length=200)
+    tradeplan_candidate_revision: int = Field(ge=1)
+    canonical_symbol: str = Field(min_length=3, max_length=32)
+    pinned_snapshot_id: SnapshotId
+    pinned_snapshot_sha256: Sha256Hex
+
+
+class RuntimeCandidateBindingV1(_Strict):
+    """Runtime candidate evidence. Each field is ``NOT_MEASURED`` in the report unless supplied here."""
+
+    EA_EX5_SHA256: Sha256Hex | None = None
+    EA_PRESET_SHA256: Sha256Hex | None = None
+    DEMO_ACCOUNT_BINDING: str | None = Field(default=None, min_length=3, max_length=200)
+
+
 def adapted_command_provenance_digest(command: ExecutionCommandV1) -> str:
     """Integrity/provenance digest of the broker-adapted command (signature excluded).
 
@@ -179,10 +239,7 @@ def verify_exact_s(
     verdict = verify_r9_envelope_v1(r9_envelope, r9_artifact_bytes)
     exact_s = ledger.exact_s if ledger is not None else None
     if exact_s is not None:
-        try:
-            model = R9EnvelopeV1.model_validate(r9_envelope)
-        except ValidationError:
-            model = None
+        model = parse_r9_envelope(r9_envelope)
         if model is not None:
             check_exact_s_binding(exact_s, model, refusals)
     measured = exact_s is not None and verdict.exact_s_accepted is True and not refusals
@@ -210,12 +267,20 @@ def r9_envelope_frozen_pin_holds(path: Path | None = None) -> bool:
 
 
 def g6_readiness(
-    r9_envelope_status: str, *, frozen_pin_holds: bool, exact_s_accepted: bool, broker_truth_reconciled: bool
+    r9_envelope_status: str,
+    *,
+    frozen_pin_holds: bool,
+    exact_s_accepted: bool,
+    snapshot_bound: bool,
+    capability_bound: bool,
+    symbol_bound: bool,
+    broker_truth_reconciled: bool,
 ) -> tuple[bool, str]:
     """Exact-S G6 qualification, fail-closed.
 
-    Ready only for ``FROZEN`` with a holding frozen pin, an accepted R9 verifier verdict, and broker truth
-    reconciled. The first failing condition is the reason.
+    Ready only for ``FROZEN`` with a holding frozen pin, an accepted R9 verifier verdict, all three D3 candidate
+    bindings proven (snapshot, capability, symbol), and broker truth reconciled. The first failing condition is the
+    reason; an unproven binding (mismatch or not evaluable) carries that binding's mismatch reason.
     """
 
     if r9_envelope_status == R9_ENVELOPE_NOT_FROZEN:
@@ -226,6 +291,12 @@ def g6_readiness(
         return False, G6_NOT_READY_R9_FROZEN_PIN
     if exact_s_accepted is not True:
         return False, G6_NOT_READY_R9_EXACT_S
+    if snapshot_bound is not True:
+        return False, SNAPSHOT_BINDING_MISMATCH
+    if capability_bound is not True:
+        return False, CAPABILITY_BINDING_MISMATCH
+    if symbol_bound is not True:
+        return False, SYMBOL_CAPABILITY_BINDING_MISMATCH
     if broker_truth_reconciled is not True:
         return False, G6_NOT_READY_BROKER_TRUTH
     return True, G6_READY_REASON
@@ -239,8 +310,10 @@ def bounded_canary_volume(canonical_sized_volume: Decimal, volume_min: Decimal) 
     return SUBMIT_VOLUME_MIN, volume_min
 
 
-def evidence_volume_min(snapshot: AccountSnapshotV1 | None, command: ExecutionCommandV1 | None) -> Decimal | None:
-    """``volume_min`` of the exactly-one pinned-snapshot capability for the command's symbol pair, else ``None``."""
+def evidence_symbol_capability(
+    snapshot: AccountSnapshotV1 | None, command: ExecutionCommandV1 | None
+) -> SymbolCapability | None:
+    """The exactly-one pinned-snapshot ``SymbolCapability`` for the command's symbol pair, else ``None``."""
 
     if snapshot is None or command is None or command.order is None:
         return None
@@ -249,7 +322,144 @@ def evidence_volume_min(snapshot: AccountSnapshotV1 | None, command: ExecutionCo
         for item in snapshot.symbols
         if item.canonical_symbol == command.order.canonical_symbol and item.broker_symbol == command.order.broker_symbol
     ]
-    return evidence_decimal(matches[0].volume_min) if len(matches) == 1 else None
+    return matches[0] if len(matches) == 1 else None
+
+
+def evidence_volume_min(snapshot: AccountSnapshotV1 | None, command: ExecutionCommandV1 | None) -> Decimal | None:
+    """``volume_min`` of the exactly-one pinned-snapshot capability for the command's symbol pair, else ``None``."""
+
+    capability = evidence_symbol_capability(snapshot, command)
+    return None if capability is None else evidence_decimal(capability.volume_min)
+
+
+def parse_r9_envelope(raw: Any) -> R9EnvelopeV1 | None:
+    """The R9 envelope model for binding (never acceptance: only :func:`verify_exact_s` accepts); ``None`` if invalid."""
+
+    try:
+        return R9EnvelopeV1.model_validate(raw)
+    except ValidationError:
+        return None
+
+
+def command_snapshot_ref(command: ExecutionCommandV1) -> tuple[str, str | None]:
+    """The command's pinned snapshot id and the real field carrying it (the command carries no snapshot sha256)."""
+
+    guards = command.guards
+    if isinstance(guards, CommandGuards):
+        return "command.guards.risk_snapshot_id", guards.risk_snapshot_id
+    if isinstance(guards, EngineeringDemoCanaryGuards):
+        return "command.guards.account_snapshot_id", guards.account_snapshot_id
+    return "command.guards", None
+
+
+def command_source_symbols(command: ExecutionCommandV1) -> tuple[str, str | None, str | None] | None:
+    """The source's approved symbol pair as ``(field prefix, canonical, broker)``; ``None`` if the source has none."""
+
+    source = command.source
+    if isinstance(source, EngineeringDemoCanarySource):
+        return "command.source.approved_", source.approved_canonical_symbol, source.approved_broker_symbol
+    if isinstance(source, ShadowAcceptanceSource):
+        return "command.source.", source.canonical_symbol, source.broker_symbol
+    return None  # signal_json CommandSource carries no symbol field
+
+
+def candidate_binding_failures(
+    r9_envelope: R9EnvelopeV1 | None,
+    manifest: CandidateManifestV1 | None,
+    ledger: V31SideLedgerV1,
+    command: ExecutionCommandV1,
+    snapshot: AccountSnapshotV1,
+    b5_volume_min: Decimal | None,
+) -> dict[str, list[str]]:
+    """D3: every link anchored on the R9 envelope's S/capability; ``{reason: [failing link, ...]}`` (empty = bound).
+
+    Fail closed: an invalid envelope or manifest (``None``) or an absent value fails every link it takes part in.
+    The ledger's exact-S links are skipped only when the ledger carries no exact-S (missing evidence, not a mismatch).
+    """
+
+    s = r9_envelope.snapshot_s if r9_envelope is not None else None
+    capability = r9_envelope.capability if r9_envelope is not None else None
+    s_id = s.snapshot_id if s is not None else None
+    s_sha = s.snapshot_sha256 if s is not None else None
+    order = command.order
+    pinned_capability = evidence_symbol_capability(snapshot, command)
+    command_ref, command_snapshot_id = command_snapshot_ref(command)
+    snapshot_links: list[tuple[str, Any, Any]] = [
+        ("candidate_manifest.pinned_snapshot_id", s_id, manifest.pinned_snapshot_id if manifest else None),
+        ("candidate_manifest.pinned_snapshot_sha256", s_sha, manifest.pinned_snapshot_sha256 if manifest else None),
+        (command_ref, s_id, command_snapshot_id),
+        ("pinned_snapshot.snapshot_id", s_id, snapshot.snapshot_id),
+    ]
+    if ledger.exact_s is not None:
+        snapshot_links += [
+            ("v31_side_ledger.exact_s.exact_s_id", s_id, ledger.exact_s.exact_s_id),
+            ("v31_side_ledger.exact_s.exact_s_sha256", s_sha, ledger.exact_s.exact_s_sha256),
+        ]
+    r9_volume_min = evidence_decimal(capability.volume_min) if capability is not None else None
+    r9_volume_step = evidence_decimal(capability.volume_step) if capability is not None else None
+    capability_links: list[tuple[str, Any, Any]] = [
+        (
+            "pinned_snapshot.symbols.volume_min",
+            r9_volume_min,
+            evidence_decimal(pinned_capability.volume_min) if pinned_capability is not None else None,
+        ),
+        ("b5.volume_min", r9_volume_min, b5_volume_min),
+        (
+            "pinned_snapshot.symbols.volume_step",
+            r9_volume_step,
+            evidence_decimal(pinned_capability.volume_step) if pinned_capability is not None else None,
+        ),
+    ]
+    r9_canonical = capability.canonical_symbol if capability is not None else None
+    r9_broker = capability.broker_symbol if capability is not None else None
+    symbol_links: list[tuple[str, Any, Any]] = [
+        ("candidate_manifest.canonical_symbol", r9_canonical, manifest.canonical_symbol if manifest else None),
+        ("command.order.canonical_symbol", r9_canonical, order.canonical_symbol if order is not None else None),
+        ("command.order.broker_symbol", r9_broker, order.broker_symbol if order is not None else None),
+    ]
+    source_symbols = command_source_symbols(command)
+    if source_symbols is not None:
+        prefix, source_canonical, source_broker = source_symbols
+        symbol_links += [
+            (prefix + "canonical_symbol", r9_canonical, source_canonical),
+            (prefix + "broker_symbol", r9_broker, source_broker),
+        ]
+    groups = (
+        (SNAPSHOT_BINDING_MISMATCH, snapshot_links),
+        (CAPABILITY_BINDING_MISMATCH, capability_links),
+        (SYMBOL_CAPABILITY_BINDING_MISMATCH, symbol_links),
+    )
+    return {
+        reason: [ref for ref, anchor, value in links if anchor is None or value is None or anchor != value]
+        for reason, links in groups
+    }
+
+
+def runtime_candidate_binding(raw: Any) -> tuple[dict[str, str], bool]:
+    """Report values (``NOT_MEASURED`` unless supplied) and whether the supplied evidence was valid.
+
+    Never a placeholder that looks measured: an absent, invalid, or ``NOT_MEASURED`` value is reported as
+    ``NOT_MEASURED``.
+    """
+
+    values = dict.fromkeys(RUNTIME_CANDIDATE_BINDING_FIELDS, RUNTIME_NOT_MEASURED)
+    if raw is None:
+        return values, True
+    try:
+        model = RuntimeCandidateBindingV1.model_validate(raw)
+    except ValidationError:
+        return values, False
+    for name in RUNTIME_CANDIDATE_BINDING_FIELDS:
+        value = getattr(model, name)
+        if value is not None:
+            values[name] = value
+    return values, True
+
+
+def runtime_candidate_measured(values: dict[str, str]) -> bool:
+    return all(
+        values.get(name, RUNTIME_NOT_MEASURED) != RUNTIME_NOT_MEASURED for name in RUNTIME_CANDIDATE_BINDING_FIELDS
+    )
 
 
 def check_ledger_command_binding(ledger: V31SideLedgerV1, command: ExecutionCommandV1, refusals: set[str]) -> None:
@@ -293,6 +503,9 @@ def check_bounded_volume(
 
 __all__ = [
     "BOUNDED_CANARY_REASON",
+    "CANDIDATE_BINDING_REASONS",
+    "CANDIDATE_MANIFEST_SCHEMA",
+    "CAPABILITY_BINDING_MISMATCH",
     "CLAIM_BOUNDARY",
     "DEMO_PATH_LABEL",
     "EXACT_S_MEASURED",
@@ -310,20 +523,33 @@ __all__ = [
     "R9_ENVELOPE_FROZEN_SCHEMA_SHA256",
     "R9_ENVELOPE_NOT_FROZEN",
     "R9_ENVELOPE_STATUS",
+    "RUNTIME_CANDIDATE_BINDING_FIELDS",
+    "RUNTIME_NOT_MEASURED",
     "SIDE_LEDGER_SCHEMA",
+    "SNAPSHOT_BINDING_MISMATCH",
     "SUBMIT_VOLUME_MIN",
+    "SYMBOL_CAPABILITY_BINDING_MISMATCH",
     "BrokerTruthRefsV1",
+    "CandidateManifestV1",
     "ExactSRefV1",
     "R9EnvelopeVerdictV1",
+    "RuntimeCandidateBindingV1",
     "V31SideLedgerV1",
     "adapted_command_provenance_digest",
     "bounded_canary_volume",
+    "candidate_binding_failures",
     "check_bounded_volume",
     "check_exact_s_binding",
     "check_ledger_command_binding",
+    "command_snapshot_ref",
+    "command_source_symbols",
     "evidence_decimal",
+    "evidence_symbol_capability",
     "evidence_volume_min",
     "g6_readiness",
+    "parse_r9_envelope",
     "r9_envelope_frozen_pin_holds",
+    "runtime_candidate_binding",
+    "runtime_candidate_measured",
     "verify_exact_s",
 ]

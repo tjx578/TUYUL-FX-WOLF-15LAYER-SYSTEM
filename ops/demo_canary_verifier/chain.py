@@ -38,7 +38,17 @@ base64), the verifier verdict over both must accept, and the ledger's exact-S mu
 hash (``side_ledger.verify_exact_s``, the only module that calls the R9 verifier). A missing envelope or missing bytes is
 ``NOT_EXECUTED``/``NOT_MEASURED``; a rejected verdict is an ``R9_EXACT_S_NOT_ACCEPTED`` break. ``G6_READY`` is
 ``True`` only for ``r9_envelope_status == "FROZEN"`` with the frozen pin re-verified against the schema
-document, an accepted verdict, and ``BROKER_TRUTH_RECONCILED``; ``G6_READY_REASON`` names the first failure.
+document, an accepted verdict, the three owner-D3 candidate bindings, and ``BROKER_TRUTH_RECONCILED``;
+``G6_READY_REASON`` names the first failure.
+
+D3 candidate bindings (``side_ledger.candidate_binding_failures``; required ``candidate_manifest`` section, missing is
+``NOT_EXECUTED``): ``SNAPSHOT_BINDING_MISMATCH`` (R9 S == manifest pinned S == ledger exact-S == command snapshot id ==
+pinned snapshot id), ``CAPABILITY_BINDING_MISMATCH`` (R9 volume_min/volume_step == pinned S capability == B5 input,
+as ``Decimal(str(x))``), ``SYMBOL_CAPABILITY_BINDING_MISMATCH`` (R9 symbols == manifest/command order/source symbols).
+Each failing link is a break (hop ``CANDIDATE_BINDING``, ref = the compared field) and makes ``G6_READY`` false with
+that reason. The bound S is the R9 envelope's S; a newer latest snapshot S+1 in the evidence never replaces it.
+``runtime_candidate_binding`` reports ``EA_EX5_SHA256``/``EA_PRESET_SHA256``/``DEMO_ACCOUNT_BINDING`` as
+``NOT_MEASURED`` unless supplied as evidence; ``G6_READY_FOR_DEMO`` needs ``G6_READY`` and all three measured.
 
 Missing evidence never passes: any absent section yields ``NOT_EXECUTED`` values and
 ``BROKER_TRUTH_RECONCILED = False``.
@@ -51,6 +61,7 @@ import binascii
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -70,21 +81,28 @@ from ops.demo_canary_verifier.envelope import (
     envelope_sha256,
 )
 from ops.demo_canary_verifier.side_ledger import (
+    CANDIDATE_BINDING_REASONS,
     CLAIM_BOUNDARY,
     DEMO_PATH_LABEL,
     EXACT_S_MEASURED,
     R9_ENVELOPE_FROZEN_SCHEMA_SHA256,
     R9_ENVELOPE_STATUS,
+    SNAPSHOT_BINDING_MISMATCH,
     BrokerTruthRefsV1,
+    CandidateManifestV1,
     R9EnvelopeVerdictV1,
     V31SideLedgerV1,
     bounded_canary_volume,
+    candidate_binding_failures,
     check_bounded_volume,
     check_ledger_command_binding,
     evidence_decimal,
     evidence_volume_min,
     g6_readiness,
+    parse_r9_envelope,
     r9_envelope_frozen_pin_holds,
+    runtime_candidate_binding,
+    runtime_candidate_measured,
     verify_exact_s,
 )
 from ops.mt5_mcp.reconcile import _fingerprint, _measurement_summary, _record_time
@@ -117,6 +135,14 @@ REQUIRED_SECTIONS: Final = (
     "v31_side_ledger",
     "r9_envelope",
     "r9_artifact_b64",
+    "candidate_manifest",
+)
+CANDIDATE_BINDING_SECTIONS: Final = (
+    "r9_envelope",
+    "candidate_manifest",
+    "v31_side_ledger",
+    "pinned_snapshot",
+    "commands",
 )
 EXACT_S_MISSING: Final = "v31_side_ledger.exact_s"
 R9_ARTIFACT_BYTES_REQUIRED: Final = "ARTIFACT_BYTES_REQUIRED"
@@ -557,9 +583,16 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
                 breaks.add("POSITION_VOLUME_EXCEEDS_COMMAND", "POSITION", ref)
         chains.append({"command_id": ref, "hops": hops})
 
+    snapshot: AccountSnapshotV1 | None = None
+    if evidence.get("pinned_snapshot") is not None:
+        try:
+            snapshot = AccountSnapshotV1.model_validate(evidence.get("pinned_snapshot"))
+        except ValidationError:
+            breaks.add("RECORD_INVALID", "PINNED_SNAPSHOT")
     r9_artifact_bytes = _r9_artifact_bytes(evidence.get("r9_artifact_b64"), breaks)
-    side_ledger, ledger_report, exact_s, r9_verdict = _reconcile_side_ledger(
+    side_ledger, ledger_report, exact_s, r9_verdict, b5_volume_min = _reconcile_side_ledger(
         evidence,
+        snapshot=snapshot,
         by_command=by_command,
         tradeplans=tradeplans,
         decisions=decisions,
@@ -580,6 +613,18 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
     if exact_s != EXACT_S_MEASURED and (side_ledger is None or side_ledger.exact_s is None):
         missing.append(EXACT_S_MISSING)
     ledger_joined: bool | str = NOT_EXECUTED if "v31_side_ledger" in missing else ledger_report["status"] == "JOINED"
+    candidate_binding = _candidate_binding(
+        evidence,
+        missing=missing,
+        ledger=side_ledger,
+        command=by_command.get(side_ledger.command_id) if side_ledger is not None else None,
+        snapshot=snapshot,
+        b5_volume_min=b5_volume_min,
+        breaks=breaks,
+    )
+    runtime_binding, runtime_valid = runtime_candidate_binding(evidence.get("runtime_candidate_binding"))
+    if not runtime_valid:
+        breaks.add("RUNTIME_CANDIDATE_BINDING_INVALID", "RUNTIME_CANDIDATE_BINDING")
 
     canary_orders = sum(len(tickets) for tickets in primary.values()) + sum(
         1 for item in order_refs if item["classification"] == "DUPLICATE_ORDER"
@@ -611,6 +656,9 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
         R9_ENVELOPE_STATUS,
         frozen_pin_holds=frozen_pin_holds,
         exact_s_accepted=r9_verdict is not None and r9_verdict.exact_s_accepted,
+        snapshot_bound=candidate_binding["SNAPSHOT_BINDING"] is True,
+        capability_bound=candidate_binding["CAPABILITY_BINDING"] is True,
+        symbol_bound=candidate_binding["SYMBOL_CAPABILITY_BINDING"] is True,
         broker_truth_reconciled=reconciled,
     )
     return {
@@ -638,6 +686,11 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
             "verdict": None if r9_verdict is None else r9_verdict.model_dump(mode="json"),
         },
         "v31_side_ledger": ledger_report,
+        "candidate_binding": candidate_binding,
+        "runtime_candidate_binding": {
+            **runtime_binding,
+            "G6_READY_FOR_DEMO": g6_ready and runtime_candidate_measured(runtime_binding),
+        },
         "missing_evidence": missing,
         "breaks": breaks.as_list(),
         "chains": chains,
@@ -679,6 +732,7 @@ def _r9_artifact_bytes(raw: Any, breaks: _Breaks) -> bytes | None:
 def _reconcile_side_ledger(
     evidence: Mapping[str, Any],
     *,
+    snapshot: AccountSnapshotV1 | None,
     by_command: Mapping[str, ExecutionCommandV1],
     tradeplans: list[TradePlanRefV1],
     decisions: list[RiskDecisionRefV1],
@@ -690,33 +744,27 @@ def _reconcile_side_ledger(
     broker_measured: bool,
     r9_artifact_bytes: bytes | None,
     breaks: _Breaks,
-) -> tuple[V31SideLedgerV1 | None, dict[str, Any], str, R9EnvelopeVerdictV1 | None]:
+) -> tuple[V31SideLedgerV1 | None, dict[str, Any], str, R9EnvelopeVerdictV1 | None, Decimal | None]:
     """B1: the side ledger joins the chain by explicit identifiers. B5: bounded volume-min canary.
 
     Exact-S comes only from :func:`verify_exact_s` (the frozen R9 verifier verdict over the envelope and its artifact
-    bytes, plus the ledger's exact binding to that envelope). Returns ``(ledger, report, exact_s, r9_verdict)``.
+    bytes, plus the ledger's exact binding to that envelope). Returns ``(ledger, report, exact_s, r9_verdict,
+    b5_volume_min)``; ``b5_volume_min`` is the exact value B5 was checked against (pinned S only).
     """
 
     report: dict[str, Any] = {"status": NOT_EXECUTED, "ledger_sha256": None, "volume_decision": None}
     r9_envelope = evidence.get("r9_envelope")
-    snapshot: AccountSnapshotV1 | None = None
-    raw_snapshot = evidence.get("pinned_snapshot")
-    if raw_snapshot is not None:
-        try:
-            snapshot = AccountSnapshotV1.model_validate(raw_snapshot)
-        except ValidationError:
-            breaks.add("RECORD_INVALID", "PINNED_SNAPSHOT")
     raw = evidence.get("v31_side_ledger")
     if raw is None:
         state, verdict, _ = verify_exact_s(None, r9_envelope, r9_artifact_bytes)
-        return None, report, state, verdict
+        return None, report, state, verdict, None
     try:
         ledger = V31SideLedgerV1.model_validate(raw)
     except ValidationError:
         breaks.add("V31_SIDE_LEDGER_INVALID", "V31_SIDE_LEDGER")
         report["status"] = "INVALID"
         state, verdict, _ = verify_exact_s(None, r9_envelope, r9_artifact_bytes)
-        return None, report, state, verdict
+        return None, report, state, verdict, None
 
     exact_s, r9_verdict, found = verify_exact_s(ledger, r9_envelope, r9_artifact_bytes)
     command = by_command.get(ledger.command_id)
@@ -780,7 +828,50 @@ def _reconcile_side_ledger(
             "volume_reason": ledger.volume_reason,
         }
     )
-    return ledger, report, exact_s, r9_verdict
+    return ledger, report, exact_s, r9_verdict, volume_min
+
+
+def _candidate_binding(
+    evidence: Mapping[str, Any],
+    *,
+    missing: list[str],
+    ledger: V31SideLedgerV1 | None,
+    command: ExecutionCommandV1 | None,
+    snapshot: AccountSnapshotV1 | None,
+    b5_volume_min: Decimal | None,
+    breaks: _Breaks,
+) -> dict[str, Any]:
+    """Owner D3: the three candidate bindings, each ``True``/``False``/``NOT_EXECUTED`` (never passes when missing).
+
+    The bound S is the R9 envelope's ``snapshot_s``; nothing else in the evidence (e.g. a latest snapshot) replaces it.
+    """
+
+    r9 = parse_r9_envelope(evidence.get("r9_envelope")) if evidence.get("r9_envelope") is not None else None
+    manifest: CandidateManifestV1 | None = None
+    if evidence.get("candidate_manifest") is not None:
+        try:
+            manifest = CandidateManifestV1.model_validate(evidence.get("candidate_manifest"))
+        except ValidationError:
+            breaks.add("CANDIDATE_MANIFEST_INVALID", "CANDIDATE_MANIFEST")
+    if manifest is not None and ledger is not None:
+        plan_key = (ledger.tradeplan_candidate_id, ledger.tradeplan_candidate_revision)
+        if (manifest.tradeplan_candidate_id, manifest.tradeplan_candidate_revision) != plan_key:
+            breaks.add("CANDIDATE_MANIFEST_CANDIDATE_MISMATCH", "CANDIDATE_MANIFEST")
+    result: dict[str, Any] = {reason.removesuffix("_MISMATCH"): NOT_EXECUTED for reason in CANDIDATE_BINDING_REASONS}
+    result["bound_snapshot_s"] = None if r9 is None else r9.snapshot_s.model_dump(mode="json")
+    if ledger is None or command is None or snapshot is None:
+        return result
+    if any(name in missing for name in CANDIDATE_BINDING_SECTIONS):
+        return result
+    failures = candidate_binding_failures(r9, manifest, ledger, command, snapshot, b5_volume_min)
+    for reason, refs in failures.items():
+        for ref in refs:
+            breaks.add(reason, "CANDIDATE_BINDING", ref)
+        bound: bool | str = not refs
+        if bound is True and reason == SNAPSHOT_BINDING_MISMATCH and ledger.exact_s is None:
+            bound = NOT_EXECUTED  # the ledger's exact-S is missing evidence, never a pass
+        result[reason.removesuffix("_MISMATCH")] = bound
+    return result
 
 
 def _safe_digest(value: Mapping[str, Any]) -> str | None:

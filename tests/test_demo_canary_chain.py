@@ -14,6 +14,14 @@ from typing import Any
 
 import pytest
 
+from contracts.mt5_execution_protocol import (
+    ENGINEERING_DEMO_CANARY_MAGIC,
+    AccountSnapshotV1,
+    ExecutionCommandV1,
+    MarginMode,
+    ShadowAcceptanceGuards,
+    ShadowAcceptanceSource,
+)
 from ops.demo_canary_verifier import side_ledger as side_ledger_module
 from ops.demo_canary_verifier.__main__ import main
 from ops.demo_canary_verifier.chain import (
@@ -25,17 +33,23 @@ from ops.demo_canary_verifier.chain import (
 )
 from ops.demo_canary_verifier.envelope import ENVELOPE_V1_SHA256, load_envelope
 from ops.demo_canary_verifier.side_ledger import (
+    CANDIDATE_MANIFEST_SCHEMA,
     NO_SUBMIT,
     R9_ENVELOPE_DOC_PATH,
     R9_ENVELOPE_FROZEN_SCHEMA_SHA256,
     R9_ENVELOPE_STATUS,
     SUBMIT_VOLUME_MIN,
     BrokerTruthRefsV1,
+    CandidateManifestV1,
     ExactSRefV1,
     V31SideLedgerV1,
     bounded_canary_volume,
+    candidate_binding_failures,
+    command_snapshot_ref,
+    command_source_symbols,
     evidence_decimal,
     g6_readiness,
+    parse_r9_envelope,
     r9_envelope_frozen_pin_holds,
 )
 from ops.mt5_mcp.reconcile import _fingerprint
@@ -44,6 +58,7 @@ from tests.test_demo_canary_envelope import (
     BROKER_SYMBOL,
     COMMAND_ID,
     EXACT_S,
+    EXACT_S_SNAPSHOT_SHA256,
     EXECUTOR_ID,
     MAGIC,
     R9_ARTIFACT,
@@ -232,6 +247,20 @@ def evidence(**overrides: Any) -> dict[str, Any]:
         "v31_side_ledger": chain_ledger(),
         "r9_envelope": r9_envelope(),
         "r9_artifact_b64": R9_ARTIFACT_B64,
+        "candidate_manifest": candidate_manifest(),
+    }
+    payload.update(overrides)
+    return payload
+
+
+def candidate_manifest(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "schema_version": CANDIDATE_MANIFEST_SCHEMA,
+        "tradeplan_candidate_id": TRADEPLAN_ID,
+        "tradeplan_candidate_revision": 3,
+        "canonical_symbol": "EURUSD",
+        "pinned_snapshot_id": SNAPSHOT_ID,
+        "pinned_snapshot_sha256": EXACT_S_SNAPSHOT_SHA256,
     }
     payload.update(overrides)
     return payload
@@ -243,6 +272,10 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
 
 def codes(report: dict[str, Any]) -> set[str]:
     return set(iter_break_codes(report))
+
+
+def _break_triples(report: dict[str, Any]) -> set[tuple[str, str, str]]:
+    return {(item["code"], item["hop"], item["ref"]) for item in report["breaks"]}
 
 
 def test_fully_joined_chain_reconciles() -> None:
@@ -520,6 +553,7 @@ def test_strategy_lineage_break_is_reported(overrides: dict[str, Any], code: str
         "v31_side_ledger",
         "r9_envelope",
         "r9_artifact_b64",
+        "candidate_manifest",
     ],
 )
 def test_missing_evidence_is_not_executed_never_pass(section: str) -> None:
@@ -784,22 +818,37 @@ def test_frozen_pin_fails_closed_on_missing_or_unreadable_document(
 
 
 @pytest.mark.parametrize(
-    ("status", "pin", "accepted", "reconciled", "expected"),
+    ("status", "pin", "accepted", "bound", "reconciled", "expected"),
     [
-        ("FROZEN", True, True, True, (True, "READY")),
-        ("NOT_FROZEN", True, True, True, (False, "R9_ENVELOPE_NOT_FROZEN")),
-        ("", True, True, True, (False, "R9_ENVELOPE_STATUS_UNRECOGNIZED")),
-        ("frozen", True, True, True, (False, "R9_ENVELOPE_STATUS_UNRECOGNIZED")),
-        ("FROZEN", False, True, True, (False, "R9_ENVELOPE_FROZEN_PIN_MISMATCH")),
-        ("FROZEN", True, False, True, (False, "R9_EXACT_S_NOT_ACCEPTED")),
-        ("FROZEN", True, True, False, (False, "BROKER_TRUTH_NOT_RECONCILED")),
-        ("FROZEN", False, False, False, (False, "R9_ENVELOPE_FROZEN_PIN_MISMATCH")),
+        ("FROZEN", True, True, (True, True, True), True, (True, "READY")),
+        ("NOT_FROZEN", True, True, (True, True, True), True, (False, "R9_ENVELOPE_NOT_FROZEN")),
+        ("", True, True, (True, True, True), True, (False, "R9_ENVELOPE_STATUS_UNRECOGNIZED")),
+        ("frozen", True, True, (True, True, True), True, (False, "R9_ENVELOPE_STATUS_UNRECOGNIZED")),
+        ("FROZEN", False, True, (True, True, True), True, (False, "R9_ENVELOPE_FROZEN_PIN_MISMATCH")),
+        ("FROZEN", True, False, (True, True, True), True, (False, "R9_EXACT_S_NOT_ACCEPTED")),
+        ("FROZEN", True, True, (False, True, True), True, (False, "SNAPSHOT_BINDING_MISMATCH")),
+        ("FROZEN", True, True, (True, False, True), True, (False, "CAPABILITY_BINDING_MISMATCH")),
+        ("FROZEN", True, True, (True, True, False), True, (False, "SYMBOL_CAPABILITY_BINDING_MISMATCH")),
+        ("FROZEN", True, True, (False, False, False), False, (False, "SNAPSHOT_BINDING_MISMATCH")),
+        ("FROZEN", True, True, (True, False, False), False, (False, "CAPABILITY_BINDING_MISMATCH")),
+        ("FROZEN", True, True, (True, True, "NOT_EXECUTED"), True, (False, "SYMBOL_CAPABILITY_BINDING_MISMATCH")),
+        ("FROZEN", True, True, (True, True, True), False, (False, "BROKER_TRUTH_NOT_RECONCILED")),
+        ("FROZEN", False, False, (False, False, False), False, (False, "R9_ENVELOPE_FROZEN_PIN_MISMATCH")),
+        ("FROZEN", True, False, (False, False, False), False, (False, "R9_EXACT_S_NOT_ACCEPTED")),
     ],
 )
-def test_g6_readiness_requires_frozen_pin_verdict_and_broker_truth(
-    status: str, pin: bool, accepted: bool, reconciled: bool, expected: tuple[bool, str]
+def test_g6_readiness_requires_frozen_pin_verdict_d3_bindings_and_broker_truth(
+    status: str, pin: bool, accepted: bool, bound: tuple[Any, Any, Any], reconciled: bool, expected: tuple[bool, str]
 ) -> None:
-    result = g6_readiness(status, frozen_pin_holds=pin, exact_s_accepted=accepted, broker_truth_reconciled=reconciled)
+    result = g6_readiness(
+        status,
+        frozen_pin_holds=pin,
+        exact_s_accepted=accepted,
+        snapshot_bound=bound[0],
+        capability_bound=bound[1],
+        symbol_bound=bound[2],
+        broker_truth_reconciled=reconciled,
+    )
     assert result == expected
 
 
@@ -895,31 +944,40 @@ def test_r9_verdict_rejection_blocks_exact_s(envelope: Any, reason: str) -> None
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "code"),
+    ("field", "value", "expected_codes", "reason"),
     [
-        ("exact_s_id", "snapshot-other-002", "V31_LEDGER_EXACT_S_ID_MISMATCH"),
-        ("exact_s_sha256", "6" * 64, "V31_LEDGER_EXACT_S_SHA256_MISMATCH"),
-        ("r9_artifact_sha256", "9" * 64, "V31_LEDGER_R9_ARTIFACT_SHA256_MISMATCH"),
+        (
+            "exact_s_id",
+            "snapshot-other-002",
+            {"V31_LEDGER_EXACT_S_ID_MISMATCH", "SNAPSHOT_BINDING_MISMATCH"},
+            "SNAPSHOT_BINDING_MISMATCH",
+        ),
+        (
+            "exact_s_sha256",
+            "6" * 64,
+            {"V31_LEDGER_EXACT_S_SHA256_MISMATCH", "SNAPSHOT_BINDING_MISMATCH"},
+            "SNAPSHOT_BINDING_MISMATCH",
+        ),
+        ("r9_artifact_sha256", "9" * 64, {"V31_LEDGER_R9_ARTIFACT_SHA256_MISMATCH"}, "BROKER_TRUTH_NOT_RECONCILED"),
     ],
 )
-def test_ledger_exact_s_must_be_the_accepted_envelope_s(field: str, value: str, code: str) -> None:
+def test_ledger_exact_s_must_be_the_accepted_envelope_s(
+    field: str, value: str, expected_codes: set[str], reason: str
+) -> None:
     report = run(evidence(v31_side_ledger=chain_ledger(exact_s={**EXACT_S, field: value})))
     assert report["r9_exact_s"]["verdict"]["exact_s_accepted"] is True
-    assert codes(report) == {code}
+    assert codes(report) == expected_codes
     assert report["v31_side_ledger"]["status"] == "BROKEN"
     assert report["acceptance"]["V31_EXACT_S"] == "NOT_MEASURED"
     assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
     assert report["status"] == "NOT_RECONCILED"
-    assert (report["acceptance"]["G6_READY"], report["acceptance"]["G6_READY_REASON"]) == (
-        False,
-        "BROKER_TRUTH_NOT_RECONCILED",
-    )
+    assert (report["acceptance"]["G6_READY"], report["acceptance"]["G6_READY_REASON"]) == (False, reason)
 
 
 def test_exact_s_binding_is_checked_even_when_the_verdict_rejects() -> None:
     ledger = chain_ledger(exact_s={**EXACT_S, "exact_s_id": "snapshot-other-002"})
     report = run(evidence(v31_side_ledger=ledger, r9_artifact_b64=base64.b64encode(b"x").decode("ascii")))
-    assert {"R9_EXACT_S_NOT_ACCEPTED", "V31_LEDGER_EXACT_S_ID_MISMATCH"} == codes(report)
+    assert {"R9_EXACT_S_NOT_ACCEPTED", "V31_LEDGER_EXACT_S_ID_MISMATCH", "SNAPSHOT_BINDING_MISMATCH"} == codes(report)
 
 
 def test_a_different_consistent_r9_artifact_is_accepted_by_its_own_bytes() -> None:
@@ -1059,7 +1117,8 @@ def test_ledger_broker_truth_refs_with_two_joined_orders_are_a_break() -> None:
 
 def test_pinned_snapshot_must_bind_the_command() -> None:
     report = run(evidence(pinned_snapshot=snapshot(snapshot_id="other-snapshot")))
-    assert codes(report) == {"PINNED_SNAPSHOT_BINDING_MISMATCH"}
+    assert codes(report) == {"PINNED_SNAPSHOT_BINDING_MISMATCH", "SNAPSHOT_BINDING_MISMATCH"}
+    assert ("SNAPSHOT_BINDING_MISMATCH", "CANDIDATE_BINDING", "pinned_snapshot.snapshot_id") in _break_triples(report)
 
 
 def test_invalid_pinned_snapshot_is_a_break_and_has_no_volume_min() -> None:
@@ -1146,11 +1205,474 @@ def test_volume_min_is_read_from_the_pinned_snapshot_not_a_constant() -> None:
             pinned_snapshot=pinned,
             v31_side_ledger=ledger,
             broker=broker(history_orders=history, positions=[position_record(volume=0.1)]),
+            r9_envelope=_with("capability", volume_min=0.1, volume_step=0.1),
         )
     )
     assert report["status"] == "RECONCILED", report["breaks"]
     assert report["v31_side_ledger"]["broker_volume_min"] == "0.1"
     assert "DEMO_SUBMITTED_VOLUME_NOT_VOLUME_MIN" in codes(run(evidence(pinned_snapshot=pinned)))
     missing_symbol = run(evidence(pinned_snapshot=snapshot(symbols=[])))
-    assert codes(missing_symbol) == {"BROKER_VOLUME_MIN_EVIDENCE_MISSING"}
+    assert codes(missing_symbol) == {"BROKER_VOLUME_MIN_EVIDENCE_MISSING", "CAPABILITY_BINDING_MISMATCH"}
     assert missing_symbol["v31_side_ledger"]["volume_decision"] is None
+
+
+# ---- Owner D3 (2026-09-28): S, capability and symbol bindings are REQUIRED before G6_READY ------------------------
+
+BOUND_S = {"snapshot_id": SNAPSHOT_ID, "snapshot_sha256": EXACT_S_SNAPSHOT_SHA256}
+ALL_BOUND = {
+    "SNAPSHOT_BINDING": True,
+    "CAPABILITY_BINDING": True,
+    "SYMBOL_CAPABILITY_BINDING": True,
+    "bound_snapshot_s": BOUND_S,
+}
+OTHER_S_ID = "snapshot-other-002"
+
+
+def _g6(report: dict[str, Any]) -> tuple[bool, str]:
+    return report["acceptance"]["G6_READY"], report["acceptance"]["G6_READY_REASON"]
+
+
+def _assert_d3_break(report: dict[str, Any], reason: str, refs: set[str]) -> None:
+    assert {ref for code, hop, ref in _break_triples(report) if code == reason and hop == "CANDIDATE_BINDING"} == refs
+    assert report["candidate_binding"][reason.removesuffix("_MISMATCH")] is False
+    assert report["status"] == "NOT_RECONCILED"
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert _g6(report) == (False, reason)
+    assert report["runtime_candidate_binding"]["G6_READY_FOR_DEMO"] is False
+
+
+def _command_with_snapshot_id(snapshot_id: str) -> dict[str, Any]:
+    payload = command()
+    payload["guards"]["risk_snapshot_id"] = snapshot_id
+    return payload
+
+
+def _r9_with_s(snapshot_id: str, snapshot_sha256: str) -> dict[str, Any]:
+    identity = {"snapshot_id": snapshot_id, "snapshot_sha256": snapshot_sha256}
+    envelope = r9_envelope(snapshot_s=dict(identity))
+    envelope["collect"] = {**envelope["collect"], "attested_snapshot_identity": dict(identity)}
+    envelope["import"] = {**envelope["import"], "imported_snapshot_identity": dict(identity)}
+    envelope["active_readback"] = {**envelope["active_readback"], "readback_snapshot_identity": dict(identity)}
+    envelope["capability"] = {**envelope["capability"], "snapshot_id": snapshot_id}
+    envelope["direct_receipt"] = {**envelope["direct_receipt"], "snapshot_id": snapshot_id}
+    return envelope
+
+
+def test_d3_all_bindings_consistent_is_g6_ready() -> None:
+    report = run(evidence())
+    assert report["candidate_binding"] == ALL_BOUND
+    assert report["status"] == "RECONCILED"
+    assert _g6(report) == (True, "READY")
+
+
+@pytest.mark.parametrize(
+    ("overrides", "refs", "other_codes"),
+    [
+        (
+            {"candidate_manifest": candidate_manifest(pinned_snapshot_id=OTHER_S_ID)},
+            {"candidate_manifest.pinned_snapshot_id"},
+            set(),
+        ),
+        (
+            {"candidate_manifest": candidate_manifest(pinned_snapshot_sha256="6" * 64)},
+            {"candidate_manifest.pinned_snapshot_sha256"},
+            set(),
+        ),
+        (
+            {"v31_side_ledger": chain_ledger(exact_s={**EXACT_S, "exact_s_id": OTHER_S_ID})},
+            {"v31_side_ledger.exact_s.exact_s_id"},
+            {"V31_LEDGER_EXACT_S_ID_MISMATCH"},
+        ),
+        (
+            {"v31_side_ledger": chain_ledger(exact_s={**EXACT_S, "exact_s_sha256": "6" * 64})},
+            {"v31_side_ledger.exact_s.exact_s_sha256"},
+            {"V31_LEDGER_EXACT_S_SHA256_MISMATCH"},
+        ),
+        (
+            {
+                "commands": [_command_with_snapshot_id(OTHER_S_ID)],
+                "v31_side_ledger": chain_ledger(for_command=_command_with_snapshot_id(OTHER_S_ID)),
+            },
+            {"command.guards.risk_snapshot_id"},
+            {"PINNED_SNAPSHOT_BINDING_MISMATCH"},
+        ),
+        (
+            {"pinned_snapshot": snapshot(snapshot_id=OTHER_S_ID)},
+            {"pinned_snapshot.snapshot_id"},
+            {"PINNED_SNAPSHOT_BINDING_MISMATCH"},
+        ),
+        (
+            # A different, internally consistent (verifier-accepted) R9 S binds nothing else in the lineage.
+            {"r9_envelope": _r9_with_s(OTHER_S_ID, "6" * 64)},
+            {
+                "candidate_manifest.pinned_snapshot_id",
+                "candidate_manifest.pinned_snapshot_sha256",
+                "command.guards.risk_snapshot_id",
+                "pinned_snapshot.snapshot_id",
+                "v31_side_ledger.exact_s.exact_s_id",
+                "v31_side_ledger.exact_s.exact_s_sha256",
+            },
+            {"V31_LEDGER_EXACT_S_ID_MISMATCH", "V31_LEDGER_EXACT_S_SHA256_MISMATCH"},
+        ),
+    ],
+)
+def test_d3a_each_snapshot_link_mismatch_blocks_g6(
+    overrides: dict[str, Any], refs: set[str], other_codes: set[str]
+) -> None:
+    report = run(evidence(**overrides))
+    assert report["r9_exact_s"]["verdict"]["exact_s_accepted"] is True
+    assert codes(report) == {"SNAPSHOT_BINDING_MISMATCH", *other_codes}
+    _assert_d3_break(report, "SNAPSHOT_BINDING_MISMATCH", refs)
+
+
+def test_d3a_bound_s_is_the_r9_s_and_a_latest_snapshot_s_plus_1_never_replaces_it() -> None:
+    """#483: S is the immutable command/reconciliation lineage; a newer latest S+1 is veto authority only."""
+
+    symbols = snapshot()["symbols"]
+    latest = snapshot(
+        snapshot_id="snapshot-latest-002",
+        captured=T0 + timedelta(seconds=5),
+        symbols=[{**symbols[0], "volume_min": 0.02, "volume_step": 0.02}],
+    )
+    baseline = run(evidence())
+    report = run(evidence(latest_snapshot=latest))
+    assert report["candidate_binding"] == ALL_BOUND
+    assert report["candidate_binding"]["bound_snapshot_s"]["snapshot_id"] == SNAPSHOT_ID
+    assert report["v31_side_ledger"]["broker_volume_min"] == "0.01"
+    assert _g6(report) == (True, "READY")
+    assert {**report, "evidence_sha256": None} == {**baseline, "evidence_sha256": None}
+    # Substituting S+1 as the pinned snapshot never re-binds S: it is a snapshot binding break.
+    swapped = run(evidence(pinned_snapshot=latest))
+    assert "SNAPSHOT_BINDING_MISMATCH" in codes(swapped)
+    assert swapped["candidate_binding"]["bound_snapshot_s"] == BOUND_S
+    assert _g6(swapped) == (False, "SNAPSHOT_BINDING_MISMATCH")
+
+
+def _capability_evidence(*, r9_min: Any, r9_step: Any, pinned_min: float = 0.1, pinned_step: float = 0.1) -> dict:
+    symbols = snapshot()["symbols"]
+    pinned = snapshot(symbols=[{**symbols[0], "volume_min": pinned_min, "volume_step": pinned_step}])
+    minimum = command(volume=0.1)
+    return evidence(
+        commands=[minimum],
+        pinned_snapshot=pinned,
+        v31_side_ledger=chain_ledger(for_command=minimum, canonical_sized_volume="0.3", demo_submitted_volume="0.1"),
+        broker=broker(
+            history_orders=[order_record() | {"volume_initial": 0.1}], positions=[position_record(volume=0.1)]
+        ),
+        r9_envelope=_with("capability", volume_min=r9_min, volume_step=r9_step),
+    )
+
+
+@pytest.mark.parametrize(
+    ("r9_min", "r9_step"),
+    [(0.1, 0.1), (Decimal("0.1"), Decimal("0.1")), ("0.10", "0.100")],
+)
+def test_d3b_capability_binding_compares_exact_decimal_of_str(r9_min: Any, r9_step: Any) -> None:
+    """0.1 (binary float) and Decimal("0.1") bind: both compare as Decimal(str(x)) == Decimal("0.1")."""
+
+    report = run(_capability_evidence(r9_min=r9_min, r9_step=r9_step))
+    assert report["status"] == "RECONCILED", report["breaks"]
+    assert report["candidate_binding"]["CAPABILITY_BINDING"] is True
+    assert _g6(report) == (True, "READY")
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "refs", "other_codes"),
+    [
+        ({"r9_min": 0.2, "r9_step": 0.1}, {"pinned_snapshot.symbols.volume_min", "b5.volume_min"}, set()),
+        (
+            {"r9_min": 0.10000000000000002, "r9_step": 0.1},
+            {"pinned_snapshot.symbols.volume_min", "b5.volume_min"},
+            set(),
+        ),
+        ({"r9_min": 0.1, "r9_step": 0.2}, {"pinned_snapshot.symbols.volume_step"}, set()),
+        ({"r9_min": 0.1, "r9_step": 0.1 + 0.2 - 0.2}, {"pinned_snapshot.symbols.volume_step"}, set()),
+        ({"r9_min": 0.1, "r9_step": 0.1, "pinned_step": 0.05}, {"pinned_snapshot.symbols.volume_step"}, set()),
+        (
+            {"r9_min": 0.1, "r9_step": 0.1, "pinned_min": 0.05},
+            {"pinned_snapshot.symbols.volume_min", "b5.volume_min"},
+            {"DEMO_SUBMITTED_VOLUME_EXCEEDS_VOLUME_MIN", "DEMO_SUBMITTED_VOLUME_NOT_VOLUME_MIN"},
+        ),
+    ],
+)
+def test_d3b_each_capability_link_mismatch_blocks_g6(
+    kwargs: dict[str, Any], refs: set[str], other_codes: set[str]
+) -> None:
+    report = run(_capability_evidence(**kwargs))
+    assert report["r9_exact_s"]["verdict"]["exact_s_accepted"] is True
+    assert codes(report) == {"CAPABILITY_BINDING_MISMATCH", *other_codes}
+    _assert_d3_break(report, "CAPABILITY_BINDING_MISMATCH", refs)
+
+
+def _order_symbols(canonical: str, broker_symbol: str) -> dict[str, Any]:
+    symbols = snapshot()["symbols"]
+    payload = command()
+    payload["order"] = {**payload["order"], "canonical_symbol": canonical, "broker_symbol": broker_symbol}
+    return {
+        "commands": [payload],
+        "v31_side_ledger": chain_ledger(for_command=payload),
+        "pinned_snapshot": snapshot(
+            symbols=[{**symbols[0], "canonical_symbol": canonical, "broker_symbol": broker_symbol}]
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("overrides", "refs"),
+    [
+        (
+            {"candidate_manifest": candidate_manifest(canonical_symbol="GBPUSD")},
+            {"candidate_manifest.canonical_symbol"},
+        ),
+        (
+            {"r9_envelope": _with("capability", canonical_symbol="GBPUSD")},
+            {"candidate_manifest.canonical_symbol", "command.order.canonical_symbol"},
+        ),
+        ({"r9_envelope": _with("capability", broker_symbol="EURUSD.b")}, {"command.order.broker_symbol"}),
+        (_order_symbols("GBPUSD", BROKER_SYMBOL), {"command.order.canonical_symbol"}),
+        (_order_symbols("EURUSD", "EURUSD.b"), {"command.order.broker_symbol"}),
+    ],
+)
+def test_d3c_each_symbol_link_mismatch_blocks_g6(overrides: dict[str, Any], refs: set[str]) -> None:
+    report = run(evidence(**overrides))
+    assert report["r9_exact_s"]["verdict"]["exact_s_accepted"] is True
+    assert codes(report) == {"SYMBOL_CAPABILITY_BINDING_MISMATCH"}
+    _assert_d3_break(report, "SYMBOL_CAPABILITY_BINDING_MISMATCH", refs)
+
+
+def _parsed(**overrides: Any) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "r9_envelope": parse_r9_envelope(r9_envelope()),
+        "manifest": CandidateManifestV1.model_validate(candidate_manifest()),
+        "ledger": V31SideLedgerV1.model_validate(chain_ledger()),
+        "command": ExecutionCommandV1.model_validate(command()),
+        "snapshot": AccountSnapshotV1.model_validate(snapshot()),
+        "b5_volume_min": Decimal("0.01"),
+    }
+    values.update(overrides)
+    return values
+
+
+def _canary_command() -> ExecutionCommandV1:
+    payload = command()
+    payload["source"] = {
+        "canary_id": "canary-001",
+        "approved_executor_id": EXECUTOR_ID,
+        "approved_account_id": ACCOUNT_ID,
+        "approved_broker_server": "Broker-Demo",
+        "approved_canonical_symbol": "EURUSD",
+        "approved_broker_symbol": BROKER_SYMBOL,
+    }
+    payload["order"] = {**payload["order"], "magic": ENGINEERING_DEMO_CANARY_MAGIC, "comment_tag": "W15D0:ABCDEF12"}
+    payload["guards"] = {
+        "expected_margin_mode": "HEDGING",
+        "account_snapshot_id": SNAPSHOT_ID,
+        "balance_snapshot": 1000,
+        "equity_snapshot": 1000,
+        "max_spread_points": 25,
+        "max_price_drift_points": 15,
+    }
+    return ExecutionCommandV1.model_validate(payload)
+
+
+def test_d3_binding_function_is_bound_for_consistent_inputs_and_reuses_real_command_fields() -> None:
+    empty = {
+        "SNAPSHOT_BINDING_MISMATCH": [],
+        "CAPABILITY_BINDING_MISMATCH": [],
+        "SYMBOL_CAPABILITY_BINDING_MISMATCH": [],
+    }
+    assert candidate_binding_failures(**_parsed()) == empty
+    canary = _canary_command()
+    assert candidate_binding_failures(**_parsed(command=canary)) == empty
+    assert command_snapshot_ref(canary) == ("command.guards.account_snapshot_id", SNAPSHOT_ID)
+    assert command_snapshot_ref(ExecutionCommandV1.model_validate(command())) == (
+        "command.guards.risk_snapshot_id",
+        SNAPSHOT_ID,
+    )
+    assert command_source_symbols(canary) == ("command.source.approved_", "EURUSD", BROKER_SYMBOL)
+    assert command_source_symbols(ExecutionCommandV1.model_validate(command())) is None  # signal_json: no field
+    shadow = ShadowAcceptanceSource(
+        acceptance_run_id="run-001", phase="A1", canonical_symbol="GBPUSD", broker_symbol="G"
+    )
+    assert command_source_symbols(canary.model_copy(update={"source": shadow})) == ("command.source.", "GBPUSD", "G")
+    shadow_guards = ShadowAcceptanceGuards(
+        expected_margin_mode=MarginMode.HEDGING, account_snapshot_id=SNAPSHOT_ID, balance_snapshot=1, equity_snapshot=1
+    )
+    assert command_snapshot_ref(canary.model_copy(update={"guards": shadow_guards})) == ("command.guards", None)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "ref"),
+    [
+        ("approved_canonical_symbol", "GBPUSD", "command.source.approved_canonical_symbol"),
+        ("approved_broker_symbol", "EURUSD.b", "command.source.approved_broker_symbol"),
+    ],
+)
+def test_d3c_source_approved_symbol_link_is_checked(field: str, value: str, ref: str) -> None:
+    """ExecutionCommandV1 already refuses approved != order at parse time; the binding re-checks it independently."""
+
+    canary = _canary_command()
+    tampered = canary.model_copy(update={"source": canary.source.model_copy(update={field: value})})
+    failures = candidate_binding_failures(**_parsed(command=tampered))
+    assert failures["SYMBOL_CAPABILITY_BINDING_MISMATCH"] == [ref]
+    assert failures["SNAPSHOT_BINDING_MISMATCH"] == failures["CAPABILITY_BINDING_MISMATCH"] == []
+    guards = canary.guards.model_copy(update={"account_snapshot_id": OTHER_S_ID})
+    assert candidate_binding_failures(**_parsed(command=canary.model_copy(update={"guards": guards})))[
+        "SNAPSHOT_BINDING_MISMATCH"
+    ] == ["command.guards.account_snapshot_id"]
+
+
+@pytest.mark.parametrize("b5_volume_min", [Decimal("0.02"), None])
+def test_d3b_b5_volume_min_input_must_be_the_r9_and_pinned_s_volume_min(b5_volume_min: Decimal | None) -> None:
+    failures = candidate_binding_failures(**_parsed(b5_volume_min=b5_volume_min))
+    assert failures["CAPABILITY_BINDING_MISMATCH"] == ["b5.volume_min"]
+
+
+def test_d3_invalid_r9_or_manifest_fails_every_link_closed() -> None:
+    no_r9 = candidate_binding_failures(**_parsed(r9_envelope=None))
+    assert all(no_r9[reason] for reason in no_r9)
+    no_manifest = candidate_binding_failures(**_parsed(manifest=None))
+    assert no_manifest["SNAPSHOT_BINDING_MISMATCH"] == [
+        "candidate_manifest.pinned_snapshot_id",
+        "candidate_manifest.pinned_snapshot_sha256",
+    ]
+    assert no_manifest["SYMBOL_CAPABILITY_BINDING_MISMATCH"] == ["candidate_manifest.canonical_symbol"]
+    assert no_manifest["CAPABILITY_BINDING_MISMATCH"] == []
+    # Absent on both sides is never equal: None == None does not bind.
+    nothing = candidate_binding_failures(
+        **_parsed(
+            r9_envelope=None,
+            manifest=None,
+            b5_volume_min=None,
+            snapshot=AccountSnapshotV1.model_validate(snapshot(symbols=[])),
+        )
+    )
+    assert "candidate_manifest.pinned_snapshot_id" in nothing["SNAPSHOT_BINDING_MISMATCH"]
+    assert nothing["CAPABILITY_BINDING_MISMATCH"] == [
+        "pinned_snapshot.symbols.volume_min",
+        "b5.volume_min",
+        "pinned_snapshot.symbols.volume_step",
+    ]
+    assert "candidate_manifest.canonical_symbol" in nothing["SYMBOL_CAPABILITY_BINDING_MISMATCH"]
+
+
+def test_missing_candidate_manifest_is_not_executed_never_reconciled() -> None:
+    payload = evidence()
+    del payload["candidate_manifest"]
+    report = run(payload)
+    assert report["status"] == NOT_EXECUTED
+    assert report["missing_evidence"] == ["candidate_manifest"]
+    assert report["breaks"] == []
+    assert report["candidate_binding"] == {
+        "SNAPSHOT_BINDING": NOT_EXECUTED,
+        "CAPABILITY_BINDING": NOT_EXECUTED,
+        "SYMBOL_CAPABILITY_BINDING": NOT_EXECUTED,
+        "bound_snapshot_s": BOUND_S,
+    }
+    assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
+    assert _g6(report) == (False, "SNAPSHOT_BINDING_MISMATCH")
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        candidate_manifest(pinned_snapshot_sha256="sha256:" + EXACT_S_SNAPSHOT_SHA256),
+        candidate_manifest(schema_version="wolf15.demo-canary.candidate-manifest.v0"),
+        {**candidate_manifest(), "extra": 1},
+        {key: value for key, value in candidate_manifest().items() if key != "pinned_snapshot_sha256"},
+        ["not", "a", "mapping"],
+    ],
+)
+def test_invalid_candidate_manifest_is_a_break_and_never_binds(manifest: Any) -> None:
+    report = run(evidence(candidate_manifest=manifest))
+    assert codes(report) == {
+        "CANDIDATE_MANIFEST_INVALID",
+        "SNAPSHOT_BINDING_MISMATCH",
+        "SYMBOL_CAPABILITY_BINDING_MISMATCH",
+    }
+    assert report["status"] == "NOT_RECONCILED"
+    assert _g6(report) == (False, "SNAPSHOT_BINDING_MISMATCH")
+
+
+@pytest.mark.parametrize(
+    "overrides", [{"tradeplan_candidate_id": "5scr-plan:" + "f" * 32}, {"tradeplan_candidate_revision": 4}]
+)
+def test_candidate_manifest_must_be_the_ledger_candidate(overrides: dict[str, Any]) -> None:
+    report = run(evidence(candidate_manifest=candidate_manifest(**overrides)))
+    assert codes(report) == {"CANDIDATE_MANIFEST_CANDIDATE_MISMATCH"}
+    assert report["candidate_binding"] == ALL_BOUND
+    assert _g6(report) == (False, "BROKER_TRUTH_NOT_RECONCILED")
+
+
+def test_missing_ledger_exact_s_leaves_the_snapshot_binding_not_executed() -> None:
+    report = run(evidence(v31_side_ledger=chain_ledger(exact_s=None)))
+    assert report["candidate_binding"]["SNAPSHOT_BINDING"] == NOT_EXECUTED
+    assert report["candidate_binding"]["CAPABILITY_BINDING"] is True
+    assert report["candidate_binding"]["SYMBOL_CAPABILITY_BINDING"] is True
+    assert report["breaks"] == []
+    assert _g6(report) == (False, "SNAPSHOT_BINDING_MISMATCH")
+
+
+# ---- runtime candidate binding: NOT_MEASURED unless supplied as evidence -------------------------------------------
+
+RUNTIME = {"EA_EX5_SHA256": "7" * 64, "EA_PRESET_SHA256": "8" * 64, "DEMO_ACCOUNT_BINDING": ACCOUNT_ID}
+
+
+def test_runtime_candidate_binding_defaults_to_not_measured_and_blocks_g6_ready_for_demo() -> None:
+    report = run(evidence())
+    assert _g6(report) == (True, "READY")
+    assert report["runtime_candidate_binding"] == {
+        "EA_EX5_SHA256": "NOT_MEASURED",
+        "EA_PRESET_SHA256": "NOT_MEASURED",
+        "DEMO_ACCOUNT_BINDING": "NOT_MEASURED",
+        "G6_READY_FOR_DEMO": False,
+    }
+
+
+def test_runtime_candidate_binding_all_measured_and_g6_ready_is_ready_for_demo() -> None:
+    report = run(evidence(runtime_candidate_binding=dict(RUNTIME)))
+    assert report["runtime_candidate_binding"] == {**RUNTIME, "G6_READY_FOR_DEMO": True}
+    assert report["status"] == "RECONCILED"
+    not_g6 = run(
+        evidence(
+            runtime_candidate_binding=dict(RUNTIME), candidate_manifest=candidate_manifest(canonical_symbol="GBPUSD")
+        )
+    )
+    assert not_g6["acceptance"]["G6_READY"] is False
+    assert not_g6["runtime_candidate_binding"] == {**RUNTIME, "G6_READY_FOR_DEMO": False}
+
+
+@pytest.mark.parametrize("name", ["EA_EX5_SHA256", "EA_PRESET_SHA256", "DEMO_ACCOUNT_BINDING"])
+def test_each_unmeasured_runtime_binding_blocks_g6_ready_for_demo(name: str) -> None:
+    for supplied in ({k: v for k, v in RUNTIME.items() if k != name}, {**RUNTIME, name: None}):
+        report = run(evidence(runtime_candidate_binding=supplied))
+        assert report["runtime_candidate_binding"][name] == "NOT_MEASURED"
+        assert report["runtime_candidate_binding"]["G6_READY_FOR_DEMO"] is False
+        assert _g6(report) == (True, "READY")
+
+
+def test_runtime_binding_placeholder_value_is_never_measured() -> None:
+    report = run(evidence(runtime_candidate_binding={**RUNTIME, "DEMO_ACCOUNT_BINDING": "NOT_MEASURED"}))
+    assert report["runtime_candidate_binding"]["G6_READY_FOR_DEMO"] is False
+
+
+@pytest.mark.parametrize(
+    "supplied",
+    [
+        {**RUNTIME, "EA_EX5_SHA256": "sha256:" + "7" * 64},
+        {**RUNTIME, "EA_PRESET_SHA256": "X" * 64},
+        {**RUNTIME, "DEMO_ACCOUNT_BINDING": ""},
+        {**RUNTIME, "EXTRA": "1"},
+        "not-a-mapping",
+    ],
+)
+def test_invalid_runtime_binding_is_a_break_and_reports_not_measured(supplied: Any) -> None:
+    report = run(evidence(runtime_candidate_binding=supplied))
+    assert codes(report) == {"RUNTIME_CANDIDATE_BINDING_INVALID"}
+    assert report["runtime_candidate_binding"] == {
+        "EA_EX5_SHA256": "NOT_MEASURED",
+        "EA_PRESET_SHA256": "NOT_MEASURED",
+        "DEMO_ACCOUNT_BINDING": "NOT_MEASURED",
+        "G6_READY_FOR_DEMO": False,
+    }
+    assert report["status"] == "NOT_RECONCILED"
