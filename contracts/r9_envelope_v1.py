@@ -5,7 +5,9 @@ Schema document: docs/governance/r9-envelope-v1.md (the two must stay equal; see
 
 R9 = identity S -> collect -> import -> ACTIVE readback -> capability -> direct receipt. Every identity and
 status name below is reused from the existing reconciliation stack; the document cites file:line for each.
-``exact_s_accepted`` is DERIVED only. It is never an input field: an input that supplies it is rejected.
+``exact_s_accepted`` is DERIVED only and exists only on the verifier verdict (``verify_r9_envelope_v1``), the sole
+final authority because only the verifier holds the source artifact bytes. It is never an input field: an input
+that supplies it is rejected. The envelope itself exposes ``intrinsic_checks_passed`` (every rule except the bytes).
 There is no fallback to a latest snapshot, no default for any field, and a missing component fails closed.
 """
 
@@ -17,7 +19,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Final, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 R9_ENVELOPE_SCHEMA_ID: Final = "wolf15.r9-envelope"
 R9_ENVELOPE_SCHEMA_VERSION: Final = "v1"
@@ -30,6 +32,9 @@ Sha256Hex = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 PrefixedSha256 = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 
 CollectStatus = Literal["MATCHED_FLAT_DEMO"]
+# Q5: QUALIFIED_C2_WRAPPER_STATUS normalized as the R9 import status; NOT a main-repository canonical status. It only
+# says the wrapper finished the import; persistence is proven by the main-side ACTIVE readback (same evidence_id,
+# same payload_sha256, same S).
 ImportStatus = Literal["STORED"]
 ReadbackStatus = Literal["ACTIVE", "REVOKED"]
 CapabilityStatus = Literal["MEASURED", "MEASURED_EMPTY", "NOT_MEASURED"]
@@ -39,6 +44,7 @@ R9FailureReason = Literal[
     "EXACT_S_ACCEPTED_SUPPLIED_BY_INPUT",
     "ENVELOPE_SCHEMA_INVALID",
     "SOURCE_ARTIFACT_NOT_R9",
+    "ARTIFACT_BYTES_REQUIRED",
     "ARTIFACT_SHA256_MISMATCH",
     "COLLECT_SNAPSHOT_IDENTITY_MISMATCH",
     "IMPORT_SNAPSHOT_IDENTITY_MISMATCH",
@@ -49,9 +55,10 @@ R9FailureReason = Literal[
     "ACTIVE_READBACK_PAYLOAD_SHA256_MISMATCH",
     "CAPABILITY_STATUS_NOT_MEASURED",
     "CAPABILITY_EVIDENCE_MISSING",
-    "CAPABILITY_SNAPSHOT_IDENTITY_MISMATCH",
-    "DIRECT_RECEIPT_SNAPSHOT_IDENTITY_MISMATCH",
+    "CAPABILITY_SNAPSHOT_ID_MISMATCH",
+    "DIRECT_RECEIPT_SNAPSHOT_ID_MISMATCH",
     "DIRECT_RECEIPT_PRESENT_WITHOUT_RECEIPT_IDENTITY",
+    "DIRECT_RECEIPT_NOT_RECONCILED",
     "DIRECT_RECEIPT_ABSENT_WITH_RECEIPT_IDENTITY",
 ]
 
@@ -60,6 +67,7 @@ R9_FAILURE_REASONS_V1: Final[tuple[R9FailureReason, ...]] = (
     "EXACT_S_ACCEPTED_SUPPLIED_BY_INPUT",
     "ENVELOPE_SCHEMA_INVALID",
     "SOURCE_ARTIFACT_NOT_R9",
+    "ARTIFACT_BYTES_REQUIRED",
     "ARTIFACT_SHA256_MISMATCH",
     "COLLECT_SNAPSHOT_IDENTITY_MISMATCH",
     "IMPORT_SNAPSHOT_IDENTITY_MISMATCH",
@@ -70,9 +78,10 @@ R9_FAILURE_REASONS_V1: Final[tuple[R9FailureReason, ...]] = (
     "ACTIVE_READBACK_PAYLOAD_SHA256_MISMATCH",
     "CAPABILITY_STATUS_NOT_MEASURED",
     "CAPABILITY_EVIDENCE_MISSING",
-    "CAPABILITY_SNAPSHOT_IDENTITY_MISMATCH",
-    "DIRECT_RECEIPT_SNAPSHOT_IDENTITY_MISMATCH",
+    "CAPABILITY_SNAPSHOT_ID_MISMATCH",
+    "DIRECT_RECEIPT_SNAPSHOT_ID_MISMATCH",
     "DIRECT_RECEIPT_PRESENT_WITHOUT_RECEIPT_IDENTITY",
+    "DIRECT_RECEIPT_NOT_RECONCILED",
     "DIRECT_RECEIPT_ABSENT_WITH_RECEIPT_IDENTITY",
 )
 
@@ -110,8 +119,10 @@ class R9ActiveReadbackV1(_StrictModel):
 
 
 class R9CapabilityV1(_StrictModel):
+    """The capability view is keyed by snapshot_id only; it proves no snapshot_sha256, so it carries none (Q1)."""
+
     status: CapabilityStatus
-    snapshot_identity: R9SnapshotIdentityV1
+    snapshot_id: SnapshotId
     canonical_symbol: Annotated[str, Field(min_length=3, max_length=32)] | None
     broker_symbol: Annotated[str, Field(min_length=1, max_length=64)] | None
     volume_min: Annotated[float, Field(gt=0)] | None
@@ -119,10 +130,14 @@ class R9CapabilityV1(_StrictModel):
 
 
 class R9DirectReceiptV1(_StrictModel):
+    """Keyed by the receipt's source_snapshot_id only (Q1). ABSENT still names the exact S that was queried (Q2);
+    PRESENT must be a reconciled receipt (Q3)."""
+
     status: DirectReceiptStatus
-    snapshot_identity: R9SnapshotIdentityV1
+    snapshot_id: SnapshotId
     reconciliation_id: UUID | None
     receipt_sha256: PrefixedSha256 | None
+    broker_ledger_reconciled: bool | None
 
 
 class R9EnvelopeV1(_StrictModel):
@@ -146,19 +161,30 @@ class R9EnvelopeV1(_StrictModel):
         return value
 
     @property
-    def failure_reasons(self) -> tuple[R9FailureReason, ...]:
-        """Envelope-intrinsic failures (artifact bytes are checked only by verify_r9_envelope_v1)."""
+    def intrinsic_failure_reasons(self) -> tuple[R9FailureReason, ...]:
+        """Envelope-intrinsic failures. Artifact bytes are checked only by verify_r9_envelope_v1."""
         return r9_envelope_failures_v1(self)
 
     @property
-    def exact_s_accepted(self) -> bool:
-        return not self.failure_reasons
+    def intrinsic_checks_passed(self) -> bool:
+        """Never exact-S acceptance: without the artifact bytes there is no final verdict (Q4)."""
+        return not self.intrinsic_failure_reasons
 
 
 class R9EnvelopeVerdictV1(_StrictModel):
+    """The only final exact_s_accepted authority. Accepted implies no failure and verified artifact bytes."""
+
     exact_s_accepted: bool
     failure_reasons: tuple[R9FailureReason, ...]
     artifact_bytes_verified: bool
+
+    @model_validator(mode="after")
+    def _consistent(self) -> R9EnvelopeVerdictV1:
+        if self.exact_s_accepted != (not self.failure_reasons):
+            raise ValueError("VERDICT_ACCEPTANCE_INCONSISTENT")
+        if self.exact_s_accepted and not self.artifact_bytes_verified:
+            raise ValueError("EXACT_S_ACCEPTED_WITHOUT_ARTIFACT_BYTES")
+        return self
 
 
 def _same_s(candidate: R9SnapshotIdentityV1, snapshot_s: R9SnapshotIdentityV1) -> bool:
@@ -185,11 +211,13 @@ def r9_envelope_failures_v1(envelope: R9EnvelopeV1) -> tuple[R9FailureReason, ..
             in (capability.canonical_symbol, capability.broker_symbol, capability.volume_min, capability.volume_step),
             "CAPABILITY_EVIDENCE_MISSING",
         ),
-        (not _same_s(capability.snapshot_identity, s), "CAPABILITY_SNAPSHOT_IDENTITY_MISMATCH"),
-        (not _same_s(receipt.snapshot_identity, s), "DIRECT_RECEIPT_SNAPSHOT_IDENTITY_MISMATCH"),
+        # Q1: the capability and receipt views prove snapshot_id only; the S sha256 is not re-claimed for them.
+        (capability.snapshot_id != s.snapshot_id, "CAPABILITY_SNAPSHOT_ID_MISMATCH"),
+        (receipt.snapshot_id != s.snapshot_id, "DIRECT_RECEIPT_SNAPSHOT_ID_MISMATCH"),
         (receipt.status == "PRESENT" and None in receipt_identity, "DIRECT_RECEIPT_PRESENT_WITHOUT_RECEIPT_IDENTITY"),
+        (receipt.status == "PRESENT" and receipt.broker_ledger_reconciled is not True, "DIRECT_RECEIPT_NOT_RECONCILED"),
         (
-            receipt.status == "ABSENT" and receipt_identity != (None, None),
+            receipt.status == "ABSENT" and receipt_identity + (receipt.broker_ledger_reconciled,) != (None, None, None),
             "DIRECT_RECEIPT_ABSENT_WITH_RECEIPT_IDENTITY",
         ),
     )
@@ -206,10 +234,10 @@ def _verdict(reasons: set[R9FailureReason], *, artifact_bytes_verified: bool) ->
 def verify_r9_envelope_v1(
     envelope: R9EnvelopeV1 | Mapping[str, object], artifact_bytes: bytes | None
 ) -> R9EnvelopeVerdictV1:
-    """Derive exact_s_accepted. Fail closed; never raises on malformed input.
+    """Derive exact_s_accepted, the only final authority. Fail closed; never raises on malformed input.
 
-    ``artifact_bytes`` are the SOURCE R9 evidence artifact bytes (not the envelope). When given, their sha256 must
-    equal ``artifact_sha256``; when None only the sha256 hex format is enforced (by the schema).
+    ``artifact_bytes`` are the SOURCE R9 evidence artifact bytes (not the envelope) and are REQUIRED (Q4): None is
+    ARTIFACT_BYTES_REQUIRED; otherwise their sha256 must equal ``artifact_sha256``.
     """
     if isinstance(envelope, R9EnvelopeV1):
         model = envelope
@@ -222,13 +250,14 @@ def verify_r9_envelope_v1(
             return _verdict({"ENVELOPE_SCHEMA_INVALID"}, artifact_bytes_verified=False)
     else:
         return _verdict({"ENVELOPE_SCHEMA_INVALID"}, artifact_bytes_verified=False)
-    reasons: set[R9FailureReason] = set(model.failure_reasons)
+    reasons: set[R9FailureReason] = set(model.intrinsic_failure_reasons)
     verified = False
-    if artifact_bytes is not None:
-        if isinstance(artifact_bytes, bytes) and hashlib.sha256(artifact_bytes).hexdigest() == model.artifact_sha256:
-            verified = True
-        else:
-            reasons.add("ARTIFACT_SHA256_MISMATCH")
+    if artifact_bytes is None:
+        reasons.add("ARTIFACT_BYTES_REQUIRED")
+    elif isinstance(artifact_bytes, bytes) and hashlib.sha256(artifact_bytes).hexdigest() == model.artifact_sha256:
+        verified = True
+    else:
+        reasons.add("ARTIFACT_SHA256_MISMATCH")
     return _verdict(reasons, artifact_bytes_verified=verified)
 
 
