@@ -17,12 +17,20 @@ The acceptance block contains exactly five flags:
 ``gate_passed`` and ``gate_failures`` are DERIVED only, from those five flags
 (:func:`derive_gate_failures`); a bundle that supplies either is rejected.
 
-Exact-S is a separate *dependent* acceptance (``EXACT_S_ACCEPTED``): it is true
-only when at least one candidate exists and every candidate has exactly one
-``MEASURED`` exact-S bound to an R9 artifact actually supplied to this run.
-Absent or ``NOT_MEASURED`` exact-S can never make it true, and the harness never
-fabricates an exact-S. R9 binding is a raw-bytes sha256 match only
-(``R9_BINDING_MODE``).
+Exact-S is a separate *dependent* acceptance (``EXACT_S_ACCEPTED``). Its only
+authority is the owner-frozen verifier (``R9_BINDING_MODE``)::
+
+    verify_r9_envelope_v1(r9_envelope, r9_artifact_bytes).exact_s_accepted
+
+computed over the R9 envelope JSON and the R9 artifact bytes supplied to this
+run. A missing envelope or missing bytes is never accepted, and a raw-bytes hash
+match alone no longer accepts. ``EXACT_S_ACCEPTED`` is true only when that
+verdict is true, at least one candidate exists, and every candidate has exactly
+one ``MEASURED`` exact-S bound to the verified envelope: ``exact_s_id ==
+snapshot_s.snapshot_id``, ``exact_s_sha256 == snapshot_s.snapshot_sha256`` and
+``r9_artifact_sha256 == artifact_sha256``. The binding can only narrow the
+verifier's verdict, never widen it. Absent or ``NOT_MEASURED`` exact-S can never
+make it true, and the harness never fabricates an exact-S.
 
 ``shadow_acceptance_passed`` is the integration-level final result
 (``FINAL_NATURAL_SHADOW_ACCEPTANCE`` / ``DEMO_PRECONDITION``), DERIVED only
@@ -32,10 +40,9 @@ fabricates an exact-S. R9 binding is a raw-bytes sha256 match only
 
 ``gate_passed`` keeps its five-flag meaning, so ``gate_passed = true`` with
 ``EXACT_S_ACCEPTED = false`` yields ``shadow_acceptance_passed = false``.
-Final SHADOW acceptance additionally requires the frozen R9 artifact envelope
-(``R9_ENVELOPE_REQUIRED_COMPONENTS``). That envelope schema is not frozen yet,
-so the policy pins ``r9_envelope_status = NOT_FROZEN`` and
-``shadow_acceptance_passed`` is false even when the R9 hash matches.
+``r9_envelope_status = FROZEN`` comes from :class:`R9EnvelopePin`, which exists
+only after the schema document passed the policy pin at load (policy 1.4.0);
+a document that is not frozen or does not match the pin rejects the input.
 
 Natural candidates are 0..N per symbol; a symbol without a candidate is
 reported with the policy's no-candidate status (``WAIT``) and nothing is
@@ -44,13 +51,18 @@ fabricated for it.
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from contracts.r9_envelope_v1 import (
+    R9EnvelopeV1,
+    R9EnvelopeVerdictV1,
+    R9SnapshotIdentityV1,
+    verify_r9_envelope_v1,
+)
 from tools.shadow_harness import HARNESS_VERSION
 from tools.shadow_harness.captures import (
     BUNDLE_HEADER_FIELDS,
@@ -80,6 +92,7 @@ from tools.shadow_harness.manifest import (
     HarnessInputError,
     HarnessPolicyV1,
     LoadedPolicy,
+    R9EnvelopePin,
     SymbolUniverse,
     parse_json_strict,
     sha256_hex,
@@ -101,11 +114,20 @@ GATE_FLAG_ORDER: Final[tuple[GateFlag, ...]] = (
     "CROSS_PAIR_CONTAMINATION",
     "BROKER_SUBMIT",
 )
-ExactSEvaluation = Literal["ABSENT", "NOT_MEASURED", "R9_ARTIFACT_NOT_SUPPLIED", "AMBIGUOUS", "R9_BOUND"]
+ExactSEvaluation = Literal[
+    "ABSENT",
+    "AMBIGUOUS",
+    "NOT_MEASURED",
+    "R9_ENVELOPE_NOT_ACCEPTED",
+    "R9_ARTIFACT_NOT_BOUND",
+    "SNAPSHOT_S_NOT_BOUND",
+    "R9_ENVELOPE_BOUND",
+]
+R9EnvelopeInput = Literal["NOT_SUPPLIED", "UNPARSEABLE", "PARSED"]
 
-R9_BINDING_MODE: Final = "R9_ARTIFACT_SHA256_MATCH_ONLY"
-"""Current R9 binding: a MEASURED exact-S binds when its ``r9_artifact_sha256`` equals the raw-bytes sha256
-of an R9 artifact supplied to this run. This is necessary but NOT sufficient for final SHADOW acceptance."""
+R9_BINDING_MODE: Final = "R9_ENVELOPE_V1_VERIFIER_VERDICT_ONLY"
+"""EXACT_S acceptance comes only from ``verify_r9_envelope_v1(envelope, artifact_bytes).exact_s_accepted``
+(frozen ``contracts/r9_envelope_v1.py``). The harness never accepts on a hash match of its own."""
 
 R9_ENVELOPE_REQUIRED_COMPONENTS: Final[tuple[str, ...]] = (
     "source_artifact=R9",
@@ -117,16 +139,14 @@ R9_ENVELOPE_REQUIRED_COMPONENTS: Final[tuple[str, ...]] = (
     "capability_result",
     "direct_receipt_result",
 )
-"""Components the frozen R9 artifact envelope must carry before final SHADOW acceptance can pass.
+"""Components the frozen R9 artifact envelope carries (``R9EnvelopeV1``: source_artifact, artifact_sha256,
+snapshot_s, collect, import, active_readback, capability, direct_receipt). The harness does not redefine the
+envelope; it parses and verifies it only through ``contracts/r9_envelope_v1.py``."""
 
-This is a requirement list, not a schema: the harness does not define or parse the envelope. Until the
-envelope schema is frozen, the policy pins ``r9_envelope_status = NOT_FROZEN`` and no status counts as frozen
-(``R9_ENVELOPE_FROZEN_STATUSES`` is empty), so ``shadow_acceptance_passed`` cannot be true."""
+R9_ENVELOPE_FROZEN_STATUSES: Final[frozenset[str]] = frozenset({"FROZEN"})
+"""``r9_envelope_status`` values that count as a frozen envelope (owner freeze 2026-09-28, pinned at load)."""
 
-R9_ENVELOPE_FROZEN_STATUSES: Final[frozenset[str]] = frozenset()
-"""``r9_envelope_status`` values that count as a frozen envelope. Empty until the envelope schema is frozen."""
-
-R9EnvelopeStatus = Literal["NOT_FROZEN"]
+R9EnvelopeStatus = Literal["FROZEN"]
 ShadowAcceptanceBlocker = Literal["GATE_NOT_PASSED", "EXACT_S_NOT_ACCEPTED", "R9_ENVELOPE_NOT_FROZEN"]
 SHADOW_ACCEPTANCE_BLOCKER_ORDER: Final[tuple[ShadowAcceptanceBlocker, ...]] = (
     "GATE_NOT_PASSED",
@@ -191,8 +211,48 @@ class CandidateExactS(_Frozen):
 
     @model_validator(mode="after")
     def _accepted_is_derived(self) -> CandidateExactS:
-        if self.exact_s_accepted != (self.exact_s_evaluation == "R9_BOUND"):
-            raise ValueError("exact_s_accepted is derived: true only for an R9-bound exact-S")
+        if self.exact_s_accepted != (self.exact_s_evaluation == "R9_ENVELOPE_BOUND"):
+            raise ValueError("exact_s_accepted is derived: true only for an exact-S bound to a verified R9 envelope")
+        return self
+
+
+class R9EnvelopeVerification(_Frozen):
+    """What was supplied for R9 and the frozen verifier's verdict over it.
+
+    ``verdict`` is the output of ``verify_r9_envelope_v1(envelope, artifact_bytes)`` and is ``None`` only when
+    no envelope was supplied. ``exact_s_accepted`` is exactly ``verdict.exact_s_accepted`` (false without a
+    verdict); nothing else can make it true. ``snapshot_s`` / ``envelope_artifact_sha256`` are read from the
+    envelope only when it validates as ``R9EnvelopeV1``.
+    """
+
+    envelope_input: R9EnvelopeInput
+    envelope_input_error: str | None
+    envelope_sha256: str | None = Field(..., pattern=SHA256_PATTERN)
+    artifact_supplied: bool
+    artifact_sha256: str | None = Field(..., pattern=SHA256_PATTERN)
+    verdict: R9EnvelopeVerdictV1 | None
+    snapshot_s: R9SnapshotIdentityV1 | None
+    envelope_artifact_sha256: str | None = Field(..., pattern=SHA256_PATTERN)
+    exact_s_accepted: bool
+
+    @model_validator(mode="after")
+    def _verdict_is_the_only_authority(self) -> R9EnvelopeVerification:
+        if (self.envelope_input == "NOT_SUPPLIED") != (self.envelope_sha256 is None):
+            raise ValueError("envelope_sha256 is present exactly when an envelope was supplied")
+        if (self.envelope_input == "NOT_SUPPLIED") != (self.verdict is None):
+            raise ValueError("the verifier runs on every supplied envelope and on nothing else")
+        if (self.envelope_input == "UNPARSEABLE") != (self.envelope_input_error is not None):
+            raise ValueError("envelope_input_error is present exactly when the envelope is unparseable")
+        if self.artifact_supplied != (self.artifact_sha256 is not None):
+            raise ValueError("artifact_sha256 is present exactly when artifact bytes were supplied")
+        if self.exact_s_accepted != (self.verdict is not None and self.verdict.exact_s_accepted):
+            raise ValueError("exact_s_accepted is the verify_r9_envelope_v1 verdict only")
+        if self.exact_s_accepted and (
+            self.snapshot_s is None
+            or self.envelope_artifact_sha256 is None
+            or self.artifact_sha256 != self.envelope_artifact_sha256
+        ):
+            raise ValueError("an accepted verdict requires the envelope's snapshot_s and its verified artifact bytes")
         return self
 
 
@@ -200,15 +260,31 @@ class ExactSDependentAcceptance(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
     exact_s_accepted: bool = Field(..., alias="EXACT_S_ACCEPTED")
-    rule: Literal["R9_ARTIFACT_BOUND"]
-    supplied_r9_artifact_sha256s: tuple[str, ...]
+    rule: Literal["R9_ENVELOPE_V1_VERIFIED_AND_SNAPSHOT_S_BOUND"]
+    r9_envelope_verification: R9EnvelopeVerification
     candidates: tuple[CandidateExactS, ...]
 
     @model_validator(mode="after")
     def _accepted_is_derived(self) -> ExactSDependentAcceptance:
-        expected = bool(self.candidates) and all(item.exact_s_accepted for item in self.candidates)
+        verification = self.r9_envelope_verification
+        expected = (
+            verification.exact_s_accepted
+            and bool(self.candidates)
+            and all(item.exact_s_accepted for item in self.candidates)
+        )
         if self.exact_s_accepted != expected:
-            raise ValueError("EXACT_S_ACCEPTED is derived: missing or unbound exact-S never passes")
+            raise ValueError("EXACT_S_ACCEPTED is derived: the R9 verifier verdict AND every candidate bound to S")
+        bound = [item for item in self.candidates if item.exact_s_accepted]
+        if bound and not verification.exact_s_accepted:
+            raise ValueError("an exact-S can only bind to an R9 envelope the verifier accepted")
+        s = verification.snapshot_s
+        for item in bound:
+            if s is None or (item.exact_s_id, item.exact_s_sha256, item.r9_artifact_sha256) != (
+                s.snapshot_id,
+                s.snapshot_sha256,
+                verification.envelope_artifact_sha256,
+            ):
+                raise ValueError("a bound exact-S must equal the envelope's snapshot_s and artifact_sha256")
         return self
 
 
@@ -220,7 +296,7 @@ class ShadowAcceptance(BaseModel):
     label: Literal["FINAL_NATURAL_SHADOW_ACCEPTANCE"]
     demo_precondition: bool = Field(..., alias="DEMO_PRECONDITION")
     rule: Literal["GATE_PASSED_AND_EXACT_S_ACCEPTED_AND_R9_ENVELOPE_FROZEN"]
-    r9_binding: Literal["R9_ARTIFACT_SHA256_MATCH_ONLY"]
+    r9_binding: Literal["R9_ENVELOPE_V1_VERIFIER_VERDICT_ONLY"]
     r9_envelope_required_components: tuple[str, ...]
     blockers: tuple[ShadowAcceptanceBlocker, ...]
 
@@ -255,6 +331,7 @@ class ShadowHarnessReport(_Frozen):
     gate_passed: bool
     gate_failures: tuple[GateFlag, ...]
     dependent_acceptance: ExactSDependentAcceptance
+    r9_envelope_pin: R9EnvelopePin
     r9_envelope_status: R9EnvelopeStatus
     shadow_acceptance_passed: bool
     shadow_acceptance: ShadowAcceptance
@@ -274,6 +351,8 @@ class ShadowHarnessReport(_Frozen):
 
     @model_validator(mode="after")
     def _shadow_acceptance_is_derived(self) -> ShadowHarnessReport:
+        if self.r9_envelope_status != self.r9_envelope_pin.envelope_status:
+            raise ValueError("r9_envelope_status is derived from the verified R9 envelope pin")
         blockers = derive_shadow_acceptance_blockers(
             gate_passed=self.gate_passed,
             exact_s_accepted=self.dependent_acceptance.exact_s_accepted,
@@ -351,15 +430,67 @@ def load_bundle_bytes(raw: bytes, loaded: LoadedPolicy, universe: SymbolUniverse
     return bundle
 
 
-def _validated_r9_digests(r9_artifact_sha256s: frozenset[str]) -> tuple[str, ...]:
-    invalid = sorted(item for item in r9_artifact_sha256s if not re.fullmatch(SHA256_PATTERN, item))
-    if invalid:
-        raise HarnessInputError("R9_ARTIFACT_DIGEST_INVALID", "R9 artifact digests must be lowercase sha256 hex")
-    return tuple(sorted(r9_artifact_sha256s))
+def verify_r9_inputs(r9_envelope: bytes | None, r9_artifact: bytes | None) -> R9EnvelopeVerification:
+    """Run the frozen verifier over the supplied R9 envelope JSON bytes and R9 artifact bytes. Never raises.
+
+    The envelope is parsed strictly (duplicate keys / non-finite numbers are unparseable). An unparseable or
+    non-object envelope is still given to the verifier, as an empty object, so the verdict records
+    ``ENVELOPE_SCHEMA_INVALID``; ``r9_artifact`` is passed through as-is (``None`` = ``ARTIFACT_BYTES_REQUIRED``).
+    """
+
+    artifact_sha256 = sha256_hex(r9_artifact) if r9_artifact is not None else None
+    if r9_envelope is None:
+        return R9EnvelopeVerification(
+            envelope_input="NOT_SUPPLIED",
+            envelope_input_error=None,
+            envelope_sha256=None,
+            artifact_supplied=r9_artifact is not None,
+            artifact_sha256=artifact_sha256,
+            verdict=None,
+            snapshot_s=None,
+            envelope_artifact_sha256=None,
+            exact_s_accepted=False,
+        )
+    input_error: str | None = None
+    try:
+        parsed = parse_json_strict(r9_envelope)
+    except HarnessInputError as exc:
+        parsed, input_error = None, exc.code
+    if input_error is None and not isinstance(parsed, Mapping):
+        input_error = "R9_ENVELOPE_NOT_OBJECT"
+    payload: Mapping[str, object] = parsed if input_error is None and isinstance(parsed, Mapping) else {}
+    verdict = verify_r9_envelope_v1(payload, r9_artifact)
+    try:
+        envelope: R9EnvelopeV1 | None = R9EnvelopeV1.model_validate(payload)
+    except ValidationError:
+        envelope = None
+    return R9EnvelopeVerification(
+        envelope_input="UNPARSEABLE" if input_error is not None else "PARSED",
+        envelope_input_error=input_error,
+        envelope_sha256=sha256_hex(r9_envelope),
+        artifact_supplied=r9_artifact is not None,
+        artifact_sha256=artifact_sha256,
+        verdict=verdict,
+        snapshot_s=envelope.snapshot_s if envelope is not None else None,
+        envelope_artifact_sha256=envelope.artifact_sha256 if envelope is not None else None,
+        exact_s_accepted=verdict.exact_s_accepted,
+    )
 
 
-def _exact_s_acceptance(bundle: ShadowCaptureBundle, supplied_r9: tuple[str, ...]) -> ExactSDependentAcceptance:
-    supplied = set(supplied_r9)
+def _bound_evaluation(single: ExactSCapture, verification: R9EnvelopeVerification) -> ExactSEvaluation:
+    """Binding of one MEASURED exact-S to the verified envelope. Only narrows the verifier's verdict."""
+
+    s = verification.snapshot_s
+    if not verification.exact_s_accepted or s is None:
+        return "R9_ENVELOPE_NOT_ACCEPTED"
+    if single.r9_artifact_sha256 != verification.envelope_artifact_sha256:
+        return "R9_ARTIFACT_NOT_BOUND"
+    if (single.exact_s_id, single.exact_s_sha256) != (s.snapshot_id, s.snapshot_sha256):
+        return "SNAPSHOT_S_NOT_BOUND"
+    return "R9_ENVELOPE_BOUND"
+
+
+def _exact_s_acceptance(bundle: ShadowCaptureBundle, verification: R9EnvelopeVerification) -> ExactSDependentAcceptance:
     rows: list[CandidateExactS] = []
     for key in sorted(bundle.captures_by_symbol):
         captures = bundle.captures_by_symbol[key]
@@ -378,10 +509,8 @@ def _exact_s_acceptance(bundle: ShadowCaptureBundle, supplied_r9: tuple[str, ...
                 evaluation = "AMBIGUOUS"
             elif single.exact_s_status == "NOT_MEASURED":
                 evaluation = "NOT_MEASURED"
-            elif single.r9_artifact_sha256 in supplied:
-                evaluation = "R9_BOUND"
             else:
-                evaluation = "R9_ARTIFACT_NOT_SUPPLIED"
+                evaluation = _bound_evaluation(single, verification)
             rows.append(
                 CandidateExactS(
                     symbol=key,
@@ -390,17 +519,33 @@ def _exact_s_acceptance(bundle: ShadowCaptureBundle, supplied_r9: tuple[str, ...
                     exact_s_id=single.exact_s_id if single else None,
                     exact_s_sha256=single.exact_s_sha256 if single else None,
                     r9_artifact_sha256=single.r9_artifact_sha256 if single else None,
-                    exact_s_accepted=evaluation == "R9_BOUND",
+                    exact_s_accepted=evaluation == "R9_ENVELOPE_BOUND",
                 )
             )
     return ExactSDependentAcceptance.model_validate(
         {
-            "EXACT_S_ACCEPTED": bool(rows) and all(row.exact_s_accepted for row in rows),
-            "rule": "R9_ARTIFACT_BOUND",
-            "supplied_r9_artifact_sha256s": supplied_r9,
+            "EXACT_S_ACCEPTED": verification.exact_s_accepted
+            and bool(rows)
+            and all(row.exact_s_accepted for row in rows),
+            "rule": "R9_ENVELOPE_V1_VERIFIED_AND_SNAPSHOT_S_BOUND",
+            "r9_envelope_verification": verification,
             "candidates": rows,
         }
     )
+
+
+def _checked_pin(loaded: LoadedPolicy, pin: R9EnvelopePin) -> R9EnvelopePin:
+    policy = loaded.policy
+    expected = (
+        policy.r9_envelope_schema_relpath,
+        policy.r9_envelope_status,
+        policy.r9_envelope_frozen_schema_sha256,
+        policy.r9_envelope_frozen_normative_span_sha256,
+    )
+    actual = (pin.schema_relpath, pin.envelope_status, pin.frozen_schema_sha256, pin.frozen_normative_span_sha256)
+    if actual != expected:
+        raise HarnessInputError("R9_ENVELOPE_PIN_MISMATCH", "R9 envelope pin does not match this policy")
+    return pin
 
 
 def evaluate_bundle(
@@ -408,13 +553,21 @@ def evaluate_bundle(
     loaded: LoadedPolicy,
     universe: SymbolUniverse,
     *,
+    r9_envelope_pin: R9EnvelopePin,
     bundle_sha256: str,
-    r9_artifact_sha256s: frozenset[str],
+    r9_envelope: bytes | None,
+    r9_artifact: bytes | None,
 ) -> ShadowHarnessReport:
-    """Evaluate one bundle. ``r9_artifact_sha256s`` must be passed explicitly (empty = no R9 artifact supplied)."""
+    """Evaluate one bundle.
+
+    ``r9_envelope_pin`` comes from :func:`tools.shadow_harness.manifest.load_r9_envelope_pin` (verified at load).
+    ``r9_envelope`` (R9 envelope JSON bytes) and ``r9_artifact`` (R9 artifact bytes) must be passed explicitly;
+    ``None`` means not supplied, and then EXACT_S can never be accepted.
+    """
 
     policy = loaded.policy
-    supplied_r9 = _validated_r9_digests(r9_artifact_sha256s)
+    pin = _checked_pin(loaded, r9_envelope_pin)
+    verification = verify_r9_inputs(r9_envelope, r9_artifact)
     isolation = validate_symbol_isolation(bundle, universe)
     contamination = detect_cross_pair_contamination(bundle)
     diagnostics = detect_price_overlap_diagnostics(bundle) + detect_global_evidence_reuse_diagnostics(bundle)
@@ -446,11 +599,11 @@ def evaluate_bundle(
         }
     )
     failures = derive_gate_failures(acceptance, policy)
-    dependent = _exact_s_acceptance(bundle, supplied_r9)
+    dependent = _exact_s_acceptance(bundle, verification)
     blockers = derive_shadow_acceptance_blockers(
         gate_passed=not failures,
         exact_s_accepted=dependent.exact_s_accepted,
-        r9_envelope_frozen=r9_envelope_is_frozen(policy.r9_envelope_status),
+        r9_envelope_frozen=r9_envelope_is_frozen(pin.envelope_status),
     )
 
     return ShadowHarnessReport(
@@ -472,7 +625,8 @@ def evaluate_bundle(
         gate_passed=not failures,
         gate_failures=failures,
         dependent_acceptance=dependent,
-        r9_envelope_status=policy.r9_envelope_status,
+        r9_envelope_pin=pin,
+        r9_envelope_status=pin.envelope_status,
         shadow_acceptance_passed=not blockers,
         shadow_acceptance=ShadowAcceptance.model_validate(
             {
@@ -530,11 +684,19 @@ def evaluate_bundle_bytes(
     loaded: LoadedPolicy,
     universe: SymbolUniverse,
     *,
-    r9_artifact_sha256s: frozenset[str],
+    r9_envelope_pin: R9EnvelopePin,
+    r9_envelope: bytes | None,
+    r9_artifact: bytes | None,
 ) -> ShadowHarnessReport:
     bundle = load_bundle_bytes(raw, loaded, universe)
     return evaluate_bundle(
-        bundle, loaded, universe, bundle_sha256=sha256_hex(raw), r9_artifact_sha256s=r9_artifact_sha256s
+        bundle,
+        loaded,
+        universe,
+        r9_envelope_pin=r9_envelope_pin,
+        bundle_sha256=sha256_hex(raw),
+        r9_envelope=r9_envelope,
+        r9_artifact=r9_artifact,
     )
 
 
@@ -548,6 +710,7 @@ __all__ = [
     "AcceptanceBlock",
     "CandidateExactS",
     "ExactSDependentAcceptance",
+    "R9EnvelopeVerification",
     "ShadowAcceptance",
     "ShadowHarnessReport",
     "SymbolEvaluation",
@@ -557,4 +720,5 @@ __all__ = [
     "evaluate_bundle",
     "evaluate_bundle_bytes",
     "load_bundle_bytes",
+    "verify_r9_inputs",
 ]

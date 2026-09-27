@@ -14,8 +14,11 @@ NON_CANONICAL: it is a harness input format, not a WOLF15 authority object.
 Exact-S is never invented here. An exact-S capture either says
 ``exact_s_status = "NOT_MEASURED"`` (the only honest value before R9) with no
 id/digest, or carries ``exact_s_id`` + ``exact_s_sha256`` together with the
-digest of the R9 artifact they were taken from. Whether that R9 artifact was
-actually supplied is decided by the evaluator, never by the capture.
+digest of the R9 artifact they were taken from. Whether that capture is
+accepted is decided by the evaluator, never by the capture: only the frozen
+``verify_r9_envelope_v1`` verdict over a supplied R9 envelope + artifact bytes
+can accept, and then ``exact_s_id`` / ``exact_s_sha256`` must equal the
+envelope's ``snapshot_s.snapshot_id`` / ``snapshot_s.snapshot_sha256``.
 """
 
 from __future__ import annotations
@@ -75,6 +78,8 @@ BUNDLE_HEADER_FIELDS: Final = (
 )
 DERIVED_REPORT_FIELDS: Final = (
     "DEMO_PRECONDITION",
+    "EXACT_S_ACCEPTED",
+    "exact_s_accepted",
     "gate_failures",
     "gate_passed",
     "r9_envelope_status",
@@ -185,8 +190,11 @@ class ExactSCapture(_CaptureBase):
     """Exact-S evidence for one candidate.
 
     ``NOT_MEASURED`` carries no exact-S id, digest or R9 artifact digest.
-    ``MEASURED`` must carry all three; the evaluator accepts it only when
-    ``r9_artifact_sha256`` matches an R9 artifact actually supplied to the run.
+    ``MEASURED`` must carry all three; the evaluator accepts it only when the
+    supplied R9 envelope + artifact bytes pass ``verify_r9_envelope_v1`` and
+    ``exact_s_id`` / ``exact_s_sha256`` / ``r9_artifact_sha256`` equal the
+    envelope's ``snapshot_s.snapshot_id`` / ``snapshot_s.snapshot_sha256`` /
+    ``artifact_sha256``. A hash match alone never accepts.
     """
 
     capture_kind: Literal["EXACT_S"]

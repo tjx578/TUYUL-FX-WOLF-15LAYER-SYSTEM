@@ -11,6 +11,11 @@ from pydantic import ValidationError
 
 from tests.shadow_harness_helpers import (
     POLICY_PATH,
+    R9_ARTIFACT_BYTES,
+    R9_ARTIFACT_SHA256,
+    S_ID,
+    S_SHA256,
+    bound_exact_s,
     broker_dry_run,
     bundle,
     candidate,
@@ -22,6 +27,7 @@ from tests.shadow_harness_helpers import (
     load_real,
     measured_exact_s,
     natural_chain,
+    r9_envelope,
     risk_dry_run,
     tradeplan,
 )
@@ -40,9 +46,9 @@ from tools.shadow_harness.evaluator import (
     derive_shadow_acceptance_blockers,
     r9_envelope_is_frozen,
 )
-from tools.shadow_harness.manifest import HarnessInputError, sha256_hex
+from tools.shadow_harness.manifest import HarnessInputError
 
-R9 = digest("r9-artifact-bytes")
+R9 = R9_ARTIFACT_SHA256
 
 
 def _rejected(payload: dict[str, Any]) -> str:
@@ -81,44 +87,69 @@ def test_no_candidates_means_no_exact_s_evidence_and_never_accepted() -> None:
     assert report.dependent_acceptance.exact_s_accepted is False
 
 
-def test_measured_exact_s_without_supplied_r9_artifact_is_not_accepted() -> None:
+def test_measured_exact_s_without_supplied_r9_envelope_is_not_accepted() -> None:
     loaded, universe = load_real()
     chain = natural_chain("EURUSD", universe)
-    chain[1] = measured_exact_s("EURUSD", R9)
+    chain[1] = bound_exact_s("EURUSD")
     report = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe)
     row = report.dependent_acceptance.candidates[0]
-    assert (row.exact_s_evaluation, row.exact_s_accepted) == ("R9_ARTIFACT_NOT_SUPPLIED", False)
+    assert (row.exact_s_evaluation, row.exact_s_accepted) == ("R9_ENVELOPE_NOT_ACCEPTED", False)
     assert report.dependent_acceptance.exact_s_accepted is False
-    other = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe, frozenset({digest("other")}))
-    assert other.dependent_acceptance.exact_s_accepted is False
+    # the artifact bytes alone (the old hash-match binding) no longer accept
+    bytes_only = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe, r9_artifact=R9_ARTIFACT_BYTES)
+    assert bytes_only.dependent_acceptance.exact_s_accepted is False
+    assert bytes_only.dependent_acceptance.r9_envelope_verification.verdict is None
 
 
-def test_measured_exact_s_bound_to_supplied_r9_artifact_is_accepted() -> None:
+def test_measured_exact_s_bound_to_verified_r9_envelope_is_accepted() -> None:
     loaded, universe = load_real()
     chain = natural_chain("EURUSD", universe)
-    chain[1] = measured_exact_s("EURUSD", R9)
-    report = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe, frozenset({R9}))
+    chain[1] = bound_exact_s("EURUSD")
+    report = evaluate(
+        bundle(loaded, universe, {"EURUSD": chain}),
+        loaded,
+        universe,
+        r9_envelope=r9_envelope(),
+        r9_artifact=R9_ARTIFACT_BYTES,
+    )
     row = report.dependent_acceptance.candidates[0]
-    assert (row.exact_s_evaluation, row.exact_s_accepted, row.r9_artifact_sha256) == ("R9_BOUND", True, R9)
+    assert (row.exact_s_evaluation, row.exact_s_accepted, row.r9_artifact_sha256) == ("R9_ENVELOPE_BOUND", True, R9)
+    assert (row.exact_s_id, row.exact_s_sha256) == (S_ID, S_SHA256)
     assert report.dependent_acceptance.exact_s_accepted is True
-    assert report.dependent_acceptance.supplied_r9_artifact_sha256s == (R9,)
+    verification = report.dependent_acceptance.r9_envelope_verification
+    assert verification.verdict is not None and verification.verdict.exact_s_accepted is True
+    assert verification.artifact_sha256 == verification.envelope_artifact_sha256 == R9
 
 
 def test_one_unmeasured_candidate_keeps_dependent_acceptance_false() -> None:
     loaded, universe = load_real()
     eur = natural_chain("EURUSD", universe)
-    eur[1] = measured_exact_s("EURUSD", R9)
+    eur[1] = bound_exact_s("EURUSD")
     gbp = natural_chain("GBPUSD", universe)
-    report = evaluate(bundle(loaded, universe, {"EURUSD": eur, "GBPUSD": gbp}), loaded, universe, frozenset({R9}))
-    assert [row.exact_s_evaluation for row in report.dependent_acceptance.candidates] == ["R9_BOUND", "NOT_MEASURED"]
+    report = evaluate(
+        bundle(loaded, universe, {"EURUSD": eur, "GBPUSD": gbp}),
+        loaded,
+        universe,
+        r9_envelope=r9_envelope(),
+        r9_artifact=R9_ARTIFACT_BYTES,
+    )
+    evaluations = [row.exact_s_evaluation for row in report.dependent_acceptance.candidates]
+    assert evaluations == ["R9_ENVELOPE_BOUND", "NOT_MEASURED"]
     assert report.dependent_acceptance.exact_s_accepted is False
 
 
 def test_two_exact_s_for_one_candidate_is_ambiguous_not_accepted() -> None:
     loaded, universe = load_real()
     chain = natural_chain("EURUSD", universe)
-    chain.append(measured_exact_s("EURUSD", R9, capture_id="cap-exact-s-EURUSD-dup", evidence_sha256=digest("dup")))
-    report = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe, frozenset({R9}))
+    chain[1] = bound_exact_s("EURUSD")
+    chain.append(bound_exact_s("EURUSD", capture_id="cap-exact-s-EURUSD-dup", evidence_sha256=digest("dup")))
+    report = evaluate(
+        bundle(loaded, universe, {"EURUSD": chain}),
+        loaded,
+        universe,
+        r9_envelope=r9_envelope(),
+        r9_artifact=R9_ARTIFACT_BYTES,
+    )
     row = report.dependent_acceptance.candidates[0]
     assert (row.exact_s_evaluation, row.exact_s_accepted, row.exact_s_id) == ("AMBIGUOUS", False, None)
 
@@ -158,42 +189,45 @@ def test_exact_s_acceptance_cannot_be_constructed_true_without_r9_binding() -> N
             r9_artifact_sha256=None,
             exact_s_accepted=True,
         )
-    with pytest.raises(ValidationError):
-        ExactSDependentAcceptance.model_validate(
-            {
-                "EXACT_S_ACCEPTED": True,
-                "rule": "R9_ARTIFACT_BOUND",
-                "supplied_r9_artifact_sha256s": [],
-                "candidates": [],
-            }
-        )
-
-
-def test_invalid_r9_digest_is_rejected() -> None:
     loaded, universe = load_real()
-    with pytest.raises(HarnessInputError) as info:
-        evaluate(bundle(loaded, universe), loaded, universe, frozenset({"not-a-digest"}))
-    assert info.value.code == "R9_ARTIFACT_DIGEST_INVALID"
+    report = evaluate(bundle(loaded, universe), loaded, universe).to_json_dict()
+    dependent = report["dependent_acceptance"]
+    assert dependent["r9_envelope_verification"]["envelope_input"] == "NOT_SUPPLIED"
+    with pytest.raises(ValidationError):
+        ExactSDependentAcceptance.model_validate(dependent | {"EXACT_S_ACCEPTED": True})
 
 
-def test_cli_binds_exact_s_to_supplied_r9_artifact_file(tmp_path: Path) -> None:
+def test_cli_binds_exact_s_to_supplied_r9_envelope_and_artifact(tmp_path: Path) -> None:
     loaded, universe = load_real()
     artifact = tmp_path / "r9.bin"
-    artifact.write_bytes(b"r9 artifact bytes")
+    artifact.write_bytes(R9_ARTIFACT_BYTES)
+    envelope = tmp_path / "r9-envelope.json"
+    envelope.write_bytes(encode(r9_envelope()))
     chain = natural_chain("EURUSD", universe)
-    chain[1] = measured_exact_s("EURUSD", sha256_hex(artifact.read_bytes()))
+    chain[1] = bound_exact_s("EURUSD")
     bundle_path = tmp_path / "bundle.json"
     bundle_path.write_bytes(encode(bundle(loaded, universe, {"EURUSD": chain})))
     base = ["--policy", str(POLICY_PATH), "--bundle", str(bundle_path)]
     without = tmp_path / "without.json"
     assert main([*base, "--out", str(without)]) == EXIT_GATE_PASSED
     assert json.loads(without.read_text(encoding="utf-8"))["dependent_acceptance"]["EXACT_S_ACCEPTED"] is False
+    artifact_only = tmp_path / "artifact-only.json"
+    assert main([*base, "--out", str(artifact_only), "--r9-artifact", str(artifact)]) == EXIT_GATE_PASSED
+    assert json.loads(artifact_only.read_text(encoding="utf-8"))["shadow_acceptance_passed"] is False
+    envelope_only = tmp_path / "envelope-only.json"
+    assert main([*base, "--out", str(envelope_only), "--r9-envelope", str(envelope)]) == EXIT_GATE_PASSED
+    written_envelope_only = json.loads(envelope_only.read_text(encoding="utf-8"))
+    verdict = written_envelope_only["dependent_acceptance"]["r9_envelope_verification"]["verdict"]
+    assert verdict["failure_reasons"] == ["ARTIFACT_BYTES_REQUIRED"]
+    assert written_envelope_only["shadow_acceptance_passed"] is False
     with_r9 = tmp_path / "with.json"
-    assert main([*base, "--out", str(with_r9), "--r9-artifact", str(artifact)]) == EXIT_GATE_PASSED
+    argv = [*base, "--out", str(with_r9), "--r9-envelope", str(envelope), "--r9-artifact", str(artifact)]
+    assert main(argv) == EXIT_GATE_PASSED
     written = json.loads(with_r9.read_text(encoding="utf-8"))
     assert written["dependent_acceptance"]["EXACT_S_ACCEPTED"] is True
-    # exit 0 is the five-flag gate only; final SHADOW acceptance stays false while the R9 envelope is not frozen
-    assert (written["shadow_acceptance_passed"], written["r9_envelope_status"]) == (False, "NOT_FROZEN")
+    # exit 0 is the five-flag gate only; final SHADOW acceptance is read from the report
+    assert (written["shadow_acceptance_passed"], written["r9_envelope_status"]) == (True, "FROZEN")
+    assert written["shadow_acceptance"]["DEMO_PRECONDITION"] is True
 
 
 # --- E2: shadow_capture_bundle/v1 header ------------------------------------------------------
@@ -358,6 +392,16 @@ def test_report_rejects_inconsistent_gate(mutation: dict[str, Any]) -> None:
 # --- Final SHADOW acceptance: shadow_acceptance_passed = gate_passed AND EXACT_S_ACCEPTED AND R9 envelope ---
 
 
+def _verified(loaded: Any, universe: Any, captures: dict[str, list[dict[str, Any]]], **kwargs: Any) -> Any:
+    return evaluate(
+        bundle(loaded, universe, captures, **kwargs),
+        loaded,
+        universe,
+        r9_envelope=r9_envelope(),
+        r9_artifact=R9_ARTIFACT_BYTES,
+    )
+
+
 @pytest.mark.parametrize(
     ("gate_passed", "exact_s_accepted", "expected_blockers"),
     [
@@ -370,7 +414,6 @@ def test_report_rejects_inconsistent_gate(mutation: dict[str, Any]) -> None:
 def test_shadow_acceptance_truth_table_with_a_frozen_envelope(
     gate_passed: bool, exact_s_accepted: bool, expected_blockers: tuple[str, ...]
 ) -> None:
-    # A frozen envelope is not producible under policy 1.3.0; this exercises the pure derivation only.
     blockers = derive_shadow_acceptance_blockers(
         gate_passed=gate_passed, exact_s_accepted=exact_s_accepted, r9_envelope_frozen=True
     )
@@ -381,9 +424,9 @@ def test_shadow_acceptance_truth_table_with_a_frozen_envelope(
 def test_not_frozen_envelope_blocks_even_when_gate_and_exact_s_pass() -> None:
     blockers = derive_shadow_acceptance_blockers(gate_passed=True, exact_s_accepted=True, r9_envelope_frozen=False)
     assert blockers == ("R9_ENVELOPE_NOT_FROZEN",)
-    assert not R9_ENVELOPE_FROZEN_STATUSES
+    assert frozenset({"FROZEN"}) == R9_ENVELOPE_FROZEN_STATUSES
     assert r9_envelope_is_frozen("NOT_FROZEN") is False
-    assert r9_envelope_is_frozen("FROZEN") is False  # no status counts as frozen until the schema exists
+    assert r9_envelope_is_frozen("FROZEN") is True
 
 
 def test_gate_passed_with_exact_s_false_is_final_acceptance_false() -> None:
@@ -391,39 +434,40 @@ def test_gate_passed_with_exact_s_false_is_final_acceptance_false() -> None:
     report = evaluate(bundle(loaded, universe, {"EURUSD": natural_chain("EURUSD", universe)}), loaded, universe)
     assert report.gate_passed is True  # unchanged five-flag meaning
     assert report.dependent_acceptance.exact_s_accepted is False
+    assert report.r9_envelope_status == "FROZEN"
     assert report.shadow_acceptance_passed is False
     dumped = report.to_json_dict()
     assert dumped["shadow_acceptance_passed"] is False
     assert dumped["shadow_acceptance"]["label"] == "FINAL_NATURAL_SHADOW_ACCEPTANCE"
     assert dumped["shadow_acceptance"]["DEMO_PRECONDITION"] is False
-    assert dumped["shadow_acceptance"]["blockers"] == ["EXACT_S_NOT_ACCEPTED", "R9_ENVELOPE_NOT_FROZEN"]
+    assert dumped["shadow_acceptance"]["blockers"] == ["EXACT_S_NOT_ACCEPTED"]
 
 
 def test_gate_failed_with_exact_s_true_is_final_acceptance_false() -> None:
     loaded, universe = load_real()
     chain = natural_chain("EURUSD", universe)
-    chain[1] = measured_exact_s("EURUSD", R9)
+    chain[1] = bound_exact_s("EURUSD")
     symbols = tuple(symbol for symbol in universe.symbols if symbol != "AUDCAD")
-    report = evaluate(bundle(loaded, universe, {"EURUSD": chain}, symbols=symbols), loaded, universe, frozenset({R9}))
+    report = _verified(loaded, universe, {"EURUSD": chain}, symbols=symbols)
     assert report.gate_passed is False
     assert report.dependent_acceptance.exact_s_accepted is True
     assert report.shadow_acceptance_passed is False
-    assert report.shadow_acceptance.blockers == ("GATE_NOT_PASSED", "R9_ENVELOPE_NOT_FROZEN")
+    assert report.shadow_acceptance.blockers == ("GATE_NOT_PASSED",)
 
 
-def test_r9_hash_match_without_frozen_envelope_is_final_acceptance_false() -> None:
+def test_verified_envelope_bound_exact_s_and_gate_passed_is_final_acceptance_true() -> None:
     loaded, universe = load_real()
     chain = natural_chain("EURUSD", universe)
-    chain[1] = measured_exact_s("EURUSD", R9)
-    report = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe, frozenset({R9}))
+    chain[1] = bound_exact_s("EURUSD")
+    report = _verified(loaded, universe, {"EURUSD": chain})
     assert report.gate_passed is True
-    assert report.dependent_acceptance.candidates[0].exact_s_evaluation == "R9_BOUND"
+    assert report.dependent_acceptance.candidates[0].exact_s_evaluation == "R9_ENVELOPE_BOUND"
     assert report.dependent_acceptance.exact_s_accepted is True
-    assert report.r9_envelope_status == "NOT_FROZEN"
-    assert report.shadow_acceptance_passed is False
-    assert report.shadow_acceptance.demo_precondition is False
-    assert report.shadow_acceptance.blockers == ("R9_ENVELOPE_NOT_FROZEN",)
-    assert report.shadow_acceptance.r9_binding == R9_BINDING_MODE == "R9_ARTIFACT_SHA256_MATCH_ONLY"
+    assert report.r9_envelope_status == "FROZEN"
+    assert report.shadow_acceptance_passed is True
+    assert report.shadow_acceptance.demo_precondition is True
+    assert report.shadow_acceptance.blockers == ()
+    assert report.shadow_acceptance.r9_binding == R9_BINDING_MODE == "R9_ENVELOPE_V1_VERIFIER_VERDICT_ONLY"
     assert report.shadow_acceptance.r9_envelope_required_components == R9_ENVELOPE_REQUIRED_COMPONENTS
     assert R9_ENVELOPE_REQUIRED_COMPONENTS == (
         "source_artifact=R9",
@@ -435,9 +479,27 @@ def test_r9_hash_match_without_frozen_envelope_is_final_acceptance_false() -> No
         "capability_result",
         "direct_receipt_result",
     )
+    assert ShadowHarnessReport.model_validate(report.to_json_dict()) == report
 
 
-@pytest.mark.parametrize("field", ["shadow_acceptance_passed", "DEMO_PRECONDITION", "r9_envelope_status"])
+def test_r9_hash_match_alone_is_final_acceptance_false() -> None:
+    """The pre-freeze binding (capture r9 digest == sha256 of supplied bytes) no longer accepts anything."""
+
+    loaded, universe = load_real()
+    chain = natural_chain("EURUSD", universe)
+    chain[1] = measured_exact_s("EURUSD", R9)
+    report = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe, r9_artifact=R9_ARTIFACT_BYTES)
+    assert report.gate_passed is True
+    assert report.dependent_acceptance.candidates[0].exact_s_evaluation == "R9_ENVELOPE_NOT_ACCEPTED"
+    assert report.dependent_acceptance.exact_s_accepted is False
+    assert report.shadow_acceptance_passed is False
+    assert report.shadow_acceptance.blockers == ("EXACT_S_NOT_ACCEPTED",)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["shadow_acceptance_passed", "DEMO_PRECONDITION", "r9_envelope_status", "EXACT_S_ACCEPTED", "exact_s_accepted"],
+)
 def test_supplied_final_acceptance_fields_rejected(field: str) -> None:
     loaded, universe = load_real()
     supplied: dict[str, Any] = {field: "FROZEN" if field == "r9_envelope_status" else True}
@@ -460,14 +522,38 @@ def _mutated(original: dict[str, Any], section: str | None, updates: dict[str, A
         ("shadow_acceptance", {"blockers": []}),
         ("shadow_acceptance", {"blockers": ["EXACT_S_NOT_ACCEPTED", "R9_ENVELOPE_NOT_FROZEN"]}),
         ("shadow_acceptance", {"r9_envelope_required_components": ["artifact_sha256"]}),
-        (None, {"r9_envelope_status": "FROZEN"}),
+        ("shadow_acceptance", {"r9_binding": "R9_ARTIFACT_SHA256_MATCH_ONLY"}),
+        (None, {"r9_envelope_status": "NOT_FROZEN"}),
+        ("r9_envelope_pin", {"frozen_schema_sha256": "0" * 64}),
+        ("r9_envelope_pin", {"envelope_status": "NOT_FROZEN"}),
+        ("dependent_acceptance", {"EXACT_S_ACCEPTED": True}),
     ],
 )
 def test_report_rejects_inconsistent_shadow_acceptance(section: str | None, updates: dict[str, Any]) -> None:
     loaded, universe = load_real()
     chain = natural_chain("EURUSD", universe)
-    chain[1] = measured_exact_s("EURUSD", R9)
-    original = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe, frozenset({R9})).to_json_dict()
+    chain[1] = bound_exact_s("EURUSD")
+    original = evaluate(
+        bundle(loaded, universe, {"EURUSD": chain}), loaded, universe, r9_artifact=R9_ARTIFACT_BYTES
+    ).to_json_dict()
     assert ShadowHarnessReport.model_validate(original).shadow_acceptance_passed is False
+    with pytest.raises(ValidationError):
+        ShadowHarnessReport.model_validate(_mutated(original, section, updates))
+
+
+@pytest.mark.parametrize(
+    ("section", "updates"),
+    [
+        (None, {"shadow_acceptance_passed": False}),
+        ("shadow_acceptance", {"blockers": ["EXACT_S_NOT_ACCEPTED"]}),
+        ("dependent_acceptance", {"EXACT_S_ACCEPTED": False}),
+    ],
+)
+def test_report_rejects_inconsistent_accepted_report(section: str | None, updates: dict[str, Any]) -> None:
+    loaded, universe = load_real()
+    chain = natural_chain("EURUSD", universe)
+    chain[1] = bound_exact_s("EURUSD")
+    original = _verified(loaded, universe, {"EURUSD": chain}).to_json_dict()
+    assert ShadowHarnessReport.model_validate(original).shadow_acceptance_passed is True
     with pytest.raises(ValidationError):
         ShadowHarnessReport.model_validate(_mutated(original, section, updates))

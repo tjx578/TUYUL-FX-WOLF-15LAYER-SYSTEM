@@ -57,6 +57,19 @@ PAIR_BINDING_REQUIRED_CAPTURE_KINDS: Final[tuple[str, ...]] = ("CANDIDATE", "TRA
 if set(GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS) & set(GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS):  # pragma: no cover
     raise RuntimeError("a pair-specific strategy capture kind can never be GLOBAL-allowed")
 
+R9_ENVELOPE_SCHEMA_RELPATH: Final = "docs/governance/r9-envelope-v1.md"
+"""Schema document of the owner-frozen ``R9EnvelopeV1`` (PR #517), read read-only at load."""
+
+R9_ENVELOPE_FROZEN_SCHEMA_SHA256: Final = "10732eebab7e8a3a9270be6d378689e6160bd7a8087520ee2d86bf156e7588a2"
+"""sha256 of the exact schema bytes the owner froze on 2026-09-28 (freeze record, section 8)."""
+
+R9_ENVELOPE_FROZEN_NORMATIVE_SPAN_SHA256: Final = "c9663fa7a752baa8f8723ef0241980d7fc9a55938ff480dc5703564e4e31b96f"
+"""sha256 of the frozen normative span (``## 1. Purpose`` up to ``\\n## 8. Freeze record``), recomputed at load."""
+
+_R9_NORMATIVE_SPAN_START: Final = b"## 1. Purpose"
+_R9_NORMATIVE_SPAN_END: Final = b"\n## 8. Freeze record"
+_R9_FREEZE_RECORD_KEY_WIDTH: Final = 31
+
 
 class HarnessInputError(ValueError):
     """Fail-closed rejection of a policy, universe or evidence input."""
@@ -145,10 +158,15 @@ class HarnessPolicyV1(BaseModel):
     pair_scoped_evidence_reuse: Literal["CROSS_PAIR_CONTAMINATION"]
     global_scoped_evidence_reuse: Literal["DIAGNOSTIC_ONLY"]
     price_vector_overlap: Literal["DIAGNOSTIC_ONLY"]
-    exact_s_acceptance_rule: Literal["R9_ARTIFACT_BOUND"]
-    r9_binding: Literal["R9_ARTIFACT_SHA256_MATCH_ONLY"]
-    r9_envelope_status: Literal["NOT_FROZEN"]
-    """The frozen R9 artifact envelope does not exist yet; no other value is admissible until its schema is frozen."""
+    exact_s_acceptance_rule: Literal["R9_ENVELOPE_V1_VERIFIED_AND_SNAPSHOT_S_BOUND"]
+    """EXACT_S only from ``verify_r9_envelope_v1(envelope, artifact_bytes).exact_s_accepted`` (policy 1.4.0)."""
+    exact_s_identity_binding: Literal["EXACT_S_ID_EQ_SNAPSHOT_S_ID_AND_EXACT_S_SHA256_EQ_SNAPSHOT_S_SHA256"]
+    r9_binding: Literal["R9_ENVELOPE_V1_VERIFIER_VERDICT_ONLY"]
+    r9_envelope_status: Literal["FROZEN"]
+    """Owner froze ``R9EnvelopeV1`` on 2026-09-28; the schema document is re-verified at load (fail closed)."""
+    r9_envelope_schema_relpath: Literal["docs/governance/r9-envelope-v1.md"]
+    r9_envelope_frozen_schema_sha256: str = Field(..., pattern=SHA256_PATTERN)
+    r9_envelope_frozen_normative_span_sha256: str = Field(..., pattern=SHA256_PATTERN)
     shadow_acceptance_rule: Literal["GATE_PASSED_AND_EXACT_S_ACCEPTED_AND_R9_ENVELOPE_FROZEN"]
     required_broker_submit_count: Literal[0]
     operator_pair_selection_allowed: Literal[False]
@@ -174,6 +192,23 @@ class HarnessPolicyV1(BaseModel):
         drifted = sorted(name for name, (actual, expected) in pinned.items() if tuple(actual) != expected)
         if drifted:
             raise ValueError(f"evidence-scope kind lists must equal the enforced code lists: {', '.join(drifted)}")
+        return self
+
+    @model_validator(mode="after")
+    def _r9_envelope_pin_is_the_owner_freeze(self) -> HarnessPolicyV1:
+        pinned = {
+            "r9_envelope_frozen_schema_sha256": (
+                self.r9_envelope_frozen_schema_sha256,
+                R9_ENVELOPE_FROZEN_SCHEMA_SHA256,
+            ),
+            "r9_envelope_frozen_normative_span_sha256": (
+                self.r9_envelope_frozen_normative_span_sha256,
+                R9_ENVELOPE_FROZEN_NORMATIVE_SPAN_SHA256,
+            ),
+        }
+        drifted = sorted(name for name, (actual, expected) in pinned.items() if actual != expected)
+        if drifted:
+            raise ValueError(f"R9 envelope pin must equal the owner freeze record: {', '.join(drifted)}")
         return self
 
 
@@ -292,6 +327,92 @@ def resolve_symbol_map_path(loaded: LoadedPolicy, repo_root: Path) -> Path:
     return repo_root / relpath
 
 
+class R9EnvelopePin(BaseModel):
+    """The owner freeze of ``R9EnvelopeV1``, verified against the schema document at load.
+
+    Only :func:`load_r9_envelope_pin_bytes` builds one after the document checks pass; the pinned hashes are
+    re-checked here so a report cannot carry a different freeze.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_relpath: Literal["docs/governance/r9-envelope-v1.md"]
+    envelope_status: Literal["FROZEN"]
+    frozen_schema_sha256: str = Field(..., pattern=SHA256_PATTERN)
+    frozen_normative_span_sha256: str = Field(..., pattern=SHA256_PATTERN)
+    schema_document_sha256: str = Field(..., pattern=SHA256_PATTERN)
+    """Observed sha256 of the (successor) schema document that carried the freeze record; recorded, not pinned."""
+
+    @model_validator(mode="after")
+    def _is_the_owner_freeze(self) -> R9EnvelopePin:
+        if (self.frozen_schema_sha256, self.frozen_normative_span_sha256) != (
+            R9_ENVELOPE_FROZEN_SCHEMA_SHA256,
+            R9_ENVELOPE_FROZEN_NORMATIVE_SPAN_SHA256,
+        ):
+            raise ValueError("R9 envelope pin must equal the owner freeze record")
+        return self
+
+
+def _freeze_record_line(key: str, value: str) -> str:
+    return f"{key.ljust(_R9_FREEZE_RECORD_KEY_WIDTH)}= {value}"
+
+
+def _freeze_record_holds(lines: list[str], key: str, value: str) -> bool:
+    """Exactly one freeze-record line carries ``key`` and it is exactly ``key = value`` (column-aligned)."""
+
+    carrying = [line for line in lines if line.startswith(key) and line[len(key) :].lstrip(" ").startswith("=")]
+    return carrying == [_freeze_record_line(key, value)]
+
+
+def load_r9_envelope_pin_bytes(raw: bytes, loaded: LoadedPolicy) -> R9EnvelopePin:
+    """Verify the frozen R9 envelope schema document against the policy pin. Fail closed.
+
+    * ``R9_ENVELOPE_NOT_FROZEN``: no single ``envelope_status = FROZEN`` freeze-record line, or ``NOT_FROZEN``
+      appears anywhere in the document.
+    * ``R9_ENVELOPE_PIN_MISMATCH``: the ``frozen_schema_sha256`` / ``frozen_normative_span_sha256`` /
+      ``exact_s_final_authority`` / ``artifact_bytes`` lines differ from the pin, or the recomputed normative
+      span sha256 differs from the pinned one.
+    """
+
+    policy = loaded.policy
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HarnessInputError("R9_ENVELOPE_PIN_MISMATCH", "R9 envelope schema document is not UTF-8") from exc
+    lines = text.split("\n")
+    if "NOT_FROZEN" in text or not _freeze_record_holds(lines, "envelope_status", policy.r9_envelope_status):
+        raise HarnessInputError(
+            "R9_ENVELOPE_NOT_FROZEN", "R9 envelope schema document does not carry envelope_status = FROZEN"
+        )
+    expected = {
+        "frozen_schema_sha256": policy.r9_envelope_frozen_schema_sha256,
+        "frozen_normative_span_sha256": policy.r9_envelope_frozen_normative_span_sha256,
+        "exact_s_final_authority": "verify_r9_envelope_v1 verdict ONLY",
+        "artifact_bytes": "REQUIRED",
+    }
+    drifted = sorted(key for key, value in expected.items() if not _freeze_record_holds(lines, key, value))
+    start, end = raw.find(_R9_NORMATIVE_SPAN_START), raw.find(_R9_NORMATIVE_SPAN_END)
+    span_ok = 0 <= start < end and sha256_hex(raw[start:end]) == policy.r9_envelope_frozen_normative_span_sha256
+    if not span_ok:
+        drifted.append("normative_span")
+    if drifted:
+        raise HarnessInputError(
+            "R9_ENVELOPE_PIN_MISMATCH", f"R9 envelope schema document does not match the pin: {', '.join(drifted)}"
+        )
+    return R9EnvelopePin(
+        schema_relpath=policy.r9_envelope_schema_relpath,
+        envelope_status=policy.r9_envelope_status,
+        frozen_schema_sha256=policy.r9_envelope_frozen_schema_sha256,
+        frozen_normative_span_sha256=policy.r9_envelope_frozen_normative_span_sha256,
+        schema_document_sha256=sha256_hex(raw),
+    )
+
+
+def load_r9_envelope_pin(loaded: LoadedPolicy, repo_root: Path) -> R9EnvelopePin:
+    relpath = Path(loaded.policy.r9_envelope_schema_relpath)
+    return load_r9_envelope_pin_bytes(_read(repo_root / relpath, "R9_ENVELOPE_SCHEMA_UNREADABLE"), loaded)
+
+
 def _read(path: Path, code: str) -> bytes:
     try:
         return path.read_bytes()
@@ -313,15 +434,21 @@ __all__ = [
     "GLOBAL_SCOPE_ALLOWED_CAPTURE_KINDS",
     "GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS",
     "PAIR_BINDING_REQUIRED_CAPTURE_KINDS",
+    "R9_ENVELOPE_FROZEN_NORMATIVE_SPAN_SHA256",
+    "R9_ENVELOPE_FROZEN_SCHEMA_SHA256",
+    "R9_ENVELOPE_SCHEMA_RELPATH",
     "SHA256_PATTERN",
     "HarnessInputError",
     "HarnessPolicyV1",
     "LoadedPolicy",
+    "R9EnvelopePin",
     "SymbolBinding",
     "SymbolUniverse",
     "canonical_json_bytes",
     "load_policy",
     "load_policy_bytes",
+    "load_r9_envelope_pin",
+    "load_r9_envelope_pin_bytes",
     "load_symbol_universe",
     "load_symbol_universe_bytes",
     "parse_json_strict",

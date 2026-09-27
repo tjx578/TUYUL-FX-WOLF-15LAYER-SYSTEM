@@ -9,6 +9,12 @@ Every policy value comes from an explicit, versioned and hashed policy file
 frozen ``WOLF15_XM_30_V1`` broker map at
 ``ea_interface/wolf15_executor/broker_maps/xmglobal-mt5-10.csv``; the harness
 reuses it read-only and pins its canonical content by sha256.
+
+The only import from outside this package is the owner-frozen
+``contracts/r9_envelope_v1.py`` (stdlib + pydantic only): its
+``verify_r9_envelope_v1`` verdict is the sole EXACT_S authority. Its schema
+document ``docs/governance/r9-envelope-v1.md`` is pinned by the policy and
+re-verified at load.
 """
 
 from __future__ import annotations

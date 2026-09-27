@@ -109,9 +109,19 @@ def test_edited_map_breaks_the_policy_pin() -> None:
         ({"contamination_rule": "EXACT_PRICE_VECTOR"}, "POLICY_SCHEMA_INVALID"),
         ({"price_vector_overlap": "FAIL"}, "POLICY_SCHEMA_INVALID"),
         ({"exact_s_acceptance_rule": "ANY"}, "POLICY_SCHEMA_INVALID"),
+        ({"exact_s_acceptance_rule": "R9_ARTIFACT_BOUND"}, "POLICY_SCHEMA_INVALID"),
+        ({"exact_s_identity_binding": "EXACT_S_ID_ONLY"}, "POLICY_SCHEMA_INVALID"),
         ({"bundle_schema": "wolf15.shadow-harness.bundle.v1"}, "POLICY_SCHEMA_INVALID"),
-        ({"r9_envelope_status": "FROZEN"}, "POLICY_SCHEMA_INVALID"),
+        ({"r9_envelope_status": "NOT_FROZEN"}, "POLICY_SCHEMA_INVALID"),
         ({"r9_binding": "ANY"}, "POLICY_SCHEMA_INVALID"),
+        ({"r9_binding": "R9_ARTIFACT_SHA256_MATCH_ONLY"}, "POLICY_SCHEMA_INVALID"),
+        ({"r9_envelope_schema_relpath": "docs/governance/other.md"}, "POLICY_SCHEMA_INVALID"),
+        ({"r9_envelope_frozen_schema_sha256": "0" * 64}, "POLICY_SCHEMA_INVALID"),
+        (
+            {"r9_envelope_frozen_schema_sha256": "2a5826a36f1ed9f0a099f1fd03aad52629141e76fdb9d5c7978aa2626f660f82"},
+            "POLICY_SCHEMA_INVALID",
+        ),
+        ({"r9_envelope_frozen_normative_span_sha256": "0" * 64}, "POLICY_SCHEMA_INVALID"),
         ({"shadow_acceptance_rule": "GATE_PASSED_ONLY"}, "POLICY_SCHEMA_INVALID"),
         ({"evidence_scope_rule": "DEFAULT_GLOBAL"}, "POLICY_SCHEMA_INVALID"),
         ({"pair_scoped_evidence_reuse": "DIAGNOSTIC_ONLY"}, "POLICY_SCHEMA_INVALID"),
@@ -132,10 +142,10 @@ def test_policy_rejects_changed_or_hidden_values(mutation: dict[str, Any], code:
     assert info.value.code == code
 
 
-def test_policy_1_3_0_pins_scope_and_final_acceptance_rules() -> None:
+def test_policy_1_4_0_pins_scope_and_final_acceptance_rules() -> None:
     loaded, _ = load_real()
     policy = loaded.policy
-    assert policy.policy_version == "1.3.0"
+    assert policy.policy_version == "1.4.0"
     assert (policy.evidence_scope_rule, policy.pair_scoped_evidence_reuse, policy.global_scoped_evidence_reuse) == (
         "EXPLICIT_REQUIRED",
         "CROSS_PAIR_CONTAMINATION",
@@ -147,9 +157,17 @@ def test_policy_1_3_0_pins_scope_and_final_acceptance_rules() -> None:
     assert tuple(policy.global_scope_forbidden_capture_kinds) == GLOBAL_SCOPE_FORBIDDEN_CAPTURE_KINDS == CAPTURE_KINDS
     assert policy.global_scope_violation == "REJECT_BUNDLE"
     assert (policy.r9_binding, policy.r9_envelope_status, policy.shadow_acceptance_rule) == (
-        "R9_ARTIFACT_SHA256_MATCH_ONLY",
-        "NOT_FROZEN",
+        "R9_ENVELOPE_V1_VERIFIER_VERDICT_ONLY",
+        "FROZEN",
         "GATE_PASSED_AND_EXACT_S_ACCEPTED_AND_R9_ENVELOPE_FROZEN",
+    )
+    assert (policy.exact_s_acceptance_rule, policy.exact_s_identity_binding) == (
+        "R9_ENVELOPE_V1_VERIFIED_AND_SNAPSHOT_S_BOUND",
+        "EXACT_S_ID_EQ_SNAPSHOT_S_ID_AND_EXACT_S_SHA256_EQ_SNAPSHOT_S_SHA256",
+    )
+    assert (policy.r9_envelope_schema_relpath, policy.r9_envelope_frozen_schema_sha256) == (
+        "docs/governance/r9-envelope-v1.md",
+        "10732eebab7e8a3a9270be6d378689e6160bd7a8087520ee2d86bf156e7588a2",
     )
 
 
@@ -161,6 +179,11 @@ def test_policy_1_3_0_pins_scope_and_final_acceptance_rules() -> None:
         "global_scoped_evidence_reuse",
         "r9_binding",
         "r9_envelope_status",
+        "r9_envelope_schema_relpath",
+        "r9_envelope_frozen_schema_sha256",
+        "r9_envelope_frozen_normative_span_sha256",
+        "exact_s_acceptance_rule",
+        "exact_s_identity_binding",
         "shadow_acceptance_rule",
         "pair_scope_binding_rule",
         "pair_binding_required_capture_kinds",
@@ -169,7 +192,7 @@ def test_policy_1_3_0_pins_scope_and_final_acceptance_rules() -> None:
         "global_scope_violation",
     ],
 )
-def test_policy_1_3_0_fields_are_required_not_defaulted(field: str) -> None:
+def test_policy_1_3_0_and_1_4_0_fields_are_required_not_defaulted(field: str) -> None:
     payload = _policy_payload()
     del payload[field]
     with pytest.raises(HarnessInputError) as info:

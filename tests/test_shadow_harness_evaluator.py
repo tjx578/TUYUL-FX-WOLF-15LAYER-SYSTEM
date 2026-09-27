@@ -18,6 +18,7 @@ from tests.shadow_harness_helpers import (
     candidate,
     encode,
     evaluate,
+    load_pin,
     load_real,
     natural_chain,
     risk_dry_run,
@@ -89,7 +90,9 @@ def test_duplicate_pair_key_in_bundle_is_rejected() -> None:
     loaded, universe = load_real()
     raw = encode(bundle(loaded, universe)).replace(b'"AUDCAD": []', b'"AUDCAD": [], "AUDCAD": []', 1)
     with pytest.raises(HarnessInputError) as info:
-        evaluate_bundle_bytes(raw, loaded, universe, r9_artifact_sha256s=frozenset())
+        evaluate_bundle_bytes(
+            raw, loaded, universe, r9_envelope_pin=load_pin(loaded), r9_envelope=None, r9_artifact=None
+        )
     assert info.value.code == "DUPLICATE_JSON_KEY"
 
 
@@ -208,7 +211,11 @@ ALLOWED_IMPORT_ROOTS = {
 }
 
 
-def test_package_imports_only_stdlib_pydantic_and_itself() -> None:
+# The one import from outside the package: the owner-frozen R9 envelope contract (stdlib + pydantic only).
+ALLOWED_EXTERNAL_MODULES = {"contracts.r9_envelope_v1"}
+
+
+def test_package_imports_only_stdlib_pydantic_itself_and_the_frozen_r9_contract() -> None:
     for path in sorted(PACKAGE_DIR.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -219,10 +226,23 @@ def test_package_imports_only_stdlib_pydantic_and_itself() -> None:
             else:
                 continue
             for name in names:
+                if name in ALLOWED_EXTERNAL_MODULES:
+                    continue
                 root = name.split(".")[0]
                 assert root in ALLOWED_IMPORT_ROOTS, f"{path.name} imports {name}"
                 if root == "tools":
                     assert name.startswith("tools.shadow_harness"), f"{path.name} imports {name}"
+
+
+def test_frozen_r9_contract_itself_imports_only_stdlib_and_pydantic() -> None:
+    tree = ast.parse((REPO_ROOT / "contracts" / "r9_envelope_v1.py").read_text(encoding="utf-8"))
+    roots = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            roots.add((node.module or "").split(".")[0])
+    assert roots <= {"__future__", "collections", "datetime", "hashlib", "typing", "uuid", "pydantic"}
 
 
 def test_nothing_outside_the_package_and_its_tests_imports_it() -> None:
