@@ -1,0 +1,562 @@
+{
+  "amendment_id": "WOLF15-5SCR-SSOT-V3.1-A4",
+  "status": "APPROVED_PER_ENTRY",
+  "scope": "STRUCTURAL_GEOMETRY_ONLY",
+  "final_approver": "OWNER",
+  "document": {
+    "path": "docs/governance/strategy-5scr-v3.1-amendment-A4.md",
+    "sha256": "357a55b0f465482e8314be14a03b8174df83c1f63c2d126c1290f05c2fe101cc"
+  },
+  "base_ssot": {
+    "document_id": "WOLF15-5SCR-SSOT-V3.1-CANDIDATE",
+    "path": "docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md",
+    "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "document_bytes_modified": false
+  },
+  "companion_authority": {
+    "document_id": "WOLF15-5SCR-FINAL-AUDIT-REPLAY-WORKFLOW-V3",
+    "location": "OUTSIDE_REPOSITORY",
+    "sha256": "4420a32f981f18e9fcd9f0cd3f8aa22362216baf4fff241ab4d6700bbee2b172",
+    "document_bytes_modified": false
+  },
+  "builds_on": {
+    "A1": {
+      "sha256": "1fed7f7b2eb79152ba8f825faca4af3eed131f69222860c6793a42eabd152d40",
+      "entries_used": []
+    },
+    "A2": {
+      "sha256": "9cf9e5318aa69d8ec4455b48588a924be97b7fdeaf9091e67ff90920e68236d2",
+      "entries_used": [
+        "A2-01",
+        "A2-02",
+        "A2-05",
+        "A2-07"
+      ]
+    },
+    "A3": {
+      "sha256": "538b3b6f58513bda10d9f7b49f2665c9178d91ff290d1cc811d56130bf7294cf",
+      "entries_used": [
+        "A3-05",
+        "A3-07",
+        "A3-08",
+        "A3-09",
+        "A3-10",
+        "A3-R1",
+        "A3-R2"
+      ]
+    }
+  },
+  "content_source": {
+    "decided_by": "OWNER",
+    "decided_on": "2026-09-22",
+    "decisions": [
+      "OD-1",
+      "OD-2",
+      "OD-3",
+      "OD-4",
+      "OD-5",
+      "OD-6",
+      "OD-7",
+      "OD-8",
+      "OD-9",
+      "OD-10",
+      "OD-11",
+      "OD-12",
+      "OD-13",
+      "OD-14",
+      "OD-15",
+      "OD-16"
+    ]
+  },
+  "effective_authority_model": "BASE_SSOT_PLUS_EXPLICIT_AMENDMENTS",
+  "dual_authority": false,
+  "runtime_activation": "EXPLICIT_ONLY",
+  "grants_runtime_activation": false,
+  "out_of_scope": [
+    "ORDER_TYPE",
+    "ORDER_PRICE",
+    "BROKER_ADAPTATION",
+    "COST_MODEL",
+    "NET_RR",
+    "ECONOMIC_MINIMUM_DISTANCE",
+    "BROKER_SL_TRIGGER",
+    "THESIS_INVALIDATION_A1_07",
+    "RISK",
+    "EXECUTION_COMMAND",
+    "CHILD_CAMPAIGN"
+  ],
+  "reason_codes": [
+    "STRUCTURAL_GEOMETRY_READY",
+    "STRUCTURAL_SL_UNAVAILABLE",
+    "STRUCTURAL_TARGET_UNAVAILABLE",
+    "ROUTE_NO_VALID_ENTRY_DOMAIN",
+    "STRUCTURAL_RISK_NON_POSITIVE",
+    "STRUCTURAL_REWARD_NON_POSITIVE",
+    "STRUCTURAL_GEOMETRY_MATERIAL_CHANGE",
+    "EXECUTION_BOX_NOT_FROZEN",
+    "GEOMETRY_POLICY_UNKNOWN"
+  ],
+  "geometry_material": [
+    "execution_box_id",
+    "box_version",
+    "structural_sl_anchor",
+    "structural_sl",
+    "target_id",
+    "tp1",
+    "rr_reference_entry",
+    "geometry_policy_id",
+    "geometry_policy_version"
+  ],
+  "entries": [
+    {
+      "entry_id": "A4-01",
+      "owner_decision": "OD-1",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§17.5",
+        "§17.1",
+        "§20.1"
+      ],
+      "base_behavior": "Section 17.5 places the stop beyond structural invalidation without naming the price.",
+      "amended_behavior": "BUY structural_sl_anchor = canon(R.low); SELL structural_sl_anchor = canon(R.high); R is the canonical M15 reference candle of the ordered proof. New A4 policy, not a claim about the SSOT.",
+      "reason": "Structural SL had no authority anchor.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-02",
+      "owner_decision": "OD-2",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§17.5",
+        "§20.1"
+      ],
+      "base_behavior": "Section 17.5 requires a versioned buffer and names no value; code used one broker tick.",
+      "amended_behavior": "Buffer NONE, carried by the versioned geometry policy: structural_sl = structural_sl_anchor. No tick, pip, ATR, spread multiple or metal offset. Broker feasibility may reject the SL, never move it.",
+      "reason": "A hidden buffer would be a magic threshold inside strategy geometry.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-03",
+      "owner_decision": "OD-3",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§17.4",
+        "§17.3",
+        "§17.6",
+        "§19",
+        "§20.2"
+      ],
+      "base_behavior": "Section 17.4 names a gross minimum R without a value; section 17.3 carries only minimum_net_rr 1.5.",
+      "amended_behavior": "gross_rr is calculated with no minimum; minimum_net_rr 1.5 stays; net RR is computed after broker/cost adaptation, never by A4. Gross 2.0 is legacy, not canonical authority.",
+      "reason": "T10 resolved without inventing a gross threshold.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-04",
+      "owner_decision": "OD-4",
+      "amendment_type": "CONFLICT_OVERRIDE",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§17.3",
+        "§23.14",
+        "§21.6",
+        "§20.2"
+      ],
+      "base_behavior": "Section 17.3 carries minimum_structural_target_pips 10 and section 23.14 rejects targets below it.",
+      "amended_behavior": "No minimum target distance in canonical strategy geometry (10-pip floor NONE; no metal or instrument floor). A minimum economic distance, if needed, belongs to G4 feasibility.",
+      "reason": "The floor origin was undefined and the floor is an execution-economics question.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-05",
+      "owner_decision": "OD-5",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§17.1",
+        "§17.7",
+        "§19"
+      ],
+      "base_behavior": "Section 17.1 step 9 names candidate entry and order type without a rule.",
+      "amended_behavior": "No order type in A4. entry_interval = frozen box interval; rr_reference_entry = box_high (BUY) / box_low (SELL), the worst-case strategy entry used only for gross RR, never an order price.",
+      "reason": "RR must not depend on an unauthorized entry choice.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-06",
+      "owner_decision": "OD-6",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§17.4",
+        "§4.1"
+      ],
+      "base_behavior": "Section 17.4 names two entry intervals; A3 produces one box.",
+      "amended_behavior": "Both intervals are the frozen box interval; entry interval identity = (execution_box_id, box_version); no entry_interval_id.",
+      "reason": "A second identity for the same interval would be dual authority.",
+      "shadow_required": false,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-07",
+      "owner_decision": "OD-7",
+      "amendment_type": "CONFLICT_OVERRIDE",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§17.4",
+        "§17.1",
+        "§11.1",
+        "§4.2"
+      ],
+      "base_behavior": "SSOT section 17.4 places broker_constraint_interval in Strategy Core; Audit/Replay v3 section 4.2 places it in Replay B.",
+      "amended_behavior": "A4 holds canonical Decimal entry interval, SL, TP1 and gross RR; bid/ask, spread, drift, tick size and value, stops and freeze level, order price, volume and margin are G4. No tick quantization in A4. G4 restricts executable placement to box ∩ (SL, TP1) for BUY / box ∩ (TP1, SL) for SELL ∩ broker constraints; empty → no executable entry; A4 geometry stays immutable (Q-A4-1).",
+      "reason": "One authority boundary per object.",
+      "shadow_required": false,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-08",
+      "owner_decision": "OD-8",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1",
+        "AUDIT_REPLAY_V3"
+      ],
+      "base_clause": [
+        "§17.6",
+        "§20.2"
+      ],
+      "base_behavior": "Section 17.6 defines net RR after costs without a cost source.",
+      "amended_behavior": "A4 has no cost model and reads no live spread, commission, swap or slippage. Net RR authority is downstream Broker/Cost Adaptation, versioned and deterministic.",
+      "reason": "Costs are broker facts, not strategy geometry.",
+      "shadow_required": false,
+      "replay_required": false,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-09",
+      "owner_decision": "OD-9",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§17.2",
+        "§17.7"
+      ],
+      "base_behavior": "No clause fixes TP1 relative to the target price.",
+      "amended_behavior": "TP1 = selected StructuralTarget.price exactly; no tick, spread or haircut offset and no farther target. An infeasible target fails the setup downstream.",
+      "reason": "TP1 must stay the structural target A2 selected.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-10",
+      "owner_decision": "OD-10",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§4.1",
+        "§4.2",
+        "§15.1",
+        "§16.3",
+        "§17.7"
+      ],
+      "base_behavior": "A target change can leave box_version unchanged while TP1 and RR change; no geometry revision rule exists.",
+      "amended_behavior": "Box, geometry and TradePlanCandidate revisions are separate domains. No structural_geometry_id. Material projection: box revision, SL anchor, SL, TP1 target material (target_id, tp1), rr_reference_entry, geometry policy id/version. A projection change creates a new TradePlanCandidate revision, never box_version++; old candidates stay append-only.",
+      "reason": "Every revision needs a named material cause in its own domain.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-11",
+      "owner_decision": "OD-11",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§11.1",
+        "§17.4",
+        "§17.7"
+      ],
+      "base_behavior": "Proof prices are float; implementations disagree on representation.",
+      "amended_behavior": "No float. Exact Decimal or rational arithmetic. BUY risk = ref − SL, reward = TP1 − ref; SELL mirrored; gross_rr = reward / risk; risk > 0 and reward > 0 else ROUTE_NO_VALID_ENTRY_DOMAIN with mandatory cause STRUCTURAL_RISK_NON_POSITIVE (evaluated first) or STRUCTURAL_REWARD_NON_POSITIVE (Q-A4-2). gross_rr is serialized as an exact reduced rational.",
+      "reason": "Float artifacts must never decide a setup.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": true,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-12",
+      "owner_decision": "OD-12",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§17.5",
+        "§12.1"
+      ],
+      "base_behavior": "Thesis actionability and box post-freeze invalidation disagree on equality.",
+      "amended_behavior": "A1-07 is not ratified here. A3 stays authoritative for the box; R.low / R.high is an SL boundary price only; broker trigger semantics are not A4. Box invalidation, thesis invalidation and broker SL trigger stay separate.",
+      "reason": "A geometry amendment must not settle a pending thesis rule.",
+      "shadow_required": false,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-13",
+      "owner_decision": "OD-13",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§21.6",
+        "§23.14"
+      ],
+      "base_behavior": "SSOT sections 21.6 and 23.14 disagree on floor code names; code uses free strings.",
+      "amended_behavior": "Closed A4 reason vocabulary incl. EXECUTION_BOX_NOT_FROZEN and GEOMETRY_POLICY_UNKNOWN (Q-A4-3); net RR status NET_RR_NOT_EVALUATED; no RR_FAIL, cost, floor or broker reasons.",
+      "reason": "A reason code must name only what A4 evaluated.",
+      "shadow_required": false,
+      "replay_required": false,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-14",
+      "owner_decision": "OD-14",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§17.3",
+        "§16.4"
+      ],
+      "base_behavior": "The execution policy is env-selectable and float-valued; no geometry policy exists.",
+      "amended_behavior": "Versioned geometry policy registry, no env-var selection, no default; unknown policy rejected. Each approved route refers to one policy fixing SL anchor, entry reference, TP1 and gross RR rules.",
+      "reason": "Strategy rules must be hash-bound, never chosen by environment.",
+      "shadow_required": false,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-15",
+      "owner_decision": "OD-15",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§4.2",
+        "§17.7",
+        "§19.3"
+      ],
+      "base_behavior": "The handoff is bound to the legacy TargetUniverseV31; no rebinding rule.",
+      "amended_behavior": "Upstream box/target/SL change triggers geometry re-evaluation; a geometry material change creates a new TradePlanCandidate revision. Risk handoff only for the latest canonical candidate by exact revision; no silent rebinding of an old reservation.",
+      "reason": "A reservation must never follow a plan it was not sized for.",
+      "shadow_required": true,
+      "replay_required": true,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    },
+    {
+      "entry_id": "A4-16",
+      "owner_decision": "OD-16",
+      "amendment_type": "GAP_FILL",
+      "source_pr": null,
+      "base_documents": [
+        "SSOT_V3_1"
+      ],
+      "base_clause": [
+        "§17.1"
+      ],
+      "base_behavior": "Geometry items are spread over SSOT section 17 with no authority artifact.",
+      "amended_behavior": "Separate artifact v3.1-A4 Structural Geometry Authority, not an A3 extension; approval only on exact bytes; grants no runtime activation and opens no trading.",
+      "reason": "Same discipline as A1-A3.",
+      "shadow_required": false,
+      "replay_required": false,
+      "oos_required": false,
+      "runtime_activation": "EXPLICIT_ONLY",
+      "approval": "APPROVED"
+    }
+  ],
+  "geometry_policies": [
+    {
+      "route": "BREAK_RETEST",
+      "geometry_policy_id": "5scr.geometry-policy.break-retest",
+      "geometry_policy_version": "v1",
+      "box_policy_id": "5scr.box-policy.break-retest",
+      "box_policy_version": "v1",
+      "structural_sl_anchor": {
+        "BUY": "R.low",
+        "SELL": "R.high"
+      },
+      "sl_buffer": null,
+      "tp1": "SELECTED_TARGET_PRICE",
+      "tp1_offset": null,
+      "rr_reference_entry": {
+        "BUY": "L",
+        "SELL": "L"
+      },
+      "gross_rr_minimum": null,
+      "net_rr_status": "NET_RR_NOT_EVALUATED",
+      "runtime_status": "RUNTIME_DISABLED",
+      "approval": "APPROVED"
+    },
+    {
+      "route": "BREAKOUT_ACCEPTANCE",
+      "geometry_policy_id": "5scr.geometry-policy.breakout-acceptance",
+      "geometry_policy_version": "v1",
+      "box_policy_id": "5scr.box-policy.breakout-acceptance",
+      "box_policy_version": "v1",
+      "structural_sl_anchor": {
+        "BUY": "R.low",
+        "SELL": "R.high"
+      },
+      "sl_buffer": null,
+      "tp1": "SELECTED_TARGET_PRICE",
+      "tp1_offset": null,
+      "rr_reference_entry": {
+        "BUY": "C.low",
+        "SELL": "C.high"
+      },
+      "gross_rr_minimum": null,
+      "net_rr_status": "NET_RR_NOT_EVALUATED",
+      "runtime_status": "RUNTIME_DISABLED",
+      "approval": "APPROVED"
+    }
+  ],
+  "content_review": {
+    "decided_by": "OWNER",
+    "decided_on": "2026-09-27",
+    "content_status": "APPROVED_PENDING_BYTE_RATIFICATION",
+    "predecessor_draft_sha256": "ab5ceb24012d7bfa87f942a2cb49b981f5a6bbc95f28a7203c950e089bec9a44",
+    "predecessor_draft_blob_id": "0ad47194b52f56fcc33f530ec4957acbd5a7e4fd"
+  },
+  "resolved_questions": {
+    "Q-A4-1": "G4_RESTRICTS_EXECUTABLE_PLACEMENT_A4_GEOMETRY_IMMUTABLE",
+    "Q-A4-2": "STATUS_ROUTE_NO_VALID_ENTRY_DOMAIN_WITH_MANDATORY_CAUSE",
+    "Q-A4-3": "EXTRA_PREREQUISITE_AND_POLICY_CODES_APPROVED",
+    "Q-A4-4": "OWNER_EVIDENCE_FLAG_MATRIX"
+  },
+  "no_valid_entry_domain_causes": [
+    "STRUCTURAL_RISK_NON_POSITIVE",
+    "STRUCTURAL_REWARD_NON_POSITIVE"
+  ],
+  "ratification": {
+    "ratified_draft_sha256": "3afd4339f3c4d330aa12af5b16da98dbfba6b54fade0a517bb3f3f9d0d48ff02",
+    "ratified_draft_blob_id": "f84aa6079ccf0603c74152094358e8f59808f2c0",
+    "ratified_draft_bytes": 22334,
+    "ratified_on": "2026-09-27",
+    "ratified_by": "OWNER",
+    "method": "independent byte verification by the owner against the GitHub head (sha256 + git blob + 22334 bytes), PR #511 head 2564a581 CI 40/40 + Security Gate PASS",
+    "approved_entries": [
+      "A4-01",
+      "A4-02",
+      "A4-03",
+      "A4-04",
+      "A4-05",
+      "A4-06",
+      "A4-07",
+      "A4-08",
+      "A4-09",
+      "A4-10",
+      "A4-11",
+      "A4-12",
+      "A4-13",
+      "A4-14",
+      "A4-15",
+      "A4-16"
+    ],
+    "approved_geometry_policies": [
+      "BREAK_RETEST",
+      "BREAKOUT_ACCEPTANCE"
+    ],
+    "ratified_normative_span_sha256": "0eb2788b923ac5fdc3e22d646d9ca765ad20b16da3c235bdd610d885b1afa780"
+  }
+}
