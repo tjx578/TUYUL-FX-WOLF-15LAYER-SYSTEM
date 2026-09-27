@@ -81,7 +81,7 @@ def test_twenty_nine_pairs_is_not_thirty_pair_evaluated() -> None:
     loaded, universe = load_real()
     report = evaluate(bundle(loaded, universe, symbols=universe.symbols[:-1]), loaded, universe)
     assert report.acceptance.pair_30_evaluated is False
-    assert report.gate_failures == ("NOT_30_PAIR_EVALUATED",)
+    assert report.gate_failures == ("30_PAIR_EVALUATED",)
     assert report.symbols[-1].status == "NOT_EVALUATED"
 
 
@@ -89,17 +89,8 @@ def test_duplicate_pair_key_in_bundle_is_rejected() -> None:
     loaded, universe = load_real()
     raw = encode(bundle(loaded, universe)).replace(b'"AUDCAD": []', b'"AUDCAD": [], "AUDCAD": []', 1)
     with pytest.raises(HarnessInputError) as info:
-        evaluate_bundle_bytes(raw, loaded, universe)
+        evaluate_bundle_bytes(raw, loaded, universe, r9_artifact_sha256s=frozenset())
     assert info.value.code == "DUPLICATE_JSON_KEY"
-
-
-def test_operator_selected_pair_in_header_fails() -> None:
-    loaded, universe = load_real()
-    report = evaluate(
-        bundle(loaded, universe, header_overrides={"operator_selected_symbols": ["EURUSD"]}), loaded, universe
-    )
-    assert report.acceptance.operator_pair_selection is True
-    assert report.gate_failures == ("OPERATOR_PAIR_SELECTION",)
 
 
 def test_operator_selected_pair_on_candidate_fails() -> None:
@@ -110,18 +101,14 @@ def test_operator_selected_pair_on_candidate_fails() -> None:
     assert not report.gate_passed
 
 
-def test_operator_direction_selection_fails_from_header_or_tradeplan() -> None:
+def test_operator_direction_selection_fails_from_candidate_or_tradeplan() -> None:
     loaded, universe = load_real()
-    by_header = evaluate(
-        bundle(
-            loaded,
-            universe,
-            header_overrides={"operator_direction_overrides": [{"symbol": "EURUSD", "direction": "SELL"}]},
-        ),
+    by_candidate = evaluate(
+        bundle(loaded, universe, {"EURUSD": [candidate("EURUSD", direction_selection_source="OPERATOR")]}),
         loaded,
         universe,
     )
-    assert by_header.acceptance.operator_direction_selection is True
+    assert by_candidate.acceptance.operator_direction_selection is True
     chain = natural_chain("EURUSD", universe)
     chain[2] = tradeplan("EURUSD", direction_selection_source="OPERATOR")
     by_record = evaluate(bundle(loaded, universe, {"EURUSD": chain}), loaded, universe)
@@ -142,20 +129,20 @@ def test_broker_submit_is_counted_and_fails() -> None:
 
 @pytest.mark.parametrize(
     "field",
-    ["policy_sha256", "symbol_universe_sha256", "policy_version"],
+    ["configuration_digest", "manifest_hash"],
 )
 def test_bundle_bound_to_another_policy_is_rejected(field: str) -> None:
     loaded, universe = load_real()
-    wrong = "9.9.9" if field == "policy_version" else "0" * 64
     with pytest.raises(HarnessInputError) as info:
-        evaluate(bundle(loaded, universe, header_overrides={field: wrong}), loaded, universe)
+        evaluate(bundle(loaded, universe, header_overrides={field: "0" * 64}), loaded, universe)
     assert info.value.code == "HEADER_BINDING_MISMATCH"
 
 
-def test_operator_fields_are_required_not_defaulted() -> None:
+def test_operator_attestation_fields_are_required_not_defaulted() -> None:
     loaded, universe = load_real()
-    payload = bundle(loaded, universe)
-    del payload["header"]["operator_selected_symbols"]
+    record = candidate("EURUSD")
+    del record["pair_selection_source"]
+    payload = bundle(loaded, universe, {"EURUSD": [record]})
     with pytest.raises(HarnessInputError) as info:
         evaluate(payload, loaded, universe)
     assert info.value.code == "BUNDLE_SCHEMA_INVALID"
@@ -214,6 +201,7 @@ ALLOWED_IMPORT_ROOTS = {
     "io",
     "json",
     "pathlib",
+    "re",
     "typing",
     "pydantic",
     "tools",

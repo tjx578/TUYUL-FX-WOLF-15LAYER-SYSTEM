@@ -1,4 +1,4 @@
-"""Per-symbol isolation and cross-pair contamination for the offline shadow harness."""
+"""Per-symbol isolation and lineage-based cross-pair contamination for the offline shadow harness."""
 
 from __future__ import annotations
 
@@ -7,22 +7,36 @@ from tests.shadow_harness_helpers import (
     bundle,
     candidate,
     evaluate,
+    exact_s,
     lineage,
     load_real,
     natural_chain,
     risk_dry_run,
     tradeplan,
 )
-from tools.shadow_harness.captures import ShadowCaptureBundle
+from tools.shadow_harness.captures import LINEAGE_FIELDS, ShadowCaptureBundle
 from tools.shadow_harness.isolation import (
     IsolationFinding,
     detect_cross_pair_contamination,
+    detect_price_overlap_diagnostics,
     validate_symbol_isolation,
 )
 
 
 def _codes(findings: tuple[IsolationFinding, ...]) -> list[str]:
     return sorted(item.code for item in findings)
+
+
+def test_primary_lineage_fields_are_exactly_the_owner_list() -> None:
+    assert LINEAGE_FIELDS == (
+        "lifecycle_id",
+        "thesis_id",
+        "proof_id",
+        "pressure_range_id",
+        "target_id",
+        "execution_box_id",
+        "tradeplan_candidate_id",
+    )
 
 
 def test_clean_natural_chains_have_no_findings() -> None:
@@ -35,23 +49,77 @@ def test_clean_natural_chains_have_no_findings() -> None:
     parsed = ShadowCaptureBundle.model_validate(payload)
     assert validate_symbol_isolation(parsed, universe) == ()
     assert detect_cross_pair_contamination(parsed) == ()
+    assert detect_price_overlap_diagnostics(parsed) == ()
 
 
-def test_lineage_id_borrowed_from_another_pair_is_isolation_and_contamination() -> None:
+def test_eurusd_capture_with_gbpusd_thesis_id_is_cross_pair_contamination_and_fails() -> None:
     loaded, universe = load_real()
-    stolen = candidate("GBPUSD")
-    stolen["lineage"] = stolen["lineage"] | {"thesis_id": lineage("EURUSD", 1)["thesis_id"]}
-    report = evaluate(bundle(loaded, universe, {"EURUSD": [candidate("EURUSD")], "GBPUSD": [stolen]}), loaded, universe)
-    codes = _codes(report.isolation_findings)
-    assert codes == ["LINEAGE_SCOPE_VIOLATION", "LINEAGE_SCOPE_VIOLATION"]
+    eur = natural_chain("EURUSD", universe)
+    eur[0]["lineage"] = eur[0]["lineage"] | {"thesis_id": lineage("GBPUSD", 1)["thesis_id"]}
+    eur[1]["lineage"] = eur[1]["lineage"] | {"thesis_id": lineage("GBPUSD", 1)["thesis_id"]}
+    eur[2]["lineage"] = eur[2]["lineage"] | {"thesis_id": lineage("GBPUSD", 1)["thesis_id"]}
+    gbp = natural_chain("GBPUSD", universe)
+    report = evaluate(bundle(loaded, universe, {"EURUSD": eur, "GBPUSD": gbp}), loaded, universe)
+    assert report.isolation_findings == ()  # anchors stay consistent inside EURUSD; only lineage leaks
     assert report.acceptance.cross_pair_contamination == 1
     finding = report.contamination_findings[0]
-    assert finding.kind == "LINEAGE_ID"
+    assert (finding.code, finding.detector, finding.kind) == (
+        "CROSS_PAIR_CONTAMINATION",
+        "PRIMARY_LINEAGE",
+        "LINEAGE_ID",
+    )
+    assert finding.fields == ("thesis_id",)
+    assert finding.value == lineage("GBPUSD", 1)["thesis_id"]
     assert finding.symbols == ("EURUSD", "GBPUSD")
     assert not report.gate_passed
+    assert report.gate_failures == ("CROSS_PAIR_CONTAMINATION",)
 
 
-def test_price_vector_reused_under_another_pair_is_contamination_after_normalisation() -> None:
+def test_every_primary_lineage_field_is_scanned() -> None:
+    loaded, universe = load_real()
+    for field in LINEAGE_FIELDS:
+        gbp_value = lineage("GBPUSD", 1)[field]
+        eur = candidate("EURUSD")
+        eur["lineage"] = eur["lineage"] | {field: gbp_value}
+        gbp = tradeplan("GBPUSD")
+        gbp["lineage"] = gbp["lineage"] | {field: gbp_value}
+        payload = bundle(loaded, universe, {"EURUSD": [eur], "GBPUSD": [gbp]})
+        found = detect_cross_pair_contamination(ShadowCaptureBundle.model_validate(payload))
+        assert [(item.kind, item.value) for item in found] == [("LINEAGE_ID", gbp_value)], field
+
+
+def test_record_filed_under_another_symbol_key_is_symbol_contamination() -> None:
+    loaded, universe = load_real()
+    report = evaluate(bundle(loaded, universe, {"EURUSD": [candidate("GBPUSD")]}), loaded, universe)
+    kinds = [(item.detector, item.kind, item.value) for item in report.contamination_findings]
+    assert kinds == [("PRIMARY_LINEAGE", "SYMBOL", "GBPUSD@EURUSD")]
+    assert report.gate_failures == ("CROSS_PAIR_CONTAMINATION",)
+    eur = next(item for item in report.symbols if item.symbol == "EURUSD")
+    assert eur.status == "WAIT"  # a foreign record never counts as this pair's candidate
+
+
+def test_identical_prices_across_two_pairs_with_clean_lineage_is_not_contamination() -> None:
+    loaded, universe = load_real()
+    eur = natural_chain("EURUSD", universe)
+    gbp = natural_chain("GBPUSD", universe)
+    same = [dict(point) for point in eur[2]["prices"]]
+    gbp[2] = gbp[2] | {"prices": same}
+    gbp[3] = gbp[3] | {"prices": [dict(point) for point in eur[3]["prices"]]}
+    report = evaluate(bundle(loaded, universe, {"EURUSD": eur, "GBPUSD": gbp}), loaded, universe)
+    assert report.contamination_findings == ()
+    assert report.acceptance.cross_pair_contamination == 0
+    assert report.isolation_findings == ()
+    assert report.gate_passed and report.gate_failures == ()
+    [overlap] = report.diagnostics  # tradeplan + broker dry-run share one vector per pair
+    assert (overlap.severity, overlap.kind, overlap.symbols) == (
+        "DIAGNOSTIC_ONLY",
+        "PRICE_VECTOR_OVERLAP",
+        ("EURUSD", "GBPUSD"),
+    )
+    assert len(overlap.captures) == 4
+
+
+def test_price_overlap_is_detected_after_normalisation_but_stays_diagnostic() -> None:
     loaded, universe = load_real()
     eur = natural_chain("EURUSD", universe)
     gbp = natural_chain("GBPUSD", universe)
@@ -59,28 +127,20 @@ def test_price_vector_reused_under_another_pair_is_contamination_after_normalisa
     copied[0]["value"] = copied[0]["value"] + "0"  # 1.1xxxx0 == 1.1xxxx
     gbp[2] = gbp[2] | {"prices": copied}
     report = evaluate(bundle(loaded, universe, {"EURUSD": eur, "GBPUSD": gbp}), loaded, universe)
-    kinds = [item.kind for item in report.contamination_findings]
-    assert kinds == ["PRICE_VECTOR"]
-    assert report.acceptance.cross_pair_contamination == 1
-    assert report.isolation_findings == ()
+    assert [item.kind for item in report.diagnostics] == ["PRICE_VECTOR_OVERLAP"]
+    assert report.acceptance.cross_pair_contamination == 0
+    assert report.gate_passed
 
 
-def test_evidence_digest_and_id_reuse_across_pairs_is_contamination() -> None:
+def test_evidence_digest_and_id_reuse_across_pairs_is_secondary_identity_contamination() -> None:
     loaded, universe = load_real()
     eur = candidate("EURUSD")
     gbp = candidate("GBPUSD", evidence_sha256=eur["evidence_sha256"], candidate_id=eur["candidate_id"])
     report = evaluate(bundle(loaded, universe, {"EURUSD": [eur], "GBPUSD": [gbp]}), loaded, universe)
     assert sorted(item.kind for item in report.contamination_findings) == ["EVIDENCE_ID", "EVIDENCE_SHA256"]
+    assert {item.detector for item in report.contamination_findings} == {"SECONDARY_EVIDENCE_IDENTITY"}
     assert report.acceptance.cross_pair_contamination == 2
-
-
-def test_record_filed_under_wrong_symbol_key() -> None:
-    loaded, universe = load_real()
-    report = evaluate(bundle(loaded, universe, {"EURUSD": [candidate("GBPUSD")]}), loaded, universe)
-    assert _codes(report.isolation_findings) == ["SYMBOL_KEY_MISMATCH"]
-    assert "ISOLATION_VIOLATION" in report.gate_failures
-    eur = next(item for item in report.symbols if item.symbol == "EURUSD")
-    assert eur.status == "WAIT"  # a foreign record never counts as this pair's candidate
+    assert not report.gate_passed
 
 
 def test_unknown_symbol_key_is_isolation_violation_and_not_thirty() -> None:
@@ -88,6 +148,7 @@ def test_unknown_symbol_key_is_isolation_violation_and_not_thirty() -> None:
     report = evaluate(bundle(loaded, universe, {"BTCUSD": [candidate("BTCUSD")]}), loaded, universe)
     assert "UNKNOWN_SYMBOL_KEY" in _codes(report.isolation_findings)
     assert report.acceptance.pair_30_evaluated is False
+    assert report.gate_failures == ("30_PAIR_EVALUATED",)
 
 
 def test_broker_symbol_must_match_frozen_map() -> None:
@@ -96,6 +157,7 @@ def test_broker_symbol_must_match_frozen_map() -> None:
     chain[3] = chain[3] | {"broker_symbol": "XAUUSD"}
     report = evaluate(bundle(loaded, universe, {"XAUUSD": chain}), loaded, universe)
     assert _codes(report.isolation_findings) == ["BROKER_SYMBOL_MISMATCH"]
+    assert report.gate_failures == ("30_PAIR_EVALUATED",)
 
 
 def test_tradeplan_without_candidate_is_unanchored_not_fabricated() -> None:
@@ -112,6 +174,13 @@ def test_tradeplan_without_candidate_is_unanchored_not_fabricated() -> None:
     assert _codes(report.isolation_findings) == ["UNANCHORED_LINEAGE"]
     eur = next(item for item in report.symbols if item.symbol == "EURUSD")
     assert (eur.status, eur.candidate_count) == ("WAIT", 0)
+    assert report.acceptance.pair_30_evaluated is False
+
+
+def test_exact_s_without_candidate_is_unanchored() -> None:
+    loaded, universe = load_real()
+    report = evaluate(bundle(loaded, universe, {"EURUSD": [exact_s("EURUSD")]}), loaded, universe)
+    assert _codes(report.isolation_findings) == ["UNANCHORED_LINEAGE"]
 
 
 def test_dry_run_must_reference_same_symbol_tradeplan() -> None:

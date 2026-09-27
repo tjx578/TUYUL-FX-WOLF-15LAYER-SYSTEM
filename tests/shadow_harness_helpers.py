@@ -19,7 +19,9 @@ from tools.shadow_harness.manifest import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = REPO_ROOT / "tools" / "shadow_harness" / "policy" / "shadow_harness_policy_v1.json"
 CAPTURE_SCHEMA = "wolf15.shadow-harness.capture.v1"
+BUNDLE_SCHEMA = "shadow_capture_bundle/v1"
 CAPTURED_AT = "2026-09-22T08:00:00+00:00"
+NO_R9: frozenset[str] = frozenset()
 
 
 def load_real() -> tuple[LoadedPolicy, SymbolUniverse]:
@@ -35,13 +37,27 @@ def lineage(symbol: str, n: int) -> dict[str, str]:
     return {
         "lifecycle_id": f"5scr-lifecycle:{digest('lc', symbol, n)[:32]}",
         "thesis_id": f"5scr-thesis:{digest('th', symbol, n)[:32]}",
-        "box_id": f"5scr-execution-box:{digest('bx', symbol, n)[:32]}",
+        "proof_id": f"5scr-proof:{digest('pf', symbol, n)[:32]}",
+        "pressure_range_id": f"5scr-pressure-range:{digest('pr', symbol, n)[:32]}",
         "target_id": f"target-{digest('tg', symbol, n)[:32]}",
-        "tradeplan_id": f"5scr-tradeplan-v2:{digest('tp', symbol, n)[:32]}",
+        "execution_box_id": f"5scr-execution-box:{digest('bx', symbol, n)[:32]}",
+        "tradeplan_candidate_id": f"5scr-tradeplan-v2:{digest('tp', symbol, n)[:32]}",
     }
 
 
-def _base(symbol: str, n: int, kind: str, lineage_ids: dict[str, str | None]) -> dict[str, Any]:
+def _empty_lineage() -> dict[str, str | None]:
+    return {
+        "lifecycle_id": None,
+        "thesis_id": None,
+        "proof_id": None,
+        "pressure_range_id": None,
+        "target_id": None,
+        "execution_box_id": None,
+        "tradeplan_candidate_id": None,
+    }
+
+
+def _base(symbol: str, n: int, kind: str, lineage_ids: dict[str, str]) -> dict[str, Any]:
     return {
         "capture_schema_version": CAPTURE_SCHEMA,
         "capture_kind": kind,
@@ -49,20 +65,17 @@ def _base(symbol: str, n: int, kind: str, lineage_ids: dict[str, str | None]) ->
         "symbol": symbol,
         "captured_at_utc": CAPTURED_AT,
         "evidence_sha256": digest("evidence", kind, symbol, n),
-        "lineage": {
-            "lifecycle_id": None,
-            "thesis_id": None,
-            "box_id": None,
-            "target_id": None,
-            "tradeplan_id": None,
-        }
-        | lineage_ids,
+        "lineage": _empty_lineage() | lineage_ids,
     }
 
 
-def candidate(symbol: str, n: int = 1, **overrides: Any) -> dict[str, Any]:
+def _pick(symbol: str, n: int, *names: str) -> dict[str, str]:
     ids = lineage(symbol, n)
-    record = _base(symbol, n, "CANDIDATE", {"lifecycle_id": ids["lifecycle_id"], "thesis_id": ids["thesis_id"]})
+    return {name: ids[name] for name in names}
+
+
+def candidate(symbol: str, n: int = 1, **overrides: Any) -> dict[str, Any]:
+    record = _base(symbol, n, "CANDIDATE", _pick(symbol, n, "lifecycle_id", "thesis_id"))
     record |= {
         "candidate_id": f"cand-{symbol}-{n}",
         "direction": "BUY",
@@ -73,15 +86,31 @@ def candidate(symbol: str, n: int = 1, **overrides: Any) -> dict[str, Any]:
 
 
 def exact_s(symbol: str, n: int = 1, **overrides: Any) -> dict[str, Any]:
-    ids = lineage(symbol, n)
+    """Pre-R9 exact-S capture: NOT_MEASURED, no id/digest (the harness never fabricates one)."""
+
     record = _base(
         symbol,
         n,
         "EXACT_S",
-        {"lifecycle_id": ids["lifecycle_id"], "thesis_id": ids["thesis_id"], "box_id": ids["box_id"]},
+        _pick(symbol, n, "lifecycle_id", "thesis_id", "proof_id", "execution_box_id"),
     )
-    record |= {"exact_s_id": f"exact-s-{symbol}-{n}", "exact_s_sha256": digest("exact-s", symbol, n)}
+    record |= {
+        "exact_s_status": "NOT_MEASURED",
+        "exact_s_id": None,
+        "exact_s_sha256": None,
+        "r9_artifact_sha256": None,
+    }
     return record | overrides
+
+
+def measured_exact_s(symbol: str, r9_artifact_sha256: str, n: int = 1, **overrides: Any) -> dict[str, Any]:
+    measured = {
+        "exact_s_status": "MEASURED",
+        "exact_s_id": f"exact-s-{symbol}-{n}",
+        "exact_s_sha256": digest("exact-s", symbol, n),
+        "r9_artifact_sha256": r9_artifact_sha256,
+    }
+    return exact_s(symbol, n) | measured | overrides
 
 
 def prices(seed: int) -> list[dict[str, str]]:
@@ -93,7 +122,21 @@ def prices(seed: int) -> list[dict[str, str]]:
 
 
 def tradeplan(symbol: str, n: int = 1, seed: int | None = None, **overrides: Any) -> dict[str, Any]:
-    record = _base(symbol, n, "TRADEPLAN", dict(lineage(symbol, n)))
+    record = _base(
+        symbol,
+        n,
+        "TRADEPLAN",
+        _pick(
+            symbol,
+            n,
+            "lifecycle_id",
+            "thesis_id",
+            "pressure_range_id",
+            "target_id",
+            "execution_box_id",
+            "tradeplan_candidate_id",
+        ),
+    )
     record |= {
         "tradeplan_revision": 1,
         "direction": "BUY",
@@ -106,7 +149,7 @@ def tradeplan(symbol: str, n: int = 1, seed: int | None = None, **overrides: Any
 def broker_dry_run(
     symbol: str, universe: SymbolUniverse, n: int = 1, seed: int | None = None, **overrides: Any
 ) -> dict[str, Any]:
-    record = _base(symbol, n, "BROKER_ADAPTATION_DRY_RUN", {"tradeplan_id": lineage(symbol, n)["tradeplan_id"]})
+    record = _base(symbol, n, "BROKER_ADAPTATION_DRY_RUN", _pick(symbol, n, "tradeplan_candidate_id"))
     record |= {
         "dry_run": True,
         "adaptation_id": f"adapt-{symbol}-{n}",
@@ -119,7 +162,7 @@ def broker_dry_run(
 
 
 def risk_dry_run(symbol: str, n: int = 1, **overrides: Any) -> dict[str, Any]:
-    record = _base(symbol, n, "RISK_DRY_RUN", {"tradeplan_id": lineage(symbol, n)["tradeplan_id"]})
+    record = _base(symbol, n, "RISK_DRY_RUN", _pick(symbol, n, "tradeplan_candidate_id"))
     record |= {
         "dry_run": True,
         "risk_evaluation_id": f"risk-{symbol}-{n}",
@@ -141,14 +184,17 @@ def natural_chain(symbol: str, universe: SymbolUniverse, n: int = 1) -> list[dic
 
 def header(loaded: LoadedPolicy, universe: SymbolUniverse, **overrides: Any) -> dict[str, Any]:
     return {
-        "run_id": "shadow-run-001",
-        "symbol_universe": universe.universe_id,
-        "symbol_universe_sha256": universe.canonical_sha256,
-        "policy_version": loaded.policy.policy_version,
-        "policy_sha256": loaded.policy_sha256,
-        "capture_schema_version": CAPTURE_SCHEMA,
-        "operator_selected_symbols": [],
-        "operator_direction_overrides": [],
+        "schema_version": BUNDLE_SCHEMA,
+        "candidate_git_sha": digest("git")[:40],
+        "candidate_tree_digest": digest("tree")[:40],
+        "manifest_hash": universe.canonical_sha256,
+        "SSOT_hash": digest("ssot"),
+        "A1_hash": digest("a1"),
+        "A2_hash": digest("a2"),
+        "A3_hash": digest("a3"),
+        "A4_hash": None,
+        "configuration_digest": loaded.policy_sha256,
+        "created_at": CAPTURED_AT,
     } | overrides
 
 
@@ -164,7 +210,6 @@ def bundle(
     by_symbol: dict[str, list[dict[str, Any]]] = {symbol: [] for symbol in keys}
     by_symbol.update(captures or {})
     return {
-        "bundle_schema": "wolf15.shadow-harness.bundle.v1",
         "header": header(loaded, universe, **(header_overrides or {})),
         "captures_by_symbol": by_symbol,
     }
@@ -174,5 +219,10 @@ def encode(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, sort_keys=True).encode("utf-8")
 
 
-def evaluate(payload: dict[str, Any], loaded: LoadedPolicy, universe: SymbolUniverse) -> ShadowHarnessReport:
-    return evaluate_bundle_bytes(encode(payload), loaded, universe)
+def evaluate(
+    payload: dict[str, Any],
+    loaded: LoadedPolicy,
+    universe: SymbolUniverse,
+    r9_artifact_sha256s: frozenset[str] = NO_R9,
+) -> ShadowHarnessReport:
+    return evaluate_bundle_bytes(encode(payload), loaded, universe, r9_artifact_sha256s=r9_artifact_sha256s)

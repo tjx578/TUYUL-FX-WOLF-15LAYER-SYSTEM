@@ -3,6 +3,7 @@
 Usage::
 
     python -m tools.shadow_harness.cli --policy POLICY.json --bundle BUNDLE.json --out REPORT.json
+        [--r9-artifact R9_ARTIFACT ...]
 
 Reads local files only and writes exactly one new report file (never
 overwrites). Exit codes: 0 gate passed, 1 gate failed, 2 input rejected.
@@ -22,6 +23,7 @@ from tools.shadow_harness.manifest import (
     load_policy,
     load_symbol_universe,
     resolve_symbol_map_path,
+    sha256_hex,
 )
 
 EXIT_GATE_PASSED = 0
@@ -36,7 +38,19 @@ def _write_new(path: Path, payload: dict[str, Any]) -> None:
         handle.write(text)
 
 
-def run(policy_path: Path, bundle_path: Path, out_path: Path, repo_root: Path) -> int:
+def _r9_digests(paths: list[Path]) -> frozenset[str]:
+    digests: set[str] = set()
+    for path in paths:
+        try:
+            digests.add(sha256_hex(path.read_bytes()))
+        except OSError as exc:
+            raise HarnessInputError("R9_ARTIFACT_UNREADABLE", f"cannot read {path.name}") from exc
+    return frozenset(digests)
+
+
+def run(policy_path: Path, bundle_path: Path, out_path: Path, repo_root: Path, r9_artifacts: list[Path]) -> int:
+    """``r9_artifacts`` is explicit; an empty list means no R9 artifact was supplied (exact-S cannot be accepted)."""
+
     try:
         loaded = load_policy(policy_path)
         universe = load_symbol_universe(resolve_symbol_map_path(loaded, repo_root), loaded)
@@ -44,7 +58,7 @@ def run(policy_path: Path, bundle_path: Path, out_path: Path, repo_root: Path) -
             raw = bundle_path.read_bytes()
         except OSError as exc:
             raise HarnessInputError("BUNDLE_UNREADABLE", f"cannot read {bundle_path.name}") from exc
-        report = evaluate_bundle_bytes(raw, loaded, universe)
+        report = evaluate_bundle_bytes(raw, loaded, universe, r9_artifact_sha256s=_r9_digests(r9_artifacts))
     except HarnessInputError as exc:
         _write_new(
             out_path,
@@ -73,10 +87,19 @@ def main(argv: list[str] | None = None) -> int:
         default=_REPO_ROOT,
         help="root that the policy's repository-relative symbol_map_relpath resolves against",
     )
+    parser.add_argument(
+        "--r9-artifact",
+        type=Path,
+        action="append",
+        dest="r9_artifacts",
+        help="R9 artifact file (repeatable); its raw-bytes sha256 is what MEASURED exact-S captures must bind to. "
+        "Omitted = no R9 artifact supplied, so exact-S is never accepted.",
+    )
     args = parser.parse_args(argv)
     if args.out.exists():
         parser.error(f"refusing to overwrite existing report {args.out}")
-    return run(args.policy, args.bundle, args.out, args.repo_root)
+    r9_artifacts: list[Path] = args.r9_artifacts if args.r9_artifacts is not None else []
+    return run(args.policy, args.bundle, args.out, args.repo_root, r9_artifacts)
 
 
 if __name__ == "__main__":

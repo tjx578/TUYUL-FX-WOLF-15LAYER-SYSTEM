@@ -99,9 +99,11 @@ class HarnessPolicyV1(BaseModel):
     expected_symbol_count: Literal[30]
     symbol_map_relpath: str = Field(..., min_length=1, max_length=256)
     symbol_map_canonical_sha256: str = Field(..., pattern=SHA256_PATTERN)
-    bundle_schema: Literal["wolf15.shadow-harness.bundle.v1"]
+    bundle_schema: Literal["shadow_capture_bundle/v1"]
     capture_schema_version: Literal["wolf15.shadow-harness.capture.v1"]
-    price_contamination_rule: Literal["EXACT_PRICE_VECTOR"]
+    contamination_rule: Literal["LINEAGE_IDENTITY"]
+    price_vector_overlap: Literal["DIAGNOSTIC_ONLY"]
+    exact_s_acceptance_rule: Literal["R9_ARTIFACT_BOUND"]
     required_broker_submit_count: Literal[0]
     operator_pair_selection_allowed: Literal[False]
     operator_direction_selection_allowed: Literal[False]

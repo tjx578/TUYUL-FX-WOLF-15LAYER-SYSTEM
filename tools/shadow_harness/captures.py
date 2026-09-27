@@ -7,13 +7,22 @@ Existing strategy lineage ids come in two formats (prefixed-hex ids in the v2
 contracts, UUIDs in the v3.1 contracts), so lineage ids here are bounded opaque
 strings. No existing contract type is itself a capture record, so none is
 reused; this keeps the package free of runtime imports.
+
+Bundle format ``shadow_capture_bundle/v1`` is IMPLEMENTATION_ONLY and
+NON_CANONICAL: it is a harness input format, not a WOLF15 authority object.
+
+Exact-S is never invented here. An exact-S capture either says
+``exact_s_status = "NOT_MEASURED"`` (the only honest value before R9) with no
+id/digest, or carries ``exact_s_id`` + ``exact_s_sha256`` together with the
+digest of the R9 artifact they were taken from. Whether that R9 artifact was
+actually supplied is decided by the evaluator, never by the capture.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -21,26 +30,66 @@ from tools.shadow_harness.manifest import CANONICAL_SYMBOL_PATTERN, SHA256_PATTE
 
 EvidenceId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]{2,127}$")]
 Sha256Hex = Annotated[str, Field(pattern=SHA256_PATTERN)]
+GitObjectId = Annotated[str, Field(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")]
 CanonicalSymbol = Annotated[str, Field(pattern=CANONICAL_SYMBOL_PATTERN)]
 Direction = Literal["BUY", "SELL"]
 SelectionSource = Literal["STRATEGY", "OPERATOR"]
 PriceName = Literal["ENTRY", "STOP_LOSS", "TAKE_PROFIT"]
+ExactSStatus = Literal["MEASURED", "NOT_MEASURED"]
 
-LINEAGE_FIELDS: tuple[str, ...] = ("lifecycle_id", "thesis_id", "box_id", "target_id", "tradeplan_id")
+BUNDLE_SCHEMA_VERSION: Final = "shadow_capture_bundle/v1"
+BUNDLE_MARKING: Final = ("IMPLEMENTATION_ONLY", "NON_CANONICAL")
+BUNDLE_HEADER_FIELDS: Final = (
+    "schema_version",
+    "candidate_git_sha",
+    "candidate_tree_digest",
+    "manifest_hash",
+    "SSOT_hash",
+    "A1_hash",
+    "A2_hash",
+    "A3_hash",
+    "A4_hash",
+    "configuration_digest",
+    "created_at",
+)
+DERIVED_REPORT_FIELDS: Final = ("gate_failures", "gate_passed")
+"""Report fields that only the evaluator may compute; supplying them in capture input is rejected."""
+
+LINEAGE_FIELDS: tuple[str, ...] = (
+    "lifecycle_id",
+    "thesis_id",
+    "proof_id",
+    "pressure_range_id",
+    "target_id",
+    "execution_box_id",
+    "tradeplan_candidate_id",
+)
+"""Lineage ids scanned by the primary cross-pair contamination detector (together with ``symbol``)."""
 
 
 class _Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+def _utc(value: datetime, name: str) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{name} must include a UTC offset")
+    return value.astimezone(UTC)
+
+
 class CaptureLineage(_Frozen):
-    """Lineage ids referenced by one capture; which are required depends on the capture kind."""
+    """Lineage ids referenced by one capture; which are required depends on the capture kind.
+
+    Every key is required (explicit ``null`` when not applicable) so absence is never implied.
+    """
 
     lifecycle_id: EvidenceId | None
     thesis_id: EvidenceId | None
-    box_id: EvidenceId | None
+    proof_id: EvidenceId | None
+    pressure_range_id: EvidenceId | None
     target_id: EvidenceId | None
-    tradeplan_id: EvidenceId | None
+    execution_box_id: EvidenceId | None
+    tradeplan_candidate_id: EvidenceId | None
 
     def present(self) -> tuple[tuple[str, str], ...]:
         return tuple((name, value) for name in LINEAGE_FIELDS if (value := getattr(self, name)) is not None)
@@ -70,10 +119,8 @@ class _CaptureBase(_Frozen):
 
     @field_validator("captured_at_utc")
     @classmethod
-    def _utc(cls, value: datetime) -> datetime:
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("captured_at_utc must include a UTC offset")
-        return value.astimezone(UTC)
+    def _captured_utc(cls, value: datetime) -> datetime:
+        return _utc(value, "captured_at_utc")
 
     @model_validator(mode="after")
     def _lineage_complete(self) -> _CaptureBase:
@@ -106,13 +153,37 @@ class CandidateCapture(_CaptureBase):
 
 
 class ExactSCapture(_CaptureBase):
-    """Exact-S evidence for one candidate (proof id + digest only)."""
+    """Exact-S evidence for one candidate.
+
+    ``NOT_MEASURED`` carries no exact-S id, digest or R9 artifact digest.
+    ``MEASURED`` must carry all three; the evaluator accepts it only when
+    ``r9_artifact_sha256`` matches an R9 artifact actually supplied to the run.
+    """
 
     capture_kind: Literal["EXACT_S"]
-    exact_s_id: EvidenceId
-    exact_s_sha256: Sha256Hex
+    exact_s_status: ExactSStatus
+    exact_s_id: EvidenceId | None
+    exact_s_sha256: Sha256Hex | None
+    r9_artifact_sha256: Sha256Hex | None
 
-    required_lineage = ("lifecycle_id", "thesis_id", "box_id")
+    required_lineage = ("lifecycle_id", "thesis_id", "execution_box_id")
+
+    @model_validator(mode="after")
+    def _status_matches_evidence(self) -> ExactSCapture:
+        carried = {
+            "exact_s_id": self.exact_s_id,
+            "exact_s_sha256": self.exact_s_sha256,
+            "r9_artifact_sha256": self.r9_artifact_sha256,
+        }
+        if self.exact_s_status == "NOT_MEASURED":
+            present = sorted(name for name, value in carried.items() if value is not None)
+            if present:
+                raise ValueError(f"NOT_MEASURED exact-S must not carry {', '.join(present)}")
+        else:
+            absent = sorted(name for name, value in carried.items() if value is None)
+            if absent:
+                raise ValueError(f"MEASURED exact-S requires {', '.join(absent)} from an R9 artifact")
+        return self
 
 
 class TradeplanCapture(_CaptureBase):
@@ -122,7 +193,7 @@ class TradeplanCapture(_CaptureBase):
     direction_selection_source: SelectionSource
     prices: tuple[PricePoint, ...] = Field(..., min_length=1)
 
-    required_lineage = LINEAGE_FIELDS
+    required_lineage = ("lifecycle_id", "thesis_id", "target_id", "execution_box_id", "tradeplan_candidate_id")
 
     @field_validator("prices")
     @classmethod
@@ -144,7 +215,7 @@ class BrokerAdaptationDryRunCapture(_CaptureBase):
     broker_submit_attempted: bool
     prices: tuple[PricePoint, ...]
 
-    required_lineage = ("tradeplan_id",)
+    required_lineage = ("tradeplan_candidate_id",)
 
     @field_validator("prices")
     @classmethod
@@ -164,7 +235,7 @@ class RiskDryRunCapture(_CaptureBase):
     risk_decision: Literal["ALLOW", "VETO"]
     broker_submit_attempted: bool
 
-    required_lineage = ("tradeplan_id",)
+    required_lineage = ("tradeplan_candidate_id",)
 
 
 Capture = Annotated[
@@ -175,22 +246,33 @@ Capture = Annotated[
 DOWNSTREAM_KINDS: frozenset[str] = frozenset({"EXACT_S", "TRADEPLAN", "BROKER_ADAPTATION_DRY_RUN", "RISK_DRY_RUN"})
 
 
-class OperatorDirectionOverride(_Frozen):
-    symbol: CanonicalSymbol
-    direction: Direction
+class BundleHeader(BaseModel):
+    """``shadow_capture_bundle/v1`` header. Every key is required; only ``A4_hash`` may be ``null``.
 
+    ``A4_hash`` stays ``null`` until A4 is approved. ``manifest_hash`` and
+    ``configuration_digest`` are bound by the evaluator to the pinned symbol
+    universe and the harness policy respectively; the other hashes are recorded
+    and format-checked only (the harness has no authority to verify them).
+    """
 
-class ShadowRunHeader(_Frozen):
-    """Run-level attestation. The operator fields are required so their emptiness is explicit."""
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
-    run_id: EvidenceId
-    symbol_universe: Literal["WOLF15_XM_30_V1"]
-    symbol_universe_sha256: Sha256Hex
-    policy_version: str = Field(..., pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
-    policy_sha256: Sha256Hex
-    capture_schema_version: Literal["wolf15.shadow-harness.capture.v1"]
-    operator_selected_symbols: tuple[CanonicalSymbol, ...]
-    operator_direction_overrides: tuple[OperatorDirectionOverride, ...]
+    schema_version: Literal["shadow_capture_bundle/v1"]
+    candidate_git_sha: GitObjectId
+    candidate_tree_digest: GitObjectId
+    manifest_hash: Sha256Hex
+    ssot_hash: Sha256Hex = Field(..., alias="SSOT_hash")
+    a1_hash: Sha256Hex = Field(..., alias="A1_hash")
+    a2_hash: Sha256Hex = Field(..., alias="A2_hash")
+    a3_hash: Sha256Hex = Field(..., alias="A3_hash")
+    a4_hash: Sha256Hex | None = Field(..., alias="A4_hash")
+    configuration_digest: Sha256Hex
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def _created_utc(cls, value: datetime) -> datetime:
+        return _utc(value, "created_at")
 
 
 class ShadowCaptureBundle(_Frozen):
@@ -202,23 +284,25 @@ class ShadowCaptureBundle(_Frozen):
     unevaluated symbol.
     """
 
-    bundle_schema: Literal["wolf15.shadow-harness.bundle.v1"]
-    header: ShadowRunHeader
+    header: BundleHeader
     captures_by_symbol: dict[Annotated[str, Field(min_length=1, max_length=32)], tuple[Capture, ...]]
 
 
 __all__ = [
+    "BUNDLE_HEADER_FIELDS",
+    "BUNDLE_MARKING",
+    "BUNDLE_SCHEMA_VERSION",
+    "DERIVED_REPORT_FIELDS",
     "DOWNSTREAM_KINDS",
     "LINEAGE_FIELDS",
     "BrokerAdaptationDryRunCapture",
+    "BundleHeader",
     "CandidateCapture",
     "Capture",
     "CaptureLineage",
     "ExactSCapture",
-    "OperatorDirectionOverride",
     "PricePoint",
     "RiskDryRunCapture",
     "ShadowCaptureBundle",
-    "ShadowRunHeader",
     "TradeplanCapture",
 ]

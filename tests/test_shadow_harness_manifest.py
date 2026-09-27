@@ -102,6 +102,10 @@ def test_edited_map_breaks_the_policy_pin() -> None:
         ({"required_broker_submit_count": 1}, "POLICY_SCHEMA_INVALID"),
         ({"operator_pair_selection_allowed": True}, "POLICY_SCHEMA_INVALID"),
         ({"unexpected_threshold": 3}, "POLICY_SCHEMA_INVALID"),
+        ({"contamination_rule": "EXACT_PRICE_VECTOR"}, "POLICY_SCHEMA_INVALID"),
+        ({"price_vector_overlap": "FAIL"}, "POLICY_SCHEMA_INVALID"),
+        ({"exact_s_acceptance_rule": "ANY"}, "POLICY_SCHEMA_INVALID"),
+        ({"bundle_schema": "wolf15.shadow-harness.bundle.v1"}, "POLICY_SCHEMA_INVALID"),
     ],
 )
 def test_policy_rejects_changed_or_hidden_values(mutation: dict[str, Any], code: str) -> None:

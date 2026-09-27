@@ -1,15 +1,21 @@
 """Per-symbol isolation validation and cross-pair contamination detection.
 
-Both are pure functions over an already-parsed :class:`ShadowCaptureBundle`.
+All are pure functions over an already-parsed :class:`ShadowCaptureBundle`.
 
-* Isolation: every record sits under its own canonical symbol key, the key is a
-  universe symbol, dry-run broker symbols match the frozen map, capture ids are
-  unique per symbol, every lineage id a record for symbol X references is used
-  only under X, and downstream records are anchored to same-symbol upstream
-  records (no fabricated tradeplan without a candidate).
-* Contamination: any lineage id, evidence id, evidence digest or exact price
-  vector observed under more than one symbol. The count is the number of
-  distinct contaminating values.
+* Isolation (per-symbol integrity): every symbol key is a universe symbol,
+  dry-run broker symbols match the frozen map, capture ids are unique per
+  symbol, and downstream records are anchored to same-symbol upstream records
+  (no fabricated tradeplan without a candidate).
+* Contamination (FAIL): identity-based, never numeric. The primary detector is
+  lineage-based over ``symbol`` and the lineage ids in ``LINEAGE_FIELDS``: a
+  record filed under another symbol's key, or any lineage id value observed
+  under more than one symbol (e.g. an EURUSD capture carrying a GBPUSD
+  ``thesis_id``). A secondary identity detector flags evidence ids / evidence
+  digests reused across symbols. The count is the number of distinct
+  contaminating values.
+* Diagnostics (DIAGNOSTIC_ONLY): identical price vectors across symbols. Two
+  pairs may legitimately share numeric prices, so price overlap is reported but
+  never counted as contamination and never fails the gate.
 """
 
 from __future__ import annotations
@@ -34,13 +40,21 @@ from tools.shadow_harness.manifest import SymbolUniverse
 
 IsolationCode = Literal[
     "UNKNOWN_SYMBOL_KEY",
-    "SYMBOL_KEY_MISMATCH",
     "BROKER_SYMBOL_MISMATCH",
     "DUPLICATE_CAPTURE_ID",
-    "LINEAGE_SCOPE_VIOLATION",
     "UNANCHORED_LINEAGE",
 ]
-ContaminationKind = Literal["LINEAGE_ID", "EVIDENCE_ID", "EVIDENCE_SHA256", "PRICE_VECTOR"]
+ContaminationKind = Literal["SYMBOL", "LINEAGE_ID", "EVIDENCE_ID", "EVIDENCE_SHA256"]
+ContaminationDetector = Literal["PRIMARY_LINEAGE", "SECONDARY_EVIDENCE_IDENTITY"]
+ContaminationCode = Literal["CROSS_PAIR_CONTAMINATION"]
+DiagnosticKind = Literal["PRICE_VECTOR_OVERLAP"]
+
+_DETECTOR_BY_KIND: dict[ContaminationKind, ContaminationDetector] = {
+    "SYMBOL": "PRIMARY_LINEAGE",
+    "LINEAGE_ID": "PRIMARY_LINEAGE",
+    "EVIDENCE_ID": "SECONDARY_EVIDENCE_IDENTITY",
+    "EVIDENCE_SHA256": "SECONDARY_EVIDENCE_IDENTITY",
+}
 
 
 class _Frozen(BaseModel):
@@ -55,12 +69,24 @@ class IsolationFinding(_Frozen):
 
 
 class CaptureRef(_Frozen):
+    symbol_key: str
     symbol: str
     capture_id: str
 
 
 class ContaminationFinding(_Frozen):
+    code: ContaminationCode
+    detector: ContaminationDetector
     kind: ContaminationKind
+    fields: tuple[str, ...]
+    value: str
+    symbols: tuple[str, ...]
+    captures: tuple[CaptureRef, ...]
+
+
+class DiagnosticFinding(_Frozen):
+    severity: Literal["DIAGNOSTIC_ONLY"]
+    kind: DiagnosticKind
     value: str
     symbols: tuple[str, ...]
     captures: tuple[CaptureRef, ...]
@@ -72,23 +98,24 @@ def iter_captures(bundle: ShadowCaptureBundle) -> Iterable[tuple[str, Capture]]:
             yield key, capture
 
 
-def _evidence_ids(capture: Capture) -> tuple[str, ...]:
-    ids = [capture.capture_id]
+def _evidence_ids(capture: Capture) -> tuple[tuple[str, str], ...]:
+    ids = [("capture_id", capture.capture_id)]
     if isinstance(capture, CandidateCapture):
-        ids.append(capture.candidate_id)
-    elif isinstance(capture, ExactSCapture):
-        ids.append(capture.exact_s_id)
+        ids.append(("candidate_id", capture.candidate_id))
+    elif isinstance(capture, ExactSCapture) and capture.exact_s_id is not None:
+        ids.append(("exact_s_id", capture.exact_s_id))
     elif isinstance(capture, BrokerAdaptationDryRunCapture):
-        ids.append(capture.adaptation_id)
+        ids.append(("adaptation_id", capture.adaptation_id))
     elif isinstance(capture, RiskDryRunCapture):
-        ids.append(capture.risk_evaluation_id)
+        ids.append(("risk_evaluation_id", capture.risk_evaluation_id))
     return tuple(ids)
 
 
-def _evidence_digests(capture: Capture) -> tuple[str, ...]:
-    if isinstance(capture, ExactSCapture):
-        return (capture.evidence_sha256, capture.exact_s_sha256)
-    return (capture.evidence_sha256,)
+def _evidence_digests(capture: Capture) -> tuple[tuple[str, str], ...]:
+    digests = [("evidence_sha256", capture.evidence_sha256)]
+    if isinstance(capture, ExactSCapture) and capture.exact_s_sha256 is not None:
+        digests.append(("exact_s_sha256", capture.exact_s_sha256))
+    return tuple(digests)
 
 
 def _normalise_price(value: Decimal) -> str:
@@ -105,40 +132,87 @@ def price_vector(capture: Capture) -> str | None:
     return "|".join(f"{point.name}={_normalise_price(point.value)}" for point in sorted(points, key=lambda p: p.name))
 
 
-def _index(bundle: ShadowCaptureBundle) -> dict[tuple[ContaminationKind, str], list[CaptureRef]]:
-    index: dict[tuple[ContaminationKind, str], list[CaptureRef]] = defaultdict(list)
-    for _key, capture in iter_captures(bundle):
-        ref = CaptureRef(symbol=capture.symbol, capture_id=capture.capture_id)
-        values: list[tuple[ContaminationKind, str]] = []
-        values.extend(("LINEAGE_ID", value) for _, value in capture.lineage.present())
-        values.extend(("EVIDENCE_ID", value) for value in _evidence_ids(capture))
-        values.extend(("EVIDENCE_SHA256", value) for value in _evidence_digests(capture))
-        vector = price_vector(capture)
-        if vector is not None:
-            values.append(("PRICE_VECTOR", vector))
-        for item in dict.fromkeys(values):
-            index[item].append(ref)
-    return index
+def _ref(key: str, capture: Capture) -> CaptureRef:
+    return CaptureRef(symbol_key=key, symbol=capture.symbol, capture_id=capture.capture_id)
+
+
+def _sorted_refs(refs: Iterable[CaptureRef]) -> tuple[CaptureRef, ...]:
+    return tuple(sorted(set(refs), key=lambda ref: (ref.symbol_key, ref.symbol, ref.capture_id)))
 
 
 def detect_cross_pair_contamination(bundle: ShadowCaptureBundle) -> tuple[ContaminationFinding, ...]:
+    """Identity-based contamination only; numeric price equality is never contamination."""
+
     findings: list[ContaminationFinding] = []
-    for (kind, value), refs in sorted(_index(bundle).items()):
+    for key, capture in iter_captures(bundle):
+        if capture.symbol != key:
+            findings.append(
+                ContaminationFinding(
+                    code="CROSS_PAIR_CONTAMINATION",
+                    detector="PRIMARY_LINEAGE",
+                    kind="SYMBOL",
+                    fields=("symbol",),
+                    value=f"{capture.symbol}@{key}",
+                    symbols=tuple(sorted({key, capture.symbol})),
+                    captures=(_ref(key, capture),),
+                )
+            )
+
+    index: dict[tuple[ContaminationKind, str], list[tuple[str, CaptureRef]]] = defaultdict(list)
+    for key, capture in iter_captures(bundle):
+        ref = _ref(key, capture)
+        entries: list[tuple[ContaminationKind, str, str]] = []
+        entries.extend(("LINEAGE_ID", field, value) for field, value in capture.lineage.present())
+        entries.extend(("EVIDENCE_ID", field, value) for field, value in _evidence_ids(capture))
+        entries.extend(("EVIDENCE_SHA256", field, value) for field, value in _evidence_digests(capture))
+        for kind, field, value in entries:
+            index[(kind, value)].append((field, ref))
+
+    for (kind, value), observed in sorted(index.items()):
+        refs = [ref for _field, ref in observed]
+        symbols = tuple(sorted({ref.symbol for ref in refs} | {ref.symbol_key for ref in refs}))
+        if len({ref.symbol for ref in refs}) > 1:
+            findings.append(
+                ContaminationFinding(
+                    code="CROSS_PAIR_CONTAMINATION",
+                    detector=_DETECTOR_BY_KIND[kind],
+                    kind=kind,
+                    fields=tuple(sorted({field for field, _ref in observed})),
+                    value=value,
+                    symbols=symbols,
+                    captures=_sorted_refs(refs),
+                )
+            )
+    return tuple(sorted(findings, key=lambda item: (item.detector, item.kind, item.value)))
+
+
+def detect_price_overlap_diagnostics(bundle: ShadowCaptureBundle) -> tuple[DiagnosticFinding, ...]:
+    """Identical price vectors across symbols. DIAGNOSTIC_ONLY: never contamination, never a gate input."""
+
+    index: dict[str, list[CaptureRef]] = defaultdict(list)
+    for key, capture in iter_captures(bundle):
+        vector = price_vector(capture)
+        if vector is not None:
+            index[vector].append(_ref(key, capture))
+    findings: list[DiagnosticFinding] = []
+    for vector, refs in sorted(index.items()):
         symbols = tuple(sorted({ref.symbol for ref in refs}))
         if len(symbols) > 1:
-            captures = tuple(sorted(set(refs), key=lambda ref: (ref.symbol, ref.capture_id)))
-            findings.append(ContaminationFinding(kind=kind, value=value, symbols=symbols, captures=captures))
+            findings.append(
+                DiagnosticFinding(
+                    severity="DIAGNOSTIC_ONLY",
+                    kind="PRICE_VECTOR_OVERLAP",
+                    value=vector,
+                    symbols=symbols,
+                    captures=_sorted_refs(refs),
+                )
+            )
     return tuple(findings)
 
 
 def validate_symbol_isolation(bundle: ShadowCaptureBundle, universe: SymbolUniverse) -> tuple[IsolationFinding, ...]:
     findings: list[IsolationFinding] = []
     universe_symbols = set(universe.symbols)
-    lineage_owners: dict[str, set[str]] = defaultdict(set)
-    for _key, capture in iter_captures(bundle):
-        for _, value in capture.lineage.present():
-            lineage_owners[value].add(capture.symbol)
-
     for key in sorted(bundle.captures_by_symbol):
         captures = bundle.captures_by_symbol[key]
         if key not in universe_symbols:
@@ -156,13 +230,13 @@ def validate_symbol_isolation(bundle: ShadowCaptureBundle, universe: SymbolUnive
             if isinstance(item, CandidateCapture) and item.symbol == key
         }
         tradeplan_anchors = {
-            item.lineage.tradeplan_id for item in captures if isinstance(item, TradeplanCapture) and item.symbol == key
+            item.lineage.tradeplan_candidate_id
+            for item in captures
+            if isinstance(item, TradeplanCapture) and item.symbol == key
         }
         seen_ids: set[str] = set()
         for capture in captures:
-            findings.extend(
-                _record_findings(key, capture, universe, lineage_owners, seen_ids, candidate_anchors, tradeplan_anchors)
-            )
+            findings.extend(_record_findings(key, capture, universe, seen_ids, candidate_anchors, tradeplan_anchors))
             seen_ids.add(capture.capture_id)
     return tuple(findings)
 
@@ -171,7 +245,6 @@ def _record_findings(
     key: str,
     capture: Capture,
     universe: SymbolUniverse,
-    lineage_owners: dict[str, set[str]],
     seen_ids: set[str],
     candidate_anchors: set[tuple[str | None, str | None]],
     tradeplan_anchors: set[str | None],
@@ -181,34 +254,30 @@ def _record_findings(
     def add(code: IsolationCode, detail: str) -> None:
         out.append(IsolationFinding(code=code, symbol_key=key, capture_id=capture.capture_id, detail=detail))
 
-    if capture.symbol != key:
-        add("SYMBOL_KEY_MISMATCH", f"record symbol {capture.symbol} is filed under {key}")
     if capture.capture_id in seen_ids:
         add("DUPLICATE_CAPTURE_ID", "capture id repeats within the symbol")
     if isinstance(capture, BrokerAdaptationDryRunCapture):
         expected = universe.broker_symbol_for(capture.symbol)
         if expected != capture.broker_symbol:
             add("BROKER_SYMBOL_MISMATCH", f"broker symbol {capture.broker_symbol} is not mapped to {capture.symbol}")
-    for name, value in capture.lineage.present():
-        foreign = sorted(lineage_owners[value] - {capture.symbol})
-        if foreign:
-            add("LINEAGE_SCOPE_VIOLATION", f"{name} is also referenced under {', '.join(foreign)}")
     if isinstance(capture, ExactSCapture | TradeplanCapture):
         if (capture.lineage.lifecycle_id, capture.lineage.thesis_id) not in candidate_anchors:
             add("UNANCHORED_LINEAGE", "lifecycle/thesis does not match a same-symbol candidate")
     elif (
         isinstance(capture, BrokerAdaptationDryRunCapture | RiskDryRunCapture)
-        and capture.lineage.tradeplan_id not in tradeplan_anchors
+        and capture.lineage.tradeplan_candidate_id not in tradeplan_anchors
     ):
-        add("UNANCHORED_LINEAGE", "tradeplan_id does not match a same-symbol tradeplan capture")
+        add("UNANCHORED_LINEAGE", "tradeplan_candidate_id does not match a same-symbol tradeplan capture")
     return out
 
 
 __all__ = [
     "CaptureRef",
     "ContaminationFinding",
+    "DiagnosticFinding",
     "IsolationFinding",
     "detect_cross_pair_contamination",
+    "detect_price_overlap_diagnostics",
     "iter_captures",
     "price_vector",
     "validate_symbol_isolation",
