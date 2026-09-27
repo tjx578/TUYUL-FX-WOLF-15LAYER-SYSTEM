@@ -22,7 +22,7 @@ from ops.demo_canary_verifier.envelope import (
     envelope_sha256,
     load_envelope,
 )
-from ops.demo_canary_verifier.side_ledger import SIDE_LEDGER_SCHEMA, broker_adaptation_digest
+from ops.demo_canary_verifier.side_ledger import SIDE_LEDGER_SCHEMA, adapted_command_provenance_digest
 
 T0 = datetime(2026, 9, 22, 8, 0, 0, tzinfo=UTC)
 EXECUTOR_ID = "11111111-1111-4111-8111-111111111111"
@@ -191,7 +191,7 @@ def side_ledger(*, for_command: dict[str, Any] | None = None, **overrides: Any) 
         "risk_decision_id": RISK_DECISION_ID,
         "risk_reservation_id": RISK_DECISION_ID,
         "exact_s": dict(EXACT_S),
-        "broker_adaptation_digest": broker_adaptation_digest(
+        "adapted_command_provenance_digest": adapted_command_provenance_digest(
             ExecutionCommandV1.model_validate(for_command or command())
         ),
         "command_id": COMMAND_ID,
@@ -481,12 +481,12 @@ def test_volume_min_comes_only_from_the_pinned_snapshot_evidence() -> None:
         ("command_id", "V31_LEDGER_COMMAND_ID_MISMATCH"),
         ("tradeplan_candidate_id", "V31_LEDGER_TRADEPLAN_MISMATCH"),
         ("risk_reservation_id", "V31_LEDGER_RISK_RESERVATION_MISMATCH"),
-        ("broker_adaptation_digest", "V31_LEDGER_BROKER_ADAPTATION_DIGEST_MISMATCH"),
+        ("adapted_command_provenance_digest", "V31_LEDGER_ADAPTED_COMMAND_PROVENANCE_MISMATCH"),
     ],
 )
 def test_side_ledger_absent_invalid_or_unbound_is_refused(ledger: Any, code: str) -> None:
     if isinstance(ledger, str):
-        value = "sha256:" + "0" * 64 if ledger == "broker_adaptation_digest" else "LIVE_PATH-other-id"
+        value = "sha256:" + "0" * 64 if ledger == "adapted_command_provenance_digest" else "LIVE_PATH-other-id"
         overrides: dict[str, Any] = {ledger: value}
         ledger = side_ledger(**overrides)
     decision = check(bundle(v31_side_ledger=ledger))

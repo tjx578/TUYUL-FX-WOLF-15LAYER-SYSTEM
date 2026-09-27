@@ -5,16 +5,21 @@ Owner decisions (2026-09-27):
 - B1: the DEMO path is the existing mechanical EA envelope (EA unchanged) plus this immutable side
   ledger. The ledger binds the V31 lineage to the mechanical chain by explicit identifiers only: V31
   tradeplan candidate id + revision, risk decision id, risk reservation id, exact-S (only from an R9
-  artifact), the broker-adaptation result digest, command id, EA receipt ref, and MT5 broker-truth refs.
+  artifact), the adapted-command provenance digest, command id, EA receipt ref, and MT5 broker-truth refs.
   Absent exact-S is ``NOT_MEASURED``; it never passes and blocks broker-truth reconciliation.
+- Exact-S basis: ``source_artifact == "R9"`` plus the exact R9 artifact hash, fail-closed. No frozen R9
+  artifact envelope exists yet (its schema is deliberately not defined here), so ``R9_ENVELOPE_STATUS``
+  is ``NOT_FROZEN`` and :func:`g6_readiness` never qualifies exact-S for G6 (``R9_ENVELOPE_NOT_FROZEN``).
 - B5: bounded volume-min canary, never increase risk. ``canonical_sized_volume < volume_min`` is
   ``NO_SUBMIT``; otherwise the DEMO submitted volume is exactly the broker ``volume_min``. Volumes are
   ``Decimal`` (floats via ``Decimal(str(x))``), never rounded or quantized, and ``volume_min`` only ever
   comes from broker evidence (``SymbolCapability.volume_min`` of the pinned snapshot), never a constant.
 
-Newly defined here (no existing contract): the side-ledger model, the broker-adaptation digest
-(canonical :func:`evidence_digest` of the broker-adapted ``ExecutionCommandV1`` with its signature
-excluded), and the bounded-volume decision. The ledger is evidence, never submit authority.
+Newly defined here (no existing contract): the side-ledger model, the adapted-command provenance digest
+(:func:`evidence_digest` of the broker-adapted ``ExecutionCommandV1`` with its signature excluded), and the
+bounded-volume decision. The provenance digest is an integrity/provenance digest only: it is not a canonical
+broker-adaptation digest and not a signature authority until a broker-adaptation contract exists. The
+ledger is evidence, never submit authority.
 """
 
 from __future__ import annotations
@@ -34,6 +39,11 @@ EXACT_S_MEASURED: Final = "MEASURED"
 EXACT_S_NOT_MEASURED: Final = "NOT_MEASURED"
 NO_SUBMIT: Final = "NO_SUBMIT"
 SUBMIT_VOLUME_MIN: Final = "SUBMIT_VOLUME_MIN"
+R9_ENVELOPE_NOT_FROZEN: Final = "NOT_FROZEN"
+# No frozen R9 artifact envelope exists yet; its schema is deliberately not invented here.
+R9_ENVELOPE_STATUS: Final = R9_ENVELOPE_NOT_FROZEN
+G6_NOT_READY_R9_ENVELOPE: Final = "R9_ENVELOPE_NOT_FROZEN"
+G6_NOT_READY_R9_ENVELOPE_UNRECOGNIZED: Final = "R9_ENVELOPE_STATUS_UNRECOGNIZED"
 CLAIM_BOUNDARY: Final = {
     "PATH_LABEL": DEMO_PATH_LABEL,
     "EA_NATIVE_V31_SCORECARD": "NOT_PROVEN",
@@ -101,7 +111,7 @@ class V31SideLedgerV1(_Strict):
     risk_decision_id: str = Field(min_length=3, max_length=200)
     risk_reservation_id: str = Field(min_length=3, max_length=200)
     exact_s: ExactSRefV1 | None = None
-    broker_adaptation_digest: str = Field(pattern=_SHA256)
+    adapted_command_provenance_digest: str = Field(pattern=_SHA256)
     command_id: str = Field(min_length=3, max_length=64)
     ea_receipt_report_id: str | None = Field(default=None, min_length=3, max_length=64)
     broker_truth: BrokerTruthRefsV1 | None = None
@@ -110,14 +120,29 @@ class V31SideLedgerV1(_Strict):
     volume_reason: Literal["BOUNDED_CANARY_DOWNSIZE_TO_VOLUME_MIN"]
 
 
-def broker_adaptation_digest(command: ExecutionCommandV1) -> str:
-    """Canonical digest of the broker-adapted command (signature excluded: it signs, it is not adapted)."""
+def adapted_command_provenance_digest(command: ExecutionCommandV1) -> str:
+    """Integrity/provenance digest of the broker-adapted command (signature excluded).
+
+    Integrity/provenance only until a broker-adaptation contract exists: it is not a canonical
+    broker-adaptation digest and never a signature authority.
+    """
 
     return evidence_digest(command.model_dump(mode="json", exclude={"signature"}))
 
 
 def exact_s_state(ledger: V31SideLedgerV1 | None) -> str:
     return EXACT_S_MEASURED if ledger is not None and ledger.exact_s is not None else EXACT_S_NOT_MEASURED
+
+
+def g6_readiness(r9_envelope_status: str) -> tuple[bool, str]:
+    """Exact-S G6 qualification, fail-closed: never ready while no frozen R9 artifact envelope exists.
+
+    No FROZEN state is defined yet, so every status (``NOT_FROZEN`` or unrecognized) is not ready.
+    """
+
+    if r9_envelope_status == R9_ENVELOPE_NOT_FROZEN:
+        return False, G6_NOT_READY_R9_ENVELOPE
+    return False, G6_NOT_READY_R9_ENVELOPE_UNRECOGNIZED
 
 
 def bounded_canary_volume(canonical_sized_volume: Decimal, volume_min: Decimal) -> tuple[str, Decimal | None]:
@@ -153,8 +178,8 @@ def check_ledger_command_binding(ledger: V31SideLedgerV1, command: ExecutionComm
         refusals.add("V31_LEDGER_TRADEPLAN_MISMATCH")
     if reservation_id is None or ledger.risk_reservation_id != reservation_id:
         refusals.add("V31_LEDGER_RISK_RESERVATION_MISMATCH")
-    if ledger.broker_adaptation_digest != broker_adaptation_digest(command):
-        refusals.add("V31_LEDGER_BROKER_ADAPTATION_DIGEST_MISMATCH")
+    if ledger.adapted_command_provenance_digest != adapted_command_provenance_digest(command):
+        refusals.add("V31_LEDGER_ADAPTED_COMMAND_PROVENANCE_MISMATCH")
 
 
 def check_bounded_volume(
@@ -186,17 +211,22 @@ __all__ = [
     "DEMO_PATH_LABEL",
     "EXACT_S_MEASURED",
     "EXACT_S_NOT_MEASURED",
+    "G6_NOT_READY_R9_ENVELOPE",
+    "G6_NOT_READY_R9_ENVELOPE_UNRECOGNIZED",
     "NO_SUBMIT",
+    "R9_ENVELOPE_NOT_FROZEN",
+    "R9_ENVELOPE_STATUS",
     "SIDE_LEDGER_SCHEMA",
     "SUBMIT_VOLUME_MIN",
     "BrokerTruthRefsV1",
     "ExactSRefV1",
     "V31SideLedgerV1",
+    "adapted_command_provenance_digest",
     "bounded_canary_volume",
-    "broker_adaptation_digest",
     "check_bounded_volume",
     "check_ledger_command_binding",
     "evidence_decimal",
     "evidence_volume_min",
     "exact_s_state",
+    "g6_readiness",
 ]

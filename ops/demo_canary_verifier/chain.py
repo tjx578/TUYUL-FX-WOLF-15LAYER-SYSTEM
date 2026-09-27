@@ -26,12 +26,16 @@ client-order identity and the broker join is by EA-reported tickets only.
 
 ENGINEERING_DEMO_CANARY path (owner B1/B5, see ``side_ledger``): the mechanical chain above is joined
 to the V31 lineage only through the immutable ``v31_side_ledger`` section, by explicit identifiers
-(tradeplan candidate id + revision, risk decision id, risk reservation id, command id, broker-adaptation
-digest, EA receipt report id, broker-truth ticket fingerprints). A missing ledger is ``NOT_EXECUTED``,
+(tradeplan candidate id + revision, risk decision id, risk reservation id, command id, adapted-command
+provenance digest (integrity/provenance only, never a broker-adaptation or signature authority), EA receipt
+report id, broker-truth ticket fingerprints). A missing ledger is ``NOT_EXECUTED``,
 a mismatch is a ``V31_LEDGER_*`` break, and absent exact-S is ``NOT_MEASURED``: none of them pass.
 The bounded volume-min canary is re-verified against the pinned snapshot's ``volume_min`` and the
 broker-truth order volume. The report's claim boundary is fixed: ``EA_NATIVE_V31_SCORECARD`` is
-``NOT_PROVEN`` and ``PRODUCTION_READY`` is ``False``.
+``NOT_PROVEN`` and ``PRODUCTION_READY`` is ``False``. Exact-S stays fail-closed on ``source_artifact == "R9"``
+plus the exact artifact hash; the report carries ``r9_envelope_status`` (``NOT_FROZEN`` until a frozen R9
+artifact envelope exists) and ``G6_READY = False`` with ``G6_READY_REASON = "R9_ENVELOPE_NOT_FROZEN"``
+while it is not frozen; ``BROKER_TRUTH_RECONCILED`` semantics are independent of it.
 
 Missing evidence never passes: any absent section yields ``NOT_EXECUTED`` values and
 ``BROKER_TRUTH_RECONCILED = False``.
@@ -64,6 +68,7 @@ from ops.demo_canary_verifier.side_ledger import (
     CLAIM_BOUNDARY,
     DEMO_PATH_LABEL,
     EXACT_S_MEASURED,
+    R9_ENVELOPE_STATUS,
     BrokerTruthRefsV1,
     V31SideLedgerV1,
     bounded_canary_volume,
@@ -72,6 +77,7 @@ from ops.demo_canary_verifier.side_ledger import (
     evidence_decimal,
     evidence_volume_min,
     exact_s_state,
+    g6_readiness,
 )
 from ops.mt5_mcp.reconcile import _fingerprint, _measurement_summary, _record_time
 from ops.mt5_mcp.report_integrity import evidence_digest
@@ -583,6 +589,7 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
         and exact_s == EXACT_S_MEASURED
     )
     status = NOT_EXECUTED if missing else ("RECONCILED" if reconciled else "NOT_RECONCILED")
+    g6_ready, g6_reason = g6_readiness(R9_ENVELOPE_STATUS)
     return {
         "schema_version": CHAIN_REPORT_SCHEMA,
         "envelope_sha256": pinned_envelope,
@@ -598,7 +605,10 @@ def reconcile_chain(evidence: Mapping[str, Any], *, envelope: CanaryEnvelopeV1) 
             "V31_SIDE_LEDGER_JOINED": ledger_joined,
             "V31_EXACT_S": exact_s,
             "BROKER_TRUTH_RECONCILED": reconciled,
+            "G6_READY": g6_ready,
+            "G6_READY_REASON": g6_reason,
         },
+        "r9_envelope_status": R9_ENVELOPE_STATUS,
         "v31_side_ledger": ledger_report,
         "missing_evidence": missing,
         "breaks": breaks.as_list(),

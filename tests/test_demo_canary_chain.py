@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from ops.demo_canary_verifier import side_ledger as side_ledger_module
 from ops.demo_canary_verifier.__main__ import main
 from ops.demo_canary_verifier.chain import (
     CHAIN_EVIDENCE_SCHEMA,
@@ -23,10 +24,14 @@ from ops.demo_canary_verifier.chain import (
 from ops.demo_canary_verifier.envelope import ENVELOPE_V1_SHA256, load_envelope
 from ops.demo_canary_verifier.side_ledger import (
     NO_SUBMIT,
+    R9_ENVELOPE_STATUS,
     SUBMIT_VOLUME_MIN,
+    BrokerTruthRefsV1,
+    ExactSRefV1,
     V31SideLedgerV1,
     bounded_canary_volume,
     evidence_decimal,
+    g6_readiness,
 )
 from ops.mt5_mcp.reconcile import _fingerprint
 from tests.test_demo_canary_envelope import (
@@ -240,7 +245,10 @@ def test_fully_joined_chain_reconciles() -> None:
         "V31_SIDE_LEDGER_JOINED": True,
         "V31_EXACT_S": "MEASURED",
         "BROKER_TRUTH_RECONCILED": True,
+        "G6_READY": False,
+        "G6_READY_REASON": "R9_ENVELOPE_NOT_FROZEN",
     }
+    assert report["r9_envelope_status"] == "NOT_FROZEN"
     assert report["v31_side_ledger"]["status"] == "JOINED"
     assert report["v31_side_ledger"]["canonical_sized_volume"] == "0.03"
     assert report["v31_side_ledger"]["demo_submitted_volume"] == "0.01"
@@ -613,6 +621,57 @@ def test_missing_side_ledger_is_not_executed_never_reconciled() -> None:
     assert report["acceptance"]["BROKER_TRUTH_RECONCILED"] is False
 
 
+def _all_keys(value: Any) -> set[str]:
+    if isinstance(value, dict):
+        return set(value) | {key for item in value.values() for key in _all_keys(item)}
+    if isinstance(value, list):
+        return {key for item in value for key in _all_keys(item)}
+    return set()
+
+
+def test_no_field_or_report_key_is_named_broker_adaptation_digest() -> None:
+    fields = {name for model in (V31SideLedgerV1, ExactSRefV1, BrokerTruthRefsV1) for name in model.model_fields}
+    assert "broker_adaptation_digest" not in fields
+    assert "adapted_command_provenance_digest" in V31SideLedgerV1.model_fields
+    assert not hasattr(side_ledger_module, "broker_adaptation_digest")
+    assert "broker_adaptation_digest" not in side_ledger_module.__all__
+    broken = run(evidence(v31_side_ledger=chain_ledger(adapted_command_provenance_digest="sha256:" + "0" * 64)))
+    for report in (run(evidence()), run(evidence(v31_side_ledger=None)), broken):
+        keys = _all_keys(report)
+        assert not any("broker_adaptation" in key.lower() for key in keys)
+        assert not any("BROKER_ADAPTATION" in code for code in codes(report))
+    assert "V31_LEDGER_ADAPTED_COMMAND_PROVENANCE_MISMATCH" in codes(broken)
+    assert (
+        run(evidence(v31_side_ledger={**chain_ledger(), "broker_adaptation_digest": "sha256:" + "1" * 64}))[
+            "v31_side_ledger"
+        ]["status"]
+        == "INVALID"
+    )
+
+
+def test_r9_envelope_not_frozen_blocks_g6_for_every_report() -> None:
+    assert R9_ENVELOPE_STATUS == "NOT_FROZEN"
+    reports = (
+        run(evidence()),
+        run(evidence(v31_side_ledger=None)),
+        run(evidence(v31_side_ledger=chain_ledger(exact_s=None))),
+    )
+    assert reports[0]["acceptance"]["BROKER_TRUTH_RECONCILED"] is True
+    assert reports[0]["acceptance"]["V31_EXACT_S"] == "MEASURED"
+    for report in reports:
+        assert report["r9_envelope_status"] == "NOT_FROZEN"
+        assert report["acceptance"]["G6_READY"] is False
+        assert report["acceptance"]["G6_READY_REASON"] == "R9_ENVELOPE_NOT_FROZEN"
+
+
+@pytest.mark.parametrize("status", ["NOT_FROZEN", "FROZEN", "", "frozen"])
+def test_g6_readiness_fails_closed_for_every_status(status: str) -> None:
+    ready, reason = g6_readiness(status)
+    assert ready is False
+    expected = "R9_ENVELOPE_NOT_FROZEN" if status == "NOT_FROZEN" else "R9_ENVELOPE_STATUS_UNRECOGNIZED"
+    assert reason == expected
+
+
 def test_missing_exact_s_is_not_measured_and_blocks_reconciliation() -> None:
     report = run(evidence(v31_side_ledger=chain_ledger(exact_s=None)))
     assert report["breaks"] == []
@@ -683,7 +742,7 @@ OTHER_REF = "0123456789abcdef"
         ({"tradeplan_candidate_revision": 4}, "V31_LEDGER_TRADEPLAN_MISMATCH"),
         ({"risk_decision_id": "55555555-5555-4555-8555-555555555555"}, "V31_LEDGER_RISK_DECISION_MISMATCH"),
         ({"risk_reservation_id": "55555555-5555-4555-8555-555555555555"}, "V31_LEDGER_RISK_RESERVATION_MISMATCH"),
-        ({"broker_adaptation_digest": "sha256:" + "0" * 64}, "V31_LEDGER_BROKER_ADAPTATION_DIGEST_MISMATCH"),
+        ({"adapted_command_provenance_digest": "sha256:" + "0" * 64}, "V31_LEDGER_ADAPTED_COMMAND_PROVENANCE_MISMATCH"),
         ({"ea_receipt_report_id": None}, "V31_LEDGER_EA_RECEIPT_MISMATCH"),
         ({"ea_receipt_report_id": "00000000-0000-4000-8000-000000000099"}, "V31_LEDGER_EA_RECEIPT_MISMATCH"),
         ({"broker_truth": None}, "V31_LEDGER_BROKER_TRUTH_MISMATCH"),
