@@ -1,0 +1,11 @@
+{
+  "schema_version": "wolf15.demo-canary.envelope.v1",
+  "ACCOUNT": "DEMO",
+  "MAX_SUBMIT": 1,
+  "AUTO_RETRY": false,
+  "PYRAMIDING": false,
+  "MULTIPLE_POSITION": false,
+  "FLAT_STATE_REQUIRED": true,
+  "LATEST_STATE_VETO": "REQUIRED",
+  "EA_FINAL_PREFLIGHT": "REQUIRED"
+}
