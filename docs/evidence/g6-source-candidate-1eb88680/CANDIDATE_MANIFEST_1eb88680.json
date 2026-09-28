@@ -1,0 +1,195 @@
+{
+  "A1_sha256": "1fed7f7b2eb79152ba8f825faca4af3eed131f69222860c6793a42eabd152d40",
+  "A2_sha256": "9cf9e5318aa69d8ec4455b48588a924be97b7fdeaf9091e67ff90920e68236d2",
+  "A3_sha256": "538b3b6f58513bda10d9f7b49f2665c9178d91ff290d1cc811d56130bf7294cf",
+  "A4_sha256": "357a55b0f465482e8314be14a03b8174df83c1f63c2d126c1290f05c2fe101cc",
+  "BROKER_EFFECT": 0,
+  "COMMAND_ENQUEUE_ARM_ORDER": 0,
+  "DEMO_ACCOUNT_BINDING": "NOT_MEASURED",
+  "EA_EX5_SHA256": "NOT_MEASURED",
+  "EA_PRESET_SHA256": "NOT_MEASURED",
+  "G6_READY": false,
+  "G6_READY_FOR_DEMO": false,
+  "NATURAL_30_PAIR_SHADOW": "NOT_EXECUTED",
+  "R9_PASS": "NOT_EXECUTED",
+  "R9_freeze_sha256": "2a5826a36f1ed9f0a099f1fd03aad52629141e76fdb9d5c7978aa2626f660f82",
+  "RUNTIME_ACTIVATION": "NONE",
+  "RUNTIME_CANDIDATE_BINDING": "NOT_FROZEN",
+  "RUNTIME_WIRING": "NONE",
+  "SSOT_sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+  "authority_documents": {
+    "A1_sha256": {
+      "bytes": 23965,
+      "git_blob": "c006b797bc0b402d385b8a7cfa0c21bc44949bc6",
+      "path": "docs/governance/strategy-5scr-v3.1-amendment-A1.md",
+      "sha256": "1fed7f7b2eb79152ba8f825faca4af3eed131f69222860c6793a42eabd152d40"
+    },
+    "A2_sha256": {
+      "bytes": 25421,
+      "git_blob": "78883f799c21ce0a842af9a106f9df47c75eca7f",
+      "path": "docs/governance/strategy-5scr-v3.1-amendment-A2.md",
+      "sha256": "9cf9e5318aa69d8ec4455b48588a924be97b7fdeaf9091e67ff90920e68236d2"
+    },
+    "A3_sha256": {
+      "bytes": 25822,
+      "git_blob": "c0409d73bcbe216a0066412e2656fea8df38e8fa",
+      "path": "docs/governance/strategy-5scr-v3.1-amendment-A3.md",
+      "sha256": "538b3b6f58513bda10d9f7b49f2665c9178d91ff290d1cc811d56130bf7294cf"
+    },
+    "A4_sha256": {
+      "bytes": 23774,
+      "git_blob": "0001652c36b2f8cff315cd9d63bc4b61edc2132e",
+      "path": "docs/governance/strategy-5scr-v3.1-amendment-A4.md",
+      "sha256": "357a55b0f465482e8314be14a03b8174df83c1f63c2d126c1290f05c2fe101cc"
+    },
+    "R9_freeze_sha256": {
+      "bytes": 14710,
+      "git_blob": "9a4919dbe622ec967f0c374247ffbb4ebffed65b",
+      "path": "docs/governance/r9-envelope-v1.md",
+      "sha256": "2a5826a36f1ed9f0a099f1fd03aad52629141e76fdb9d5c7978aa2626f660f82"
+    },
+    "SSOT_sha256": {
+      "bytes": 86002,
+      "git_blob": "cd848447a2e923d0ea0de6c566a558c7205d3d3b",
+      "path": "docs/remediation/2026-09-09/source-binding/selected-ssot-v3.1.md",
+      "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"
+    }
+  },
+  "candidate_branch": "wolf15-v31-demo-candidate",
+  "candidate_git_sha": "1eb88680bf05ee1456ebb08acb8214e392ca2ac3",
+  "candidate_tree_digest": "3c53ca9aeb5a7a75ae05a20bc401a6a358be2ea7",
+  "evidence_kind": "SEPARATE_EVIDENCE_NOT_PART_OF_CANDIDATE_SOURCE",
+  "g4_policy": {
+    "minimum_net_rr": "1.5",
+    "policy_instance": "SUPPLIED_AT_EVALUATION_NOT_PINNED_IN_SOURCE"
+  },
+  "lane_e_policy": {
+    "account_snapshot_binding_fields_exempt_from_cross_pair_reuse": [
+      "exact_s_id",
+      "exact_s_sha256",
+      "r9_artifact_sha256"
+    ],
+    "policy_version": "1.5.0"
+  },
+  "lane_heads": {
+    "a4_record_head": {
+      "git_sha": "68b74f212d1d37d498a8585e6f3465aecd9a6572",
+      "pr": 511
+    },
+    "g4_head": {
+      "git_sha": "4b1039052585574545b10032e461d758b397d183",
+      "pr": 516
+    },
+    "lane_e_head": {
+      "git_sha": "267c07249d1fd06ecb3730995c9041becdbf5922",
+      "pr": 514
+    },
+    "lane_f_head": {
+      "git_sha": "8ab7b4ae43bdeb76e188675f35f0b327ae9a82ae",
+      "pr": 515
+    },
+    "main_base": {
+      "git_sha": "2ea21786df62ea082907f6a8401a30816e15fadb",
+      "pr": null
+    },
+    "r9_envelope_head": {
+      "git_sha": "26e038eba61a00fcdabeb3c50e0d7a426ef877a9",
+      "pr": 517
+    },
+    "structural_geometry_head": {
+      "git_sha": "bd6cae9ac26a2d94fc4a37090157ef797307287e",
+      "pr": 513
+    }
+  },
+  "owner_decisions_in_source": [
+    "D1",
+    "D2",
+    "D3-A",
+    "D3-B",
+    "D3-C"
+  ],
+  "r9_envelope_frozen_normative_span_sha256": "c9663fa7a752baa8f8723ef0241980d7fc9a55938ff480dc5703564e4e31b96f",
+  "r9_envelope_frozen_schema_sha256": "10732eebab7e8a3a9270be6d378689e6160bd7a8087520ee2d86bf156e7588a2",
+  "schema_version": "wolf15.v31-g6.source-candidate-manifest.v2",
+  "source_candidate_freeze": {
+    "by": "owner",
+    "ci_evidence": "PR #518 (draft) head == source_candidate_sha; 48/48 checks SUCCESS incl. Security Gate",
+    "date": "2026-09-28",
+    "status": "FROZEN"
+  },
+  "source_candidate_sha": "1eb88680bf05ee1456ebb08acb8214e392ca2ac3",
+  "sources": {
+    "A4_GEOMETRY": {
+      "bytes": 8598,
+      "git_blob": "2c424ec6ec3d83878e2439b0cd7924f4b277957f",
+      "path": "analysis/strategy_5scr_structural_geometry_v31.py",
+      "sha256": "6d44c7a54e1254f2f39c57c66a26b81125778993c7c89a45261a3d171c78e596"
+    },
+    "A4_GEOMETRY_CONTRACT": {
+      "bytes": 11387,
+      "git_blob": "0f3659b12de7d54b8cd694edc568026abc358fb2",
+      "path": "contracts/strategy_5scr_structural_geometry_v31.py",
+      "sha256": "10d20ae265ed70a74ce0c356a42eb323ca18a9070b0ee34b26464dd84d7b7fe3"
+    },
+    "G4_ADAPTER": {
+      "bytes": 8512,
+      "git_blob": "d42d2779df06119a4c9679c33856d8f618acf5de",
+      "path": "risk/strategy_5scr_broker_adaptation_v31.py",
+      "sha256": "6327b91de39670084be286b6a7ed6267dba910e20ae8fd5c4a33c3cb63e19ad0"
+    },
+    "G4_CONTRACT": {
+      "bytes": 7447,
+      "git_blob": "e2ba69d23602e151f5dc5400c580230684f8bde8",
+      "path": "contracts/strategy_5scr_broker_adaptation_v31.py",
+      "sha256": "3255f56a616e15ea6f562ef72b890ff9abdc023da9767bc1e4fbde9d05597042"
+    },
+    "LANE_E_EVALUATOR": {
+      "bytes": 31285,
+      "git_blob": "9992f73b70901ce2656e2fa41c47131d7c9a5f6b",
+      "path": "tools/shadow_harness/evaluator.py",
+      "sha256": "f7eacf279e672026ed684b668ee90b2d8dd63b775b10411cc45079f8346d07f0"
+    },
+    "LANE_E_ISOLATION": {
+      "bytes": 18916,
+      "git_blob": "4f1a0bbb3e4414e12344004c06ce317042867006",
+      "path": "tools/shadow_harness/isolation.py",
+      "sha256": "76b0dfe4e01d72fc42bdf713c870bc7c89a4a35ab5c94fe5e8508f34a35c070c"
+    },
+    "LANE_E_MANIFEST": {
+      "bytes": 22152,
+      "git_blob": "cfe7760636dfcff1e5856a93ef56442d1cdc5c92",
+      "path": "tools/shadow_harness/manifest.py",
+      "sha256": "d3a675f2107076972ae38f9832a8126f01f8431f804905a67389697c46b360ac"
+    },
+    "LANE_E_SHADOW_HARNESS_POLICY": {
+      "bytes": 2000,
+      "git_blob": "eddfb8acdfcef9f3bedf2b230776b0dbb29c1818",
+      "path": "tools/shadow_harness/policy/shadow_harness_policy_v1.json",
+      "sha256": "6b98cb6dba9ffad4ef00b1517949101d0fc9ba12f6a58a00ea95998cf6701bc6"
+    },
+    "LANE_F_CHAIN": {
+      "bytes": 41799,
+      "git_blob": "c30c12abd3d3001a56a99af085176372079e7969",
+      "path": "ops/demo_canary_verifier/chain.py",
+      "sha256": "e2d1c388bc7dfd6fcf9037fe358e8c17fe200770e10b6aa5dafdc1cfb1672975"
+    },
+    "LANE_F_ENVELOPE": {
+      "bytes": 13716,
+      "git_blob": "9d7a8ea01c587cb1001775a917c0eb46f962706e",
+      "path": "ops/demo_canary_verifier/envelope.py",
+      "sha256": "8098a059a9ddc6bbf5c407f3d6c3c16859c1ba5eab9752a4f385ea3d22d52146"
+    },
+    "LANE_F_SIDE_LEDGER": {
+      "bytes": 25793,
+      "git_blob": "c76d26d471394e8e130523ee3bd2d404789f8d51",
+      "path": "ops/demo_canary_verifier/side_ledger.py",
+      "sha256": "15bf051b2d118f0ccd8781c9b1dee4e5046f4707b4951dc543247cf6b8d48bb3"
+    },
+    "R9_CONTRACT": {
+      "bytes": 12355,
+      "git_blob": "029ff46cda29c2a762910dde2f67010abb260117",
+      "path": "contracts/r9_envelope_v1.py",
+      "sha256": "736411ff83fb30405e781d4d4d473a694de56f3a7dad5b9ccdf2b096e98c1a96"
+    }
+  }
+}
