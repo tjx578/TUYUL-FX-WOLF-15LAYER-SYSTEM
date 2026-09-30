@@ -94,8 +94,30 @@ jobs:
           fetch-depth: 0
 
       - name: Install trufflehog
+        env:
+          TRUFFLEHOG_VERSION: v3.97.4
         run: |
-          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/v3.97.4/scripts/install.sh | sh -s -- -b /usr/local/bin v3.97.4
+          set -euo pipefail
+          version="${TRUFFLEHOG_VERSION#v}"
+          base_url="https://github.com/trufflesecurity/trufflehog/releases/download/${TRUFFLEHOG_VERSION}"
+          tarball="trufflehog_${version}_linux_amd64.tar.gz"
+          checksums="trufflehog_${version}_checksums.txt"
+          install_dir="${RUNNER_TEMP}/trufflehog-bin"
+
+          mkdir -p "${install_dir}"
+          curl --fail --show-error --silent --location --retry 3 --retry-all-errors \
+            --output "${RUNNER_TEMP}/${checksums}" "${base_url}/${checksums}"
+          curl --fail --show-error --silent --location --retry 3 --retry-all-errors \
+            --output "${RUNNER_TEMP}/${tarball}" "${base_url}/${tarball}"
+          (
+            cd "${RUNNER_TEMP}"
+            awk -v file="${tarball}" '$2 == file { print; found = 1 } END { exit found ? 0 : 1 }' \
+              "${checksums}" | sha256sum -c -
+          )
+          tar --no-same-owner -xzf "${RUNNER_TEMP}/${tarball}" -C "${install_dir}" trufflehog
+
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/trufflehog" --version
 
       - name: Scan for secrets (hard-fail)
         run: python scripts/ci/secret_scan_receipt.py
